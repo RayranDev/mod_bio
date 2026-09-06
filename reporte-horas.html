@@ -1,0 +1,1710 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reporte de Horas, Extras y Recargos</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root{
+    --bg:#f4f5f7; --panel:#fff; --ink:#16202c; --muted:#6b7684; --line:#dde2e8;
+    --accent:#1f6feb; --accent-soft:#e8f0fe; --warn:#b45309; --warn-soft:#fef3c7;
+    --err:#b42318; --err-soft:#fee4e2; --ok:#067647; --ok-soft:#dcfae6;
+    --mono:ui-monospace,"Cascadia Mono",Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:13px/1.45 -apple-system,"Segoe UI",Roboto,sans-serif}
+  header{background:#16202c;color:#fff;padding:10px 16px;display:flex;
+         align-items:center;gap:14px;flex-wrap:wrap;position:sticky;top:0;z-index:20}
+  header h1{font-size:14px;margin:0;font-weight:600;letter-spacing:.2px}
+  header .sub{font-size:11px;color:#9aa7b5}
+  main{padding:14px 16px 60px}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:6px;
+         padding:12px 14px;margin-bottom:12px}
+  .panel h2{font-size:12px;margin:0 0 10px;text-transform:uppercase;
+            letter-spacing:.6px;color:var(--muted);font-weight:700}
+  .grid{display:grid;gap:10px}
+  .g4{grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+  .g6{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
+  label.f{display:block;font-size:11px;color:var(--muted);margin-bottom:3px;font-weight:600}
+  input,select,button{font:inherit}
+  input[type=text],input[type=date],input[type=number],select{
+    width:100%;padding:6px 8px;border:1px solid var(--line);border-radius:4px;background:#fff}
+  input[type=file]{width:100%;font-size:11px;padding:5px;border:1px dashed var(--line);
+    border-radius:4px;background:#fafbfc}
+  button{padding:7px 13px;border:1px solid var(--line);background:#fff;border-radius:4px;
+         cursor:pointer;font-weight:600;font-size:12px}
+  button:hover{background:#f0f3f7}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  button.primary:hover{filter:brightness(1.08)}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  .tabs{display:flex;gap:2px;margin-bottom:12px;border-bottom:2px solid var(--line);flex-wrap:wrap}
+  .tabs button{border:none;border-radius:4px 4px 0 0;background:transparent;
+               color:var(--muted);padding:8px 14px;margin-bottom:-2px}
+  .tabs button.on{color:var(--accent);border-bottom:2px solid var(--accent);background:var(--accent-soft)}
+  .tabwrap{display:none}.tabwrap.on{display:block}
+  .scroll{overflow:auto;max-height:70vh;border:1px solid var(--line);border-radius:5px;background:#fff}
+  table{border-collapse:separate;border-spacing:0;width:100%;font-size:12px}
+  th,td{padding:5px 9px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}
+  thead th{position:sticky;top:0;background:#eef1f5;z-index:2;font-size:11px;
+           text-transform:uppercase;letter-spacing:.3px;color:#4a5563;border-bottom:2px solid var(--line)}
+  tbody tr:hover{background:#f7f9fc}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;font-family:var(--mono)}
+  th.cw{white-space:normal;width:74px;min-width:74px;max-width:74px;
+        vertical-align:bottom;line-height:1.15;padding:5px 7px}
+  th.cw b{display:block;font-size:12px;font-family:var(--mono);letter-spacing:0}
+  th.cw i{display:block;font-style:normal;font-size:9px;font-weight:600;color:#7a8695;
+          text-transform:none;letter-spacing:0;margin-top:2px}
+  td.cw{width:74px;min-width:74px;max-width:74px}
+  tr.clickable{cursor:pointer}
+  tr.clickable:hover{background:var(--accent-soft)}
+  .tag{display:inline-block;padding:1px 6px;border-radius:10px;font-size:10px;
+       font-weight:700;letter-spacing:.3px}
+  .t-ok{background:var(--ok-soft);color:var(--ok)}
+  .t-warn{background:var(--warn-soft);color:var(--warn)}
+  .t-err{background:var(--err-soft);color:var(--err)}
+  .t-info{background:var(--accent-soft);color:var(--accent)}
+  .t-mut{background:#eef1f5;color:var(--muted)}
+  .muted{color:var(--muted)}
+  .mono{font-family:var(--mono)}
+  .bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+  .bar .sp{flex:1}
+  .cal{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+  .cal .hd{text-align:center;font-size:10px;font-weight:700;color:var(--muted);
+           text-transform:uppercase;padding:4px 0}
+  .cal .d{border:1px solid var(--line);border-radius:4px;min-height:76px;padding:4px 5px;
+          background:#fff;font-size:11px;cursor:pointer}
+  .cal .d:hover{border-color:var(--accent)}
+  .cal .d.out{background:#f7f8fa;opacity:.45;cursor:default}
+  .cal .d.fes{background:#fff7ed;border-color:#fdba74}
+  .cal .d.dom{background:#eff6ff}
+  .cal .d.desc{background:#f3f4f6}
+  .cal .d .n{font-weight:700;font-size:12px}
+  .cal .d .s{font-family:var(--mono);font-size:10px;color:var(--accent);font-weight:700}
+  .cal .d .h{font-size:10px;color:var(--muted)}
+  .cal .d.ovr{outline:2px solid var(--warn)}
+  .kpi{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+  .kpi div{background:#fff;border:1px solid var(--line);border-radius:5px;padding:7px 12px;min-width:110px}
+  .kpi .k{font-size:10px;color:var(--muted);text-transform:uppercase;font-weight:700;letter-spacing:.4px}
+  .kpi .v{font-size:17px;font-weight:700;font-family:var(--mono)}
+  details.rules{border:1px solid var(--line);border-radius:5px;background:#fff;padding:8px 12px;margin-top:10px}
+  details.rules summary{cursor:pointer;font-weight:700;font-size:12px;color:var(--muted)}
+  details.rules table{margin-top:8px}
+  .note{background:var(--warn-soft);border:1px solid #fcd34d;border-radius:5px;
+        padding:8px 11px;font-size:12px;margin-bottom:10px;color:#78350f}
+  .note b{color:#7c2d12}
+  #pop{position:fixed;z-index:200;max-width:400px;background:#16202c;color:#e8edf3;
+       border-radius:7px;padding:10px 13px;font-size:12px;line-height:1.5;
+       box-shadow:0 8px 28px rgba(0,0,0,.32);pointer-events:none;display:none}
+  #pop .pt{margin-bottom:7px;font-size:13px}
+  #pop .pl{margin-top:6px}
+  #pop .pl i{display:block;font-style:normal;font-size:10px;text-transform:uppercase;
+             letter-spacing:.6px;color:#7f8ea3;font-weight:700;margin-bottom:1px}
+  [data-nov],[data-tip]{cursor:help}
+  .tag[data-nov]{cursor:pointer}
+  .desc{text-decoration:line-through;color:var(--err);opacity:.75}
+  td.dev{background:var(--err-soft);color:var(--err);font-weight:700}
+  td.cross{box-shadow:inset 3px 0 0 var(--ok)}
+  td.over{color:var(--ok);font-weight:700}
+  td.noaut{background:var(--err-soft);color:var(--err);text-decoration:line-through}
+  .aut{background:#fff;border:1px solid var(--line);border-radius:6px;padding:10px 12px;margin-bottom:10px}
+  .aut h3{font-size:12px;margin:0 0 8px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted)}
+  .aut .row{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap}
+  .aut .row>div{min-width:130px}
+  .aut table{margin-top:9px}
+  .aut td,.aut th{padding:4px 8px}
+  .glos{background:#fff;border:1px solid var(--line);border-radius:6px;padding:12px 14px;margin-bottom:12px}
+  .glos h3{font-size:12px;margin:0 0 10px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted)}
+  .glos td:first-child{white-space:nowrap;vertical-align:top}
+  .glos td{white-space:normal}
+  #toast{position:fixed;right:16px;bottom:16px;background:#16202c;color:#fff;padding:9px 14px;
+         border-radius:5px;font-size:12px;opacity:0;transition:.25s;pointer-events:none;z-index:99}
+  #toast.on{opacity:1}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Reporte de Horas, Extras y Recargos</h1>
+  <span class="sub">SIRH Plastitec &middot; ciclo 11&rarr;10 &middot; procesamiento 100% local</span>
+  <span class="sp" style="flex:1"></span>
+  <span id="status" class="sub">Sin datos cargados</span>
+</header>
+
+<main>
+
+<!-- ============ CARGA ============ -->
+<section class="panel">
+  <h2>1 &middot; Fuentes de datos</h2>
+  <div class="grid g4">
+    <div><label class="f">Empleados (Empleado_*.xlsx)</label>
+      <input type="file" id="fEmp" accept=".xlsx,.xls"></div>
+    <div><label class="f">Turnos (Turno_*.xlsx)</label>
+      <input type="file" id="fTur" accept=".xlsx,.xls"></div>
+    <div><label class="f">Programación (Horario_*.xlsx)</label>
+      <input type="file" id="fHor" accept=".xlsx,.xls"></div>
+    <div><label class="f">Marcaciones (Reporte de Marcaciones_*.xlsx)</label>
+      <input type="file" id="fMar" accept=".xlsx,.xls"></div>
+  </div>
+  <div class="bar" style="margin-top:10px">
+    <button class="primary" id="btnCalc" disabled>Calcular ciclo</button>
+    <span id="loadInfo" class="muted"></span>
+  </div>
+</section>
+
+<!-- ============ CONFIG ============ -->
+<section class="panel">
+  <h2>2 &middot; Parámetros del cálculo</h2>
+  <div class="grid g6">
+    <div><label class="f">Inicio de ciclo</label><input type="date" id="cIni"></div>
+    <div><label class="f">Fin de ciclo</label><input type="date" id="cFin"></div>
+    <div><label class="f">Franja nocturna &mdash; inicio</label><input type="text" id="cNocIni" value="19:00"></div>
+    <div><label class="f">Franja nocturna &mdash; fin</label><input type="text" id="cNocFin" value="06:00"></div>
+    <div><label class="f">Umbral semanal rotativos (h)</label><input type="number" id="cUmbral" value="42" step="0.5"></div>
+    <div><label class="f">Anclaje de redondeo <span class="muted">(D-14)</span></label>
+      <select id="cAnclaje">
+        <option value="rel">Relativo al fin de turno (duración)</option>
+        <option value="abs">Reloj absoluto</option>
+      </select></div>
+    <div><label class="f">Agrupar marcaciones consecutivas (min) <span class="muted">(A-07)</span></label>
+      <input type="number" id="cDoble" value="5" step="1" min="0"></div>
+    <div><label class="f">Marcaciones impares <span class="muted">(A-04)</span></label>
+      <select id="cImpar">
+        <option value="sugerir">Resolucion sugerida (descartar la espuria)</option>
+        <option value="no">No resolver (excepcion, 0 h)</option>
+      </select></div>
+    <div><label class="f">Tolerancia antes del turno (min)</label><input type="number" id="cTolIni" value="120"></div>
+    <div><label class="f">Tolerancia después del turno (min)</label><input type="number" id="cTolFin" value="360"></div>
+    <div><label class="f">Prefijo turnos administrativos</label><input type="text" id="cAdmin" value="T_ADM"></div>
+    <div><label class="f">Corte códigos 0253&rarr;0252 / 0259&rarr;0258 <span class="muted">(H-06)</span></label>
+      <input type="date" id="cCorte" value="2026-07-15"></div>
+    <div><label class="f">Descontar descanso si dura &ge; (h) <span class="muted">(B-10/B-12)</span></label>
+      <input type="number" id="cDesc" value="1" step="0.25"></div>
+    <div><label class="f">Domingo genera recargo dominical</label>
+      <select id="cDom"><option value="1">Sí</option><option value="0">No</option></select></div>
+    <div><label class="f">Descanso propio (no dominical) genera recargo</label>
+      <select id="cDescRec"><option value="0">No (solo se marca)</option><option value="1">Sí</option></select></div>
+    <div><label class="f">Inferir salida faltante desde el turno <span class="muted">(A-02/A-03)</span></label>
+      <select id="cInfer"><option value="0">No (excepción, 0 h)</option><option value="1">Sí, marcar INFERIDO</option></select></div>
+    <div><label class="f">Tolerancia de puntualidad (min)</label>
+      <input type="number" id="cTolPunt" value="5" min="0"></div>
+    <div><label class="f">Extras sin autorizacion registrada <span class="muted">(F-09)</span></label>
+      <select id="cAutor">
+        <option value="marcar">Calcular y marcar (requiere decision)</option>
+        <option value="exigir">Exigir autorizacion (no se pagan)</option>
+      </select></div>
+    <div><label class="f">Redondeo</label>
+      <select id="cRedon">
+        <option value="dia">Por día y concepto</option>
+        <option value="ciclo">Solo al total del ciclo</option>
+      </select></div>
+  </div>
+
+  <details class="rules">
+    <summary>Matriz de clasificación aplicada (D-01 a D-08) &mdash; default documentado, mutuamente excluyente</summary>
+    <table>
+      <thead><tr><th>Tipo de día</th><th>Dentro / fuera de jornada</th><th>Franja</th><th>Concepto</th></tr></thead>
+      <tbody id="matriz"></tbody>
+    </table>
+    <p class="muted" style="font-size:11px;margin:8px 0 0">
+      Los conceptos son <b>mutuamente excluyentes por minuto</b> (invariante I-02). Un minuto nocturno en
+      festivo genera <b>0259</b>, no 0253+0220. Si RRHH define acumulación, se cambia aquí y en
+      <code>classify()</code>. Redondeo D-10&ndash;D-13: <code>:00&ndash;:24&rarr;0h</code>,
+      <code>:25&ndash;:49&rarr;0,5h</code>, <code>:50&ndash;:59&rarr;1,0h</code> por cada hora completa.
+    </p>
+  </details>
+</section>
+
+<!-- ============ TABS ============ -->
+<div class="tabs">
+  <button data-tab="cons" class="on">Consolidado</button>
+  <button data-tab="det">Detalle por empleado</button>
+  <button data-tab="cal">Calendario de turnos</button>
+  <button data-tab="exc">Excepciones</button>
+  <button data-tab="glo">Glosario</button>
+</div>
+
+<section id="tab-cons" class="tabwrap on">
+  <div class="kpi" id="kpis"></div>
+  <div class="bar">
+    <select id="fCia" style="max-width:170px"><option value="">Todas las compañías</option></select>
+    <select id="fDepto" style="max-width:250px"><option value="">Todos los departamentos</option></select>
+    <select id="fPerfil" style="max-width:150px"><option value="">Todos los perfiles</option>
+      <option value="ROTATIVO">Rotativo</option><option value="ADMINISTRATIVO">Administrativo</option></select>
+    <input type="text" id="qCons" placeholder="Código o nombre…" style="max-width:190px">
+    <button id="fClear">Limpiar</button>
+    <span id="fInfo" class="muted"></span>
+    <span class="sp"></span>
+    <button id="expCons">Exportar consolidado (Excel)</button>
+    <button id="expTodo">Exportar detalle completo (Excel)</button>
+    <button id="expSin">Generar archivo Sinergy (.txt)</button>
+  </div>
+  <div class="scroll"><table id="tCons"><thead></thead><tbody></tbody></table></div>
+  <p class="muted" style="font-size:11px">Clic en una fila para ver el detalle día por día. Solo se listan empleados con al menos un concepto (H-02).</p>
+</section>
+
+<section id="tab-det" class="tabwrap">
+  <div class="bar">
+    <select id="selEmp" style="max-width:380px"></select>
+    <label class="f" style="margin:0 0 0 8px">Perfil</label>
+    <select id="selPerfil" style="max-width:220px">
+      <option value="">Automático</option>
+      <option value="ROTATIVO">Rotativo (umbral semanal)</option>
+      <option value="ADMINISTRATIVO">Administrativo (jornada diaria)</option>
+    </select>
+    <span class="sp"></span>
+    <button id="expDet">Exportar detalle de este empleado (Excel)</button>
+  </div>
+  <div class="aut" id="autBox">
+    <h3>Autorizacion de horas extra <span class="muted" style="text-transform:none">(F-09)</span></h3>
+    <div class="row">
+      <div><label class="f">Desde</label><input type="date" id="aIni"></div>
+      <div><label class="f">Hasta</label><input type="date" id="aFin"></div>
+      <div><label class="f">Estado</label>
+        <select id="aEst">
+          <option value="AUT">Autorizado</option>
+          <option value="NO">No autorizado</option>
+        </select></div>
+      <div style="flex:1;min-width:200px"><label class="f">Motivo o soporte</label>
+        <input type="text" id="aMot" placeholder="Ej.: correo del jefe del 12/08"></div>
+      <button class="primary" id="aAdd">Agregar rango</button>
+      <button id="aAll">Autorizar todo el ciclo</button>
+      <button id="aNone">No autorizar el ciclo</button>
+    </div>
+    <table id="tAut"><thead><tr><th>Desde</th><th>Hasta</th><th>Estado</th><th>Motivo</th><th></th></tr></thead><tbody></tbody></table>
+  </div>
+  <div class="kpi" id="kpiDet"></div>
+  <div class="scroll"><table id="tDet"><thead></thead><tbody></tbody></table></div>
+</section>
+
+<section id="tab-cal" class="tabwrap">
+  <div class="bar">
+    <select id="selEmpCal" style="max-width:380px"></select>
+    <select id="selMes" style="max-width:170px"></select>
+    <span class="sp"></span>
+    <button id="expCal">Exportar calendario (Excel)</button>
+    <button id="btnClrOvr">Limpiar cambios puntuales</button>
+  </div>
+  <div class="panel" style="margin-bottom:10px">
+    <div class="cal" id="calHd"></div>
+    <div class="cal" id="calGrid" style="margin-top:4px"></div>
+    <p class="muted" style="font-size:11px;margin:10px 0 0">
+      Clic en un día para asignar o quitar turno (cambio puntual, B-04). Los cambios se guardan en este
+      navegador y prevalecen sobre la programación regular. Naranja = festivo &middot; azul = domingo &middot;
+      gris = sin turno &middot; borde ámbar = cambio puntual.
+    </p>
+  </div>
+</section>
+
+<section id="tab-exc" class="tabwrap">
+  <div class="bar">
+    <select id="fExcDep" style="max-width:250px"><option value="">Todos los departamentos</option></select>
+    <input type="text" id="qExc" placeholder="Novedad, código o nombre…" style="max-width:250px">
+    <select id="fExc" style="max-width:230px"><option value="">Todas las severidades</option>
+      <option value="BLOQ">Bloqueantes</option><option value="ADV">Advertencias</option>
+      <option value="INFO">Informativas</option></select>
+    <span class="sp"></span>
+    <button id="expExc">Exportar excepciones (Excel)</button>
+  </div>
+  <div class="scroll"><table id="tExc"><thead></thead><tbody></tbody></table></div>
+</section>
+
+<section id="tab-glo" class="tabwrap">
+  <div class="glos"><h3>Conceptos de nómina</h3>
+    <table id="gConc"><thead><tr><th>Código</th><th>Concepto</th><th>Qué cuenta</th></tr></thead><tbody></tbody></table>
+  </div>
+  <div class="glos"><h3>Novedades del cálculo</h3>
+    <table id="gNov"><thead><tr><th>Código</th><th>Novedad</th><th>Qué pasó</th><th>Por qué</th><th>Qué hacer</th></tr></thead><tbody></tbody></table>
+  </div>
+  <div class="glos"><h3>Reglas de cálculo aplicadas</h3>
+    <table><tbody>
+      <tr><td><b>Redondeo</b> (D-10 a D-13)</td><td>Pasos de 0,5 h. Por cada hora completa: minutos <code>:00–:24</code> &rarr; 0 h &middot; <code>:25–:49</code> &rarr; 0,5 h &middot; <code>:50–:59</code> &rarr; 1,0 h. Ejemplo: 25 min de sobretiempo &rarr; 0,5 h; 1 h 50 min &rarr; 2,0 h.</td></tr>
+      <tr><td><b>Tiempo antes del turno</b> (D-15)</td><td>No cuenta. La jornada empieza en la hora programada, aunque el empleado marque antes.</td></tr>
+      <tr><td><b>Almuerzo</b> (B-10)</td><td>Se descuenta cuando el turno lo tiene configurado con duración igual o mayor al parámetro (por defecto 1 h).</td></tr>
+      <tr><td><b>Descanso de café</b> (B-12)</td><td>Los 20 min NO se descuentan. La empresa los paga.</td></tr>
+      <tr><td><b>Umbral semanal</b> (D-17, D-18)</td><td>Personal rotativo: dentro de la semana lunes–domingo, las horas por encima del umbral son extra; las de abajo son ordinarias y solo generan recargo si caen en franja nocturna o en domingo/festivo.</td></tr>
+      <tr><td><b>Personal administrativo</b> (D-23)</td><td>No aplica umbral semanal. Se compara cada día contra su jornada programada.</td></tr>
+      <tr><td><b>Franja nocturna</b> (C-02, C-03)</td><td>Configurable. Por defecto 19:00 a 06:00.</td></tr>
+      <tr><td><b>Exclusividad</b> (I-02, I-03)</td><td>Cada minuto trabajado genera exactamente un concepto, nunca dos, nunca ninguno.</td></tr>
+    </tbody></table>
+  </div>
+</section>
+
+</main>
+<div id="pop"></div>
+<div id="toast"></div>
+
+<script>
+"use strict";
+
+/* ══════════════════════════════════════════════════════════════════
+   CONCEPTOS
+   ══════════════════════════════════════════════════════════════════ */
+const CONCEPTS = [
+  { key:'EXT_D',  code:()=>'0200', label:'HORA EXTRA DIURNA ORDINARIA' },
+  { key:'EXT_N',  code:()=>'0210', label:'HORA EXTRA NOCTURNA ORDINARIA' },
+  { key:'EXT_FD', code:()=>'0250', label:'HORA EXTRA FESTIVA DIURNA' },
+  { key:'EXT_FN', code:()=>'0260', label:'HORA EXTRA FESTIVA NOCTURNA' },
+  { key:'REC_N',  code:()=>'0220', label:'RECARGO NOCTURNO' },
+  { key:'REC_F',  code:c=>c.corteOn?'0252':'0253', label:'RECARGO DOMINICAL / FESTIVO' },
+  { key:'REC_FN', code:c=>c.corteOn?'0258':'0259', label:'RECARGO NOCTURNO FESTIVO' }
+];
+const CKEYS = CONCEPTS.map(c=>c.key);
+const DOW_ES = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+
+/* Diccionario de novedades: s=severidad, t=titulo, q=que paso, p=por que, a=que hacer */
+const NOV = {
+ 'A-02':{s:'BLOQ',t:'Entrada sin salida',
+   q:'El dia tiene una sola marcacion y hay un turno programado.',
+   p:'Falta la marcacion de cierre: el empleado no registro la salida, o el dispositivo no la capturo.',
+   a:'Active «Inferir salida faltante desde el turno» para calcular con la hora programada (queda marcado INFERIDO y requiere aprobacion), o corrija la marcacion en BioTime.'},
+ 'A-04':{s:'ADV',t:'Numero impar de marcaciones',
+   q:'El dia tiene 3, 5 o 7 marcaciones. No se pueden formar pares completos.',
+   p:'BioTime no envia el campo entrada/salida (todas llegan con tipo 255), asi que el emparejamiento se hace por orden cronologico y una marcacion sobra.',
+   a:'Con «Resolucion sugerida» activa, el sistema descarta la marcacion espuria y le muestra cual. Revise la fila y apruebela, o corrija en BioTime.'},
+ 'A-06':{s:'INFO',t:'Marcacion duplicada',
+   q:'Dos registros distintos con exactamente el mismo minuto.',
+   p:'El dispositivo envio el mismo evento dos veces.',
+   a:'Nada. Se conserva el primero y se ignora el segundo. Ambos quedan en la marcacion cruda.'},
+ 'A-07':{s:'INFO',t:'Doble toque agrupado',
+   q:'Dos marcaciones consecutivas dentro de la ventana de agrupacion.',
+   p:'El empleado paso el dedo o la tarjeta dos veces por el mismo evento.',
+   a:'Nada. Se cuentan como un solo evento. Ajuste la ventana en los parametros si agrupa de mas o de menos.'},
+ 'A-09':{s:'BLOQ',t:'Empleado sin turno asignado',
+   q:'Hay marcaciones pero el empleado no tiene ninguna programacion de turno.',
+   p:'Sin jornada programada no hay contra que comparar: no se puede saber que es ordinario y que es extra.',
+   a:'Asigne la programacion en BioTime y vuelva a exportar el Horario.'},
+ 'A-10':{s:'BLOQ',t:'Empleado no reconciliado',
+   q:'La marcacion pertenece a un codigo que no existe en el maestro de empleados.',
+   p:'El empleado existe en BioTime pero no en el archivo de Empleados exportado.',
+   a:'Reconcilie los maestros. La marcacion se conserva pero no se calcula.'},
+ 'A-15':{s:'BLOQ',t:'Marcacion anterior al ingreso',
+   q:'Hay marcaciones con fecha anterior a la fecha de contratacion.',
+   p:'Error de reconciliacion de maestros o fecha de ingreso mal registrada.',
+   a:'Verifique la fecha de contratacion en el maestro de empleados.'},
+ 'A-16':{s:'BLOQ',t:'Marcacion posterior al retiro',
+   q:'Hay marcaciones con fecha posterior a la fecha de retiro.',
+   p:'Error de reconciliacion o retiro mal registrado.',
+   a:'Verifique la fecha de retiro. El dia no se calcula.'},
+ 'A-17':{s:'BLOQ',t:'Salida anterior a la entrada',
+   q:'Un par quedo con la hora de salida igual o anterior a la de entrada, sin cruce de medianoche.',
+   p:'Emparejamiento incorrecto o reloj de terminal desfasado.',
+   a:'Revise las marcaciones crudas del dia. Nunca se calcula tiempo negativo.'},
+ 'A-18':{s:'INFO',t:'Ausencia',
+   q:'Dia con turno programado y sin ninguna marcacion.',
+   p:'El empleado no asistio, o asistio y ningun dispositivo lo registro.',
+   a:'Sin trabajo no hay concepto (D-09). Si hubo permiso, incapacidad o vacaciones, eso esta fuera del alcance de este reporte.'},
+ 'A-19':{s:'ADV',t:'Trabajo sin turno programado',
+   q:'Hay marcaciones en un dia sin jornada programada (descanso o festivo).',
+   p:'El empleado trabajo un dia que no tenia turno asignado.',
+   a:'Trabajar el descanso SI genera conceptos, pero requiere autorizacion previa del jefe. Verifique que exista.'},
+ 'B-03':{s:'BLOQ',t:'Dos turnos el mismo dia',
+   q:'El empleado tiene dos o mas asignaciones de turno vigentes simultaneamente.',
+   p:'Los rangos de vigencia en la programacion se solapan.',
+   a:'Corrija la programacion en BioTime. Mientras tanto se toma la asignacion mas reciente.'},
+ 'B-14':{s:'BLOQ',t:'Empleado sin cargo',
+   q:'El empleado no tiene cargo asignado en el maestro.',
+   p:'Sin cargo no se puede determinar el perfil laboral, y el perfil define la regla de extras.',
+   a:'Asigne el cargo en el maestro de empleados.'},
+ 'D-17':{s:'INFO',t:'Semana por debajo del umbral',
+   q:'El empleado trabajó tiempo por fuera de su jornada programada, pero ese día NO generó horas extra.',
+   p:'Es personal ROTATIVO: las extras no se miden contra la jornada diaria sino contra el umbral semanal (lunes a domingo). Si la semana no llega al umbral, todo el tiempo es ordinario. Vea la columna «Semana» de esta fila para el acumulado.',
+   a:'Si este empleado debería calcularse día contra día, su perfil es ADMINISTRATIVO (D-23): cámbielo con el selector «Perfil» en la barra superior del detalle.'},
+ 'B-06':{s:'ADV',t:'Perfil laboral forzado',
+   q:'El perfil de este empleado fue fijado manualmente y no coincide con el que el sistema detectó por sus turnos.',
+   p:'El perfil define la regla de extras: ROTATIVO usa umbral semanal (D-17/D-18), ADMINISTRATIVO usa jornada diaria (D-23). El catálogo dice que lo determina el CARGO, dato que no viene en las exportaciones.',
+   a:'Confirme con RRHH cuál es el perfil correcto según el cargo vigente. El cambio queda guardado en este navegador.'},
+ 'D-19':{s:'ADV',t:'Mas de 12 h extra en la semana',
+   q:'La semana excede el umbral en mas de 12 horas.',
+   p:'Es el tope legal semanal de trabajo suplementario.',
+   a:'Se calcula igual, pero requiere justificacion obligatoria registrada.'},
+ 'D-20':{s:'ADV',t:'Mas de 2 h extra en el dia',
+   q:'El dia genero mas de 2 horas de tiempo suplementario.',
+   p:'Es el tope diario habitual. No aplica a turnos de 12 horas.',
+   a:'Requiere justificacion y aprobacion explicita del jefe.'},
+ 'D-21':{s:'ADV',t:'Semana partida por el cierre del ciclo',
+   q:'La semana lunes-domingo cruza el corte del ciclo 11 a 10.',
+   p:'El umbral semanal necesita la semana completa para decidir que es ordinario y que es extra; parte de esa semana cae en otro ciclo.',
+   a:'El umbral se evalua con los dias disponibles. Para exactitud, cargue las marcaciones de la semana completa aunque excedan el ciclo.'},
+ 'E-03':{s:'INFO',t:'Sin marcaciones en el ciclo',
+   q:'Empleado activo, con turnos programados, sin ninguna marcacion en todo el ciclo.',
+   p:'No asistio, o su archivo de marcaciones no fue incluido en la exportacion.',
+   a:'No genera filas en el archivo de nomina. Verifique que la exportacion de marcaciones cubra a todo el personal.'},
+ 'E-10':{s:'ADV',t:'Empleado deshabilitado con marcaciones',
+   q:'El empleado figura deshabilitado en el maestro pero registro marcaciones.',
+   p:'Estado desactualizado o retiro no procesado.',
+   a:'Confirme el estado real antes de exportar a nomina.'},
+ 'F-09':{s:'ADV',t:'Extra sin autorizacion previa',
+   q:'El dia genero tiempo suplementario y no existe una autorizacion registrada que cubra esa fecha.',
+   p:'El catalogo exige decision explicita: las extras se calculan igual, pero no deberian pagarse sin que el jefe las autorice.',
+   a:'Abra «Autorizacion de horas extra» en la barra del detalle y registre el rango de fechas como AUTORIZADO o NO AUTORIZADO.'},
+ 'F-03':{s:'BLOQ',t:'Extra NO autorizada',
+   q:'El dia genero tiempo suplementario dentro de un rango marcado explicitamente como NO AUTORIZADO.',
+   p:'Un registro rechazado no entra al archivo de nomina, pero queda trazado con su motivo.',
+   a:'Las horas se muestran tachadas y se excluyen del consolidado y del archivo Sinergy. Los recargos (0220, 0253, 0259) NO se afectan: no son trabajo suplementario, son sobretasas sobre tiempo ordinario.'},
+ 'TARDE':{s:'ADV',t:'Ingreso tarde o salida anticipada',
+   q:'La primera marcacion es posterior al inicio del turno, o la ultima es anterior al fin del turno, por encima de la tolerancia de puntualidad.',
+   p:'Se compara la marcacion real contra la hora programada del turno de ese dia.',
+   a:'Es informativo para el jefe. No cambia el calculo: el tiempo antes del turno nunca cuenta (D-15) y el tiempo no trabajado simplemente no se paga.'},
+ 'F-10':{s:'ADV',t:'Calculo con valor inferido',
+   q:'El dia se calculo usando una hora que el sistema dedujo, no una marcacion real.',
+   p:'Faltaba una marcacion y se completo con la hora programada del turno.',
+   a:'Debe hacerse visible al aprobador. Requiere aprobacion humana identificada (invariante I-11).'},
+ 'I-04':{s:'BLOQ',t:'Mas de 24 h en un dia',
+   q:'El dia calendario acumula mas de 24 horas de conceptos.',
+   p:'Es fisicamente imposible: hay un error de emparejamiento o de asignacion de marcaciones a la jornada.',
+   a:'Revise las marcaciones crudas. Bloquea el cierre.'},
+ 'INFERIDO':{s:'ADV',t:'Valor inferido',
+   q:'Una de las horas del dia no viene de una marcacion real: la dedujo el sistema desde el turno programado.',
+   p:'Faltaba la entrada o la salida y usted activo la inferencia.',
+   a:'Apruebelo explicitamente. El invariante I-11 exige que todo valor inferido tenga aprobacion humana identificada.'},
+ 'SUGERIDO':{s:'ADV',t:'Emparejamiento sugerido',
+   q:'El dia tenia un numero impar de marcaciones. El sistema descarto la marcacion espuria y emparejo el resto.',
+   p:'Se prueba quitar cada marcacion y se conserva la combinacion cuya entrada queda mas cerca del inicio del turno y cuya salida queda mas cerca del fin. Ninguna hora se inventa: todas las usadas son marcaciones reales.',
+   a:'Revise cual marcacion se descarto (aparece en esta misma fila) y apruebe el dia, o corrija en BioTime.'}
+};
+
+const CONC_DESC = {
+ EXT_D :'Tiempo trabajado POR FUERA de la jornada programada, en dia ordinario, dentro de la franja diurna.',
+ EXT_N :'Tiempo trabajado POR FUERA de la jornada programada, en dia ordinario, dentro de la franja nocturna.',
+ EXT_FD:'Tiempo trabajado POR FUERA de la jornada programada, en domingo o festivo, franja diurna.',
+ EXT_FN:'Tiempo trabajado POR FUERA de la jornada programada, en domingo o festivo, franja nocturna.',
+ REC_N :'Tiempo trabajado DENTRO de la jornada programada, en dia ordinario, dentro de la franja nocturna.',
+ REC_F :'Tiempo trabajado DENTRO de la jornada programada, en domingo o festivo, franja diurna.',
+ REC_FN:'Tiempo trabajado DENTRO de la jornada programada, en domingo o festivo, franja nocturna.'
+};
+
+const MATRIZ = [
+  ['Ordinario','Dentro de jornada','Diurna','— (ordinaria, ya en el salario)','D-01'],
+  ['Ordinario','Dentro de jornada','Nocturna','0220 Recargo nocturno','D-02'],
+  ['Ordinario','Fuera de jornada','Diurna','0200 Extra diurna ordinaria','D-03'],
+  ['Ordinario','Fuera de jornada','Nocturna','0210 Extra nocturna ordinaria','D-04'],
+  ['Dominical / festivo','Dentro de jornada','Diurna','0253 / 0252 Recargo dominical o festivo','D-05'],
+  ['Dominical / festivo','Dentro de jornada','Nocturna','0259 / 0258 Recargo nocturno festivo','D-05 / D-08'],
+  ['Dominical / festivo','Fuera de jornada','Diurna','0250 Extra festiva diurna','D-06'],
+  ['Dominical / festivo','Fuera de jornada','Nocturna','0260 Extra festiva nocturna','D-07']
+];
+
+/* ══════════════════════════════════════════════════════════════════
+   UTILIDADES DE FECHA / HORA
+   ══════════════════════════════════════════════════════════════════ */
+const pad = n => String(n).padStart(2,'0');
+
+function toISO(v){
+  if(v==null || v==='') return null;
+  if(v instanceof Date && !isNaN(v))
+    return `${v.getFullYear()}-${pad(v.getMonth()+1)}-${pad(v.getDate())}`;
+  const s = String(v).trim();
+  let m = s.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+  if(m) return `${m[1]}-${pad(+m[2])}-${pad(+m[3])}`;
+  m = s.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);          // DD-MM-YYYY
+  if(m) return `${m[3]}-${pad(+m[2])}-${pad(+m[1])}`;
+  if(/^\d+(\.\d+)?$/.test(s)){                                  // serial Excel
+    const d = new Date(Date.UTC(1899,11,30) + Math.floor(+s)*864e5);
+    return `${d.getUTCFullYear()}-${pad(d.getUTCMonth()+1)}-${pad(d.getUTCDate())}`;
+  }
+  return null;
+}
+function toMin(v){
+  if(v==null || v==='') return null;
+  if(v instanceof Date && !isNaN(v)) return v.getHours()*60 + v.getMinutes();
+  const s = String(v).trim();
+  const m = s.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+  if(m) return (+m[1])*60 + (+m[2]);
+  if(/^\d*\.?\d+$/.test(s)){ const f=parseFloat(s); if(f<=1) return Math.round(f*1440); }
+  return null;
+}
+const hhmm  = m => `${pad(Math.floor(((m%1440)+1440)%1440/60))}:${pad(((m%60)+60)%60)}`;
+const dnum  = iso => { const [y,m,d]=iso.split('-').map(Number); return Date.UTC(y,m-1,d)/864e5; };
+const numd  = n   => { const d=new Date(n*864e5);
+  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth()+1)}-${pad(d.getUTCDate())}`; };
+const dow   = iso => new Date(dnum(iso)*864e5).getUTCDay();
+function addDays(iso,k){ return numd(dnum(iso)+k); }
+function rangeDays(a,b){ const r=[]; for(let d=dnum(a); d<=dnum(b); d++) r.push(numd(d)); return r; }
+// lunes de la semana ISO que contiene iso
+function weekStart(iso){ const w=dow(iso); return addDays(iso, w===0?-6:1-w); }
+
+/* ── Festivos de Colombia (Ley Emiliani + Pascua) ─────────────────── */
+const holidayCache = {};
+function easter(y){
+  const a=y%19,b=Math.floor(y/100),c=y%100,d=Math.floor(b/4),e=b%4,
+        f=Math.floor((b+8)/25),g=Math.floor((b-f+1)/3),
+        h=(19*a+b-d-g+15)%30,i=Math.floor(c/4),k=c%4,
+        l=(32+2*e+2*i-h-k)%7,m=Math.floor((a+11*h+22*l)/451),
+        mo=Math.floor((h+l-7*m+114)/31),da=((h+l-7*m+114)%31)+1;
+  return `${y}-${pad(mo)}-${pad(da)}`;
+}
+function nextMonday(iso){ const w=dow(iso); return w===1?iso:addDays(iso,(8-w)%7); }
+function holidaysCO(y){
+  if(holidayCache[y]) return holidayCache[y];
+  const H = {};
+  const put=(iso,name)=>{H[iso]=name;};
+  put(`${y}-01-01`,'Año Nuevo');       put(`${y}-05-01`,'Día del Trabajo');
+  put(`${y}-07-20`,'Independencia');   put(`${y}-08-07`,'Batalla de Boyacá');
+  put(`${y}-12-08`,'Inmaculada');      put(`${y}-12-25`,'Navidad');
+  [[`${y}-01-06`,'Reyes Magos'],[`${y}-03-19`,'San José'],[`${y}-06-29`,'San Pedro y San Pablo'],
+   [`${y}-08-15`,'Asunción'],[`${y}-10-12`,'Día de la Raza'],[`${y}-11-01`,'Todos los Santos'],
+   [`${y}-11-11`,'Independencia de Cartagena']].forEach(([d,n])=>put(nextMonday(d),n));
+  const e = easter(y);
+  put(addDays(e,-3),'Jueves Santo'); put(addDays(e,-2),'Viernes Santo');
+  put(nextMonday(addDays(e,43)),'Ascensión');
+  put(nextMonday(addDays(e,64)),'Corpus Christi');
+  put(nextMonday(addDays(e,71)),'Sagrado Corazón');
+  holidayCache[y]=H; return H;
+}
+const isHoliday = iso => holidaysCO(+iso.slice(0,4))[iso] || null;
+
+/* ══════════════════════════════════════════════════════════════════
+   PARSEO DE LOS XLSX
+   ══════════════════════════════════════════════════════════════════ */
+const DATA = { emp:null, tur:null, hor:null, mar:null };
+let MODEL = null, RESULT = null, CUR_EMP = null;
+const OVERRIDES = JSON.parse(localStorage.getItem('mb_overrides')||'{}'); // "id|fecha" -> shiftCode|""
+const PERFILES  = JSON.parse(localStorage.getItem('mb_perfiles')||'{}');
+const AUTOR     = JSON.parse(localStorage.getItem('mb_autor')||'{}');  // id -> [{ini,fin,estado,motivo}]
+
+/** Estado de autorizacion de extras de un empleado en una fecha. F-09 / F-02 / F-03. */
+function autorFor(id, iso){
+  let res = null;
+  (AUTOR[id]||[]).forEach(r=>{ if(iso>=r.ini && iso<=r.fin) res = r.estado; });
+  return res;                                    // 'AUT' | 'NO' | null
+}  // "id" -> ROTATIVO|ADMINISTRATIVO
+
+function readSheet(buf){
+  const wb = XLSX.read(buf,{type:'array',cellDates:true});
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const aoa = XLSX.utils.sheet_to_json(ws,{header:1,defval:'',raw:false,blankrows:false});
+  // localizar fila de encabezado: la que trae la columna de identificación
+  let hi = 0;
+  for(let i=0;i<Math.min(8,aoa.length);i++){
+    const row = aoa[i].map(c=>String(c).toLowerCase());
+    if(row.some(c=>/empleado id|employee id|c[oó]digo$/.test(c))){ hi=i; break; }
+  }
+  const hdr = aoa[hi].map(c=>String(c).trim());
+  const rows = aoa.slice(hi+1)
+    .filter(r=>r.some(c=>String(c).trim()!==''))
+    .map(r=>{ const o={}; hdr.forEach((h,i)=>{ if(h) o[h]=r[i]; }); return o; });
+  return { hdr, rows };
+}
+/** Busca un valor por coincidencia flexible de nombre de columna. */
+function pick(o, ...pats){
+  const keys = Object.keys(o);
+  for(const p of pats){
+    const rx = new RegExp(p,'i');
+    const k = keys.find(k=>rx.test(k.normalize('NFD').replace(/[̀-ͯ]/g,'')));
+    if(k!=null && o[k]!=='' && o[k]!=null) return o[k];
+  }
+  return '';
+}
+function normId(v){
+  const s = String(v==null?'':v).trim();
+  return s.replace(/^0+(?=\d)/,'') || s;   // H-04: sin ceros a la izquierda
+}
+
+function buildModel(){
+  /* ── Empleados ── */
+  const employees = new Map();
+  DATA.emp.rows.forEach(r=>{
+    const id = normId(pick(r,'^empleado id','^employee id','^codigo de nomina'));
+    if(!id) return;
+    const nom = String(pick(r,'^nombres')||'').trim();
+    const ape = String(pick(r,'^apellidos')||'').trim();
+    employees.set(id,{
+      id, raw:String(pick(r,'^empleado id','^employee id')).trim(),
+      nombre:(ape?ape+' ':'')+nom, nombres:nom, apellidos:ape,
+      ingreso: toISO(pick(r,'fecha de contratacion','fecha de ingreso')),
+      retiro:  toISO(pick(r,'fecha de retiro')),
+      depto:   String(pick(r,'^departamento')||'').trim(),
+      empresa: String(pick(r,'^compania$','^empresa$')||'').trim(),
+      centro:  String(pick(r,'centro de costos')||'').trim(),
+      cargo:   String(pick(r,'^cargo')||'').trim(),
+      tipo:    String(pick(r,'tipo de empleado')||'').trim(),
+      estado:  String(pick(r,'estado empleado')||'').trim()
+    });
+  });
+
+  /* ── Turnos: código -> segmentos por día de semana ── */
+  const shifts = new Map();
+  DATA.tur.rows.forEach(r=>{
+    const code = String(pick(r,'^codigo')||'').trim();
+    if(!code) return;
+    const ent = toMin(pick(r,'hora entrada')), sal = toMin(pick(r,'hora salida'));
+    if(ent==null||sal==null) return;
+    const days = [
+      pick(r,'^dom'),pick(r,'^lun'),pick(r,'^mar'),
+      pick(r,'^mie'),pick(r,'^jue'),pick(r,'^vie'),pick(r,'^sab')
+    ].map(v=>/true|1|x|s[ií]/i.test(String(v)));
+    const desc = parseFloat(pick(r,'^descanso')||0)||0;
+    const seg = {
+      code, desc: String(pick(r,'descripcion del turno')||'').trim(),
+      timeId: String(pick(r,'time id')||'1'),
+      ent, sal, cross: sal<=ent, days,
+      breakH: desc, breakAt: toMin(pick(r,'descontar +descans')),
+      holiday: /true|1/i.test(String(pick(r,'^holiday')))
+    };
+    if(!shifts.has(code)) shifts.set(code,{code, desc:seg.desc, segs:[]});
+    shifts.get(code).segs.push(seg);
+  });
+
+  /* ── Programación: empleado -> asignaciones con vigencia ── */
+  const sched = new Map();
+  DATA.hor.rows.forEach(r=>{
+    const id = normId(pick(r,'^empleado id','^employee id'));
+    const code = String(pick(r,'^codigo')||'').trim();
+    const ini = toISO(pick(r,'fecha inicial')), fin = toISO(pick(r,'fecha final'));
+    if(!id||!code||!ini) return;
+    if(!sched.has(id)) sched.set(id,[]);
+    sched.get(id).push({code, ini, fin: fin||'2999-12-31'});
+    if(!employees.has(id)){
+      const nom=String(pick(r,'^nombres')||'').trim(), ape=String(pick(r,'^apellidos')||'').trim();
+      employees.set(id,{id,raw:id,nombre:(ape?ape+' ':'')+nom,nombres:nom,apellidos:ape,
+        ingreso:null,retiro:null,depto:'',empresa:'',centro:'',cargo:'',tipo:'',estado:'',
+        _soloHorario:true});
+    }
+  });
+  sched.forEach(a=>a.sort((x,y)=>x.ini<y.ini?-1:1));
+
+  /* ── Marcaciones ── */
+  const punches = new Map();     // id -> [{iso, min, ts, origen, dup}]
+  const orphan = [];
+  DATA.mar.rows.forEach((r,i)=>{
+    const id = normId(pick(r,'^employee id','^empleado id'));
+    const iso = toISO(pick(r,'^fecha$','^fecha'));
+    const min = toMin(pick(r,'^hora$','^hora'));
+    if(!id||!iso||min==null) return;
+    const p = { id, iso, min, ts: dnum(iso)*1440+min, seq:i,
+                origen:String(pick(r,'origen del registro')||'').trim(),
+                tipo:String(pick(r,'tipo de marcacion')||'').trim() };
+    if(!employees.has(id)){ orphan.push(p); return; }        // A-10
+    if(!punches.has(id)) punches.set(id,[]);
+    punches.get(id).push(p);
+  });
+  punches.forEach(arr=>arr.sort((a,b)=>a.ts-b.ts||a.seq-b.seq));
+
+  return { employees, shifts, sched, punches, orphan };
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   MOTOR DE CÁLCULO
+   ══════════════════════════════════════════════════════════════════ */
+
+/** Turno vigente de un empleado en una fecha. B-04/B-05, con overrides puntuales. */
+function shiftFor(M, id, iso){
+  const ovr = OVERRIDES[id+'|'+iso];
+  if(ovr!==undefined) return { code: ovr||null, source:'OVERRIDE' };
+  const asg = (M.sched.get(id)||[]).filter(a=>a.ini<=iso && iso<=a.fin);
+  if(!asg.length) return { code:null, source:'NONE' };
+  if(asg.length>1) return { code: asg[asg.length-1].code, source:'MULTI' };  // B-03
+  return { code: asg[0].code, source:'PLAN' };
+}
+
+/** Segmento del turno aplicable a esa fecha (por día de semana). */
+function segmentFor(M, code, iso){
+  const sh = M.shifts.get(code); if(!sh) return null;
+  const w = dow(iso);
+  return sh.segs.find(s=>s.days[w]) || null;
+}
+
+/** Redondeo D-10 a D-13: pasos de 0,5 h con cortes en :25 y :50. */
+function round05(min){
+  if(min<=0) return 0;
+  const h = Math.floor(min/60), r = min%60;
+  return h + (r<25 ? 0 : r<50 ? 0.5 : 1);
+}
+
+/** Tipo de día. Devuelve {kind, label}. */
+function dayType(iso, hasShift, cfg){
+  const fes = isHoliday(iso);
+  if(fes) return {kind:'FES', label:'Festivo · '+fes};
+  if(dow(iso)===0 && cfg.domRecargo) return {kind:'DOM', label:'Domingo'};
+  if(dow(iso)===0) return {kind:'ORD', label:'Domingo'};
+  if(!hasShift) return {kind: cfg.descRecargo?'DES':'ORD', label:'Descanso programado'};
+  return {kind:'ORD', label:'Ordinario'};
+}
+const esFestivo = k => k==='FES'||k==='DOM'||k==='DES';
+
+/** Clasifica un tramo atómico. */
+function classify(festivo, extra, nocturno){
+  if(!festivo) return extra ? (nocturno?'EXT_N':'EXT_D') : (nocturno?'REC_N':null);
+  return   extra ? (nocturno?'EXT_FN':'EXT_FD') : (nocturno?'REC_FN':'REC_F');
+}
+
+/** Parte [a,b) en tramos atómicos por medianoche, franja nocturna y fronteras extra. */
+function atomize(a, b, cfg, extraCuts){
+  const cuts = new Set([a,b]);
+  (extraCuts||[]).forEach(c=>{ if(c>a && c<b) cuts.add(c); });   // C-06 / C-07 / C-10
+  const d0 = Math.floor(a/1440), d1 = Math.floor((b-1)/1440);
+  for(let d=d0; d<=d1+1; d++){
+    cuts.add(d*1440);                      // C-01 medianoche
+    cuts.add(d*1440 + cfg.nocIni);         // C-02 inicio nocturno
+    cuts.add(d*1440 + cfg.nocFin);         // C-03 fin nocturno
+  }
+  const pts = [...cuts].filter(p=>p>=a&&p<=b).sort((x,y)=>x-y);
+  const out = [];
+  for(let i=0;i<pts.length-1;i++){
+    if(pts[i+1]<=pts[i]) continue;
+    const mid = (pts[i]+pts[i+1])/2, tod = ((mid%1440)+1440)%1440;
+    const noct = cfg.nocIni>cfg.nocFin ? (tod>=cfg.nocIni||tod<cfg.nocFin)
+                                       : (tod>=cfg.nocIni&&tod<cfg.nocFin);
+    out.push({ ini:pts[i], fin:pts[i+1], min:pts[i+1]-pts[i], noct,
+               iso: numd(Math.floor(mid/1440)) });
+  }
+  return out;
+}
+
+function readConfig(){
+  const v = id => document.getElementById(id).value;
+  const cfg = {
+    ini: v('cIni'), fin: v('cFin'),
+    nocIni: toMin(v('cNocIni'))??1140, nocFin: toMin(v('cNocFin'))??360,
+    umbral: parseFloat(v('cUmbral'))||42,
+    anclaje: v('cAnclaje'), clusterMin: +v('cDoble')||0, impar: v('cImpar'),
+    tolIni: +v('cTolIni')||0, tolFin: +v('cTolFin')||0,
+    adminPref: v('cAdmin').trim(), corte: v('cCorte'),
+    descMin: (parseFloat(v('cDesc'))||1)*60,
+    domRecargo: v('cDom')==='1', descRecargo: v('cDescRec')==='1',
+    inferir: v('cInfer')==='1', redondeo: v('cRedon'),
+    tolPunt: +v('cTolPunt')||0, autor: v('cAutor')
+  };
+  cfg.corteOn = cfg.corte && cfg.fin >= cfg.corte;      // H-06
+  return cfg;
+}
+
+function compute(M, cfg){
+  const days = [], exc = [], byEmp = new Map();
+  const add = (sev,code,id,nombre,iso,msg) =>
+    exc.push({sev,code,id,nombre,fecha:iso||'',msg});
+
+  const dates = rangeDays(cfg.ini, cfg.fin);
+  // semanas completas que tocan el ciclo (D-21)
+  const wIni = weekStart(cfg.ini), wFin = addDays(weekStart(cfg.fin),6);
+  const allDates = rangeDays(wIni, wFin);
+
+  M.orphan.forEach(p=>add('BLOQ','A-10',p.id,'(no está en Empleados)',p.iso,
+    'Marcación de un empleado que existe en BioTime pero no en el maestro de empleados.'));
+
+  for(const [id,emp] of M.employees){
+    const punches = (M.punches.get(id)||[]);
+    if(!punches.length && !M.sched.has(id)) continue;
+
+    /* ── A-05/A-06/A-07: depurar marcaciones ── */
+    const clean = []; const seen = new Set();
+    punches.forEach(p=>{
+      const k = p.iso+'|'+p.min;
+      if(seen.has(k)){ p.dup=true;
+        add('INFO','A-06',id,emp.nombre,p.iso,`Marcación duplicada a las ${hhmm(p.min)} (se conserva la primera).`);
+        return; }
+      const last = clean[clean.length-1];
+      if(last && (p.ts-last.ts) <= cfg.clusterMin){ p.dup=true;
+        add('INFO','A-07',id,emp.nombre,p.iso,
+          `Marcacion a las ${hhmm(p.min)} agrupada con ${hhmm(last.min)} (ventana ${cfg.clusterMin} min).`);
+        return; }
+      seen.add(k); clean.push(p);
+    });
+
+    /* ── construir ventanas de turno de todo el rango extendido ── */
+    const windows = [], multiDays = [];
+    allDates.forEach(iso=>{
+      const sf = shiftFor(M,id,iso);
+      if(sf.source==='MULTI' && iso>=cfg.ini && iso<=cfg.fin) multiDays.push(iso);
+      const seg = sf.code ? segmentFor(M,sf.code,iso) : null;
+      if(!seg) return;
+      const base = dnum(iso)*1440;
+      windows.push({ iso, code:sf.code, source:sf.source, seg,
+                     ini: base+seg.ent, fin: base+seg.sal + (seg.cross?1440:0) });
+    });
+    windows.sort((a,b)=>a.ini-b.ini);
+    if(multiDays.length)                                            // B-03
+      add('BLOQ','B-03',id,emp.nombre,multiDays[0],
+        `Dos o más turnos asignados simultáneamente en ${multiDays.length} día(s): `+
+        `${multiDays[0]} a ${multiDays[multiDays.length-1]}. Se toma la asignación más reciente; debe resolverse.`);
+
+    /* ── A-08: asignar cada marcación a una ventana ── */
+    const buckets = new Map(windows.map(w=>[w.iso,[]]));
+    const loose = [];
+    clean.forEach(p=>{
+      let best=null,bd=Infinity;
+      windows.forEach(w=>{
+        const lo=w.ini-cfg.tolIni, hi=w.fin+cfg.tolFin;
+        if(p.ts>=lo && p.ts<=hi){
+          const d = p.ts<w.ini ? w.ini-p.ts : p.ts>w.fin ? p.ts-w.fin : 0;
+          if(d<bd){bd=d;best=w;}
+        }
+      });
+      if(best) buckets.get(best.iso).push(p); else loose.push(p);
+    });
+
+    /* ── A-19: días sin turno pero con marcaciones ── */
+    const looseByDay = new Map();
+    loose.forEach(p=>{ if(!looseByDay.has(p.iso)) looseByDay.set(p.iso,[]); looseByDay.get(p.iso).push(p); });
+
+    const tieneMarcasCiclo = clean.some(p=>p.iso>=cfg.ini && p.iso<=cfg.fin);   // E-03
+    const jornadas = [];
+    windows.forEach(w=>jornadas.push({iso:w.iso, w, ps:buckets.get(w.iso)||[]}));
+    looseByDay.forEach((ps,iso)=>{ if(!buckets.has(iso)) jornadas.push({iso, w:null, ps}); });
+    jornadas.sort((a,b)=>a.iso<b.iso?-1:1);
+
+    /* ── construir tramos trabajados ── */
+    const rows = [];
+    jornadas.forEach(J=>{
+      const iso = J.iso, W = J.w, ps = J.ps;
+      const inCiclo = iso>=cfg.ini && iso<=cfg.fin;
+      const dt = dayType(iso, !!W, cfg);
+      const row = { id, nombre:emp.nombre, iso, dow:DOW_ES[dow(iso)], inCiclo,
+                    tipoDia:dt.kind, tipoLabel:dt.label,
+                    turno: W?W.code:'—', prog: W?`${hhmm(W.seg.ent)}–${hhmm(W.seg.sal)}`:'—',
+                    marcas: ps.map(p=>hhmm(p.min)).join(' '),
+                    pares:[], workMin:0, tramos:[], flags:[], inferido:false,
+                    conc:Object.fromEntries(CKEYS.map(k=>[k,0])) };
+
+      /* vigencia laboral: E-01/E-02/A-15/A-16 */
+      if(emp.ingreso && iso < emp.ingreso){
+        if(ps.length) add('BLOQ','A-15',id,emp.nombre,iso,'Marcación anterior a la fecha de ingreso.');
+        row.flags.push('A-15'); rows.push(row); return;
+      }
+      if(emp.retiro && iso > emp.retiro){
+        if(ps.length) add('BLOQ','A-16',id,emp.nombre,iso,'Marcación posterior a la fecha de retiro.');
+        row.flags.push('A-16'); rows.push(row); return;
+      }
+
+      if(!W && ps.length){                                        // A-19
+        row.flags.push('A-19');
+        if(inCiclo) add('ADV','A-19',id,emp.nombre,iso,
+          `Trabajo en día sin turno programado (${dt.label}). Requiere autorización.`);
+      }
+      if(W && !ps.length){                                        // A-18
+        row.flags.push('A-18');
+        if(inCiclo && tieneMarcasCiclo)
+          add('INFO','A-18',id,emp.nombre,iso,'Día con turno programado y sin ninguna marcación (ausencia).');
+        rows.push(row); return;
+      }
+      if(!ps.length){ rows.push(row); return; }                   // D-09
+
+      /* ── emparejamiento cronológico (A-01..A-04) ── */
+      let list = ps.slice();
+      if(list.length % 2 === 1){
+        if(list.length===1){
+          row.flags.push(W?'A-02':'A-04');
+          if(inCiclo) add('BLOQ',W?'A-02':'A-04',id,emp.nombre,iso,
+            `Una sola marcación (${hhmm(list[0].min)}). ${cfg.inferir&&W?'Se infiere el par desde el turno.':'No se calcula.'}`);
+          if(cfg.inferir && W){
+            const p = list[0];
+            const cerca = Math.abs(p.ts-W.ini) <= Math.abs(p.ts-W.fin);
+            list = cerca ? [p,{ts:W.fin,inferido:true,min:W.fin%1440,iso}]
+                         : [{ts:W.ini,inferido:true,min:W.ini%1440,iso},p];
+            row.inferido = true;
+          } else { rows.push(row); return; }
+        } else if(cfg.impar==='sugerir' && W){
+          /* A-04 · se prueba quitar cada marcación y se conserva la combinación cuya entrada
+             queda más cerca del inicio del turno y cuya salida más cerca del fin. Ninguna
+             hora se inventa: todas las usadas son marcaciones reales. */
+          let best=null, bs=Infinity;
+          for(let k=0;k<list.length;k++){
+            const cand = list.filter((_,i)=>i!==k);
+            let ok=true;
+            for(let i=0;i<cand.length;i+=2) if(cand[i+1].ts<=cand[i].ts){ ok=false; break; }
+            if(!ok) continue;
+            const sc = Math.abs(cand[0].ts-W.ini) + Math.abs(cand[cand.length-1].ts-W.fin);
+            if(sc<bs){ bs=sc; best=k; }
+          }
+          if(best===null){
+            row.flags.push('A-04');
+            if(inCiclo) add('BLOQ','A-04',id,emp.nombre,iso,
+              `${list.length} marcaciones (número impar) sin ningún emparejamiento válido posible.`);
+            rows.push(row); return;
+          }
+          row.descartadas = [hhmm(list[best].min)];
+          row.sugerido = true;
+          row.flags.push('SUGERIDO');
+          const nMarcas = list.length;
+          list = list.filter((_,i)=>i!==best);
+          if(inCiclo) add('ADV','A-04',id,emp.nombre,iso,
+            `${nMarcas} marcaciones (número impar). Resolución sugerida: se descarta `+
+            `${row.descartadas.join(', ')} y se empareja ${hhmm(list[0].min)} → `+
+            `${hhmm(list[list.length-1].min)}. Requiere aprobación.`);
+        } else {
+          row.flags.push('A-04');
+          if(inCiclo) add('BLOQ','A-04',id,emp.nombre,iso,
+            `${list.length} marcaciones (número impar). El sistema no adivina el emparejamiento.`);
+          rows.push(row); return;
+        }
+      }
+      for(let i=0;i<list.length;i+=2){
+        const a=list[i], b=list[i+1];
+        if(b.ts<=a.ts){                                            // A-17
+          row.flags.push('A-17');
+          if(inCiclo) add('BLOQ','A-17',id,emp.nombre,iso,'Salida con hora anterior o igual a la entrada.');
+          continue;
+        }
+        row.pares.push({ini:a.ts, fin:b.ts, inferido:!!(a.inferido||b.inferido)});
+      }
+      if(!row.pares.length){ rows.push(row); return; }
+
+      /* ── D-15: el tiempo antes del inicio del turno no cuenta ── */
+      let iv = row.pares.map(p=>({...p}));
+      if(W) iv.forEach(p=>{ if(p.ini < W.ini) p.ini = Math.min(W.ini, p.fin); });
+      iv = iv.filter(p=>p.fin>p.ini);
+
+      /* ── B-10/B-12: descuento de almuerzo ── */
+      if(W && W.seg.breakH*60 >= cfg.descMin && W.seg.breakAt!=null){
+        const base = dnum(iso)*1440;
+        let bIni = base + W.seg.breakAt;
+        if(bIni < W.ini) bIni += 1440;
+        const bFin = bIni + W.seg.breakH*60;
+        const cut = [];
+        iv.forEach(p=>{
+          if(bFin<=p.ini || bIni>=p.fin){ cut.push(p); return; }
+          if(p.ini<bIni) cut.push({...p, fin:bIni});
+          if(p.fin>bFin) cut.push({...p, ini:bFin});
+        });
+        iv = cut.filter(p=>p.fin>p.ini);
+        row.almuerzo = `${hhmm(bIni%1440)}–${hhmm(bFin%1440)}`;
+      }
+
+      row.workMin = iv.reduce((s,p)=>s+(p.fin-p.ini),0);
+      row.iv = iv; row.W = W;
+      rows.push(row);
+    });
+
+    /* ── acumulado semanal corrido, dia a dia (independiente del perfil) ── */
+    const accW = new Map();
+    rows.forEach(r=>{
+      const k = weekStart(r.iso), prev = accW.get(k)||0, now = prev + r.workMin;
+      accW.set(k, now);
+      r.semIni = k; r.semFin = addDays(k,6);
+      r.accPrevH = prev/60; r.accH = now/60;
+    });
+    rows.forEach(r=>{ r.semTotH = (accW.get(r.semIni)||0)/60; });
+
+    /* ── PERFIL: administrativo vs rotativo ── */
+    const codes = rows.map(r=>r.turno).filter(c=>c&&c!=='—');
+    const esAdmin = codes.length>0 &&
+      codes.every(c=>cfg.adminPref && c.toUpperCase().startsWith(cfg.adminPref.toUpperCase()));
+    const perfilAuto = esAdmin ? 'ADMINISTRATIVO' : 'ROTATIVO';
+    const perfil = PERFILES[id] || perfilAuto;                       // B-06
+    if(PERFILES[id] && PERFILES[id]!==perfilAuto)
+      add('ADV','B-06',id,emp.nombre,'',
+        `Perfil forzado a ${perfil}; por sus turnos el sistema había detectado ${perfilAuto}.`);
+
+    /* ── determinar qué minutos son EXTRA ── */
+    if(perfil==='ADMINISTRATIVO'){                                  // D-23: diario
+      rows.forEach(r=>{
+        if(!r.iv) return;
+        r.tramos = [];
+        const cuts = r.W ? [r.W.ini, r.W.fin] : [];
+        r.iv.forEach(p=>atomize(p.ini,p.fin,cfg,cuts).forEach(t=>{
+          const dentro = r.W && t.ini>=r.W.ini && t.fin<=r.W.fin;
+          r.tramos.push({...t, extra:!dentro, inferido:p.inferido});
+        }));
+      });
+    } else {                                                        // D-17..D-22: semanal
+      const weeks = new Map();
+      rows.forEach(r=>{ if(!r.iv) return;
+        const k = weekStart(r.iso); if(!weeks.has(k)) weeks.set(k,[]); weeks.get(k).push(r); });
+      weeks.forEach((rs,wk)=>{
+        const wEnd = addDays(wk,6);
+        if(wk < cfg.ini || wEnd > cfg.fin){                          // D-21
+          const anyIn = rs.some(r=>r.inCiclo);
+          if(anyIn) add('ADV','D-21',id,emp.nombre,wk,
+            `La semana ${wk} → ${wEnd} cruza el corte del ciclo. El umbral de ${cfg.umbral} h se evalúa con los días disponibles.`);
+        }
+        let acc = 0;
+        const allT = [];
+        rs.sort((a,b)=>a.iso<b.iso?-1:1).forEach(r=>{
+          r.tramos = [];
+          const cuts = r.W ? [r.W.ini, r.W.fin] : [];
+          r.iv.forEach(p=>atomize(p.ini,p.fin,cfg,cuts).forEach(t=>{
+            allT.push({t, r, inferido:p.inferido});
+          }));
+        });
+        allT.sort((a,b)=>a.t.ini-b.t.ini);
+        const lim = cfg.umbral*60;
+        allT.forEach(({t,r,inferido})=>{
+          const start = acc, end = acc + t.min; acc = end;
+          if(end<=lim){ r.tramos.push({...t, extra:false, inferido}); }
+          else if(start>=lim){ r.tramos.push({...t, extra:true, inferido}); }
+          else {                                                    // parte ordinaria + parte extra
+            const cut = t.ini + (lim-start);
+            r.tramos.push({...t, fin:cut, min:cut-t.ini, extra:false, inferido});
+            r.tramos.push({...t, ini:cut, min:t.fin-cut, extra:true,  inferido});
+          }
+        });
+        const totH = acc/60;
+        const extraH = Math.max(0, totH-cfg.umbral);
+        if(extraH>12){                                              // D-19
+          const anyIn = rs.some(r=>r.inCiclo);
+          if(anyIn) add('ADV','D-19',id,emp.nombre,wk,
+            `Semana con ${extraH.toFixed(2)} h de exceso (>12 h). Requiere justificación obligatoria.`);
+        }
+      });
+    }
+
+    /* ── clasificar, autorizar y redondear ── */
+    const EXTRA_KEYS = ['EXT_D','EXT_N','EXT_FD','EXT_FN'];
+    const raw = Object.fromEntries(CKEYS.map(k=>[k,0]));            // minutos exactos del ciclo
+    rows.forEach(r=>{
+      const festivo = esFestivo(r.tipoDia);
+      const acum = Object.fromEntries(CKEYS.map(k=>[k,0]));
+      (r.tramos||[]).forEach(t=>{
+        const k = classify(festivo, t.extra, t.noct);
+        if(k) acum[k]+=t.min;
+        if(t.inferido) r.inferido = true;
+      });
+      r.workH = r.workMin/60;
+      r.umbral = perfil==='ROTATIVO' ? cfg.umbral : null;
+
+      /* horas ordinarias y suplementarias del dia, con el mismo redondeo D-10..D-13 */
+      r.extraMin = (r.tramos||[]).filter(t=>t.extra).reduce((s,t)=>s+t.min,0);
+      r.ordMin   = r.workMin - r.extraMin;
+      r.ordH     = round05(r.ordMin);
+      r.extraH   = round05(r.extraMin);
+
+      /* entrada y salida reales, y desviacion contra el turno programado */
+      if(r.pares && r.pares.length){
+        r.entTs = r.pares[0].ini;
+        r.salTs = r.pares[r.pares.length-1].fin;
+        if(r.W){
+          r.entDelta = r.entTs - r.W.ini;      // positivo = llego tarde
+          r.salDelta = r.salTs - r.W.fin;      // negativo  = se fue antes
+          if(r.entDelta > cfg.tolPunt || r.salDelta < -cfg.tolPunt) r.flags.push('TARDE');
+        }
+      }
+
+      /* F-09 / F-03 · autorizacion de horas extra */
+      r.autor = autorFor(id, r.iso);
+      if(r.extraMin >= 25){
+        const rechaza = r.autor==='NO' || (r.autor===null && cfg.autor==='exigir');
+        if(rechaza){
+          r.noAutorizado = true;
+          r.flags.push(r.autor==='NO' ? 'F-03' : 'F-09');
+          r.concNoAut = {};
+          EXTRA_KEYS.forEach(k=>{ r.concNoAut[k] = round05(acum[k]); acum[k] = 0; });
+          if(r.inCiclo) add(r.autor==='NO'?'BLOQ':'ADV', r.autor==='NO'?'F-03':'F-09',
+            id, emp.nombre, r.iso,
+            `${(r.extraMin/60).toFixed(2)} h de trabajo suplementario `+
+            (r.autor==='NO' ? 'dentro de un rango NO AUTORIZADO: se excluyen del archivo.'
+                            : 'sin autorizacion registrada: no se pagan mientras la politica exija autorizacion.'));
+        } else if(r.autor===null){
+          r.flags.push('F-09');
+          if(r.inCiclo) add('ADV','F-09',id,emp.nombre,r.iso,
+            `${(r.extraMin/60).toFixed(2)} h de trabajo suplementario sin autorizacion previa registrada. Requiere decision explicita.`);
+        }
+      }
+
+      r.rawMin = acum;
+      CKEYS.forEach(k=>{ r.conc[k] = round05(acum[k]); if(r.inCiclo) raw[k]+=acum[k]; });
+
+      if(perfil==='ROTATIVO' && r.W){                                 // D-17
+        const noPag = (r.tramos||[])
+          .filter(t=>!t.extra && (t.ini>=r.W.fin || t.fin<=r.W.ini))
+          .reduce((s,t)=>s+t.min,0);
+        if(noPag>=25){
+          r.flags.push('D-17'); r.noPagMin = noPag;
+          if(r.inCiclo) add('INFO','D-17',id,emp.nombre,r.iso,
+            `${(noPag/60).toFixed(2)} h por fuera de la jornada NO se pagaron como extra: `+
+            `la semana ${r.semIni} acumulo ${r.semTotH.toFixed(2)} h, `+
+            `por debajo del umbral de ${cfg.umbral} h.`);
+        }
+      }
+      const extraDia = r.extraMin/60;
+      if(r.inCiclo && extraDia>2 && (!r.W || (r.W.fin-r.W.ini)/60 < 11))     // D-20
+        add('ADV','D-20',id,emp.nombre,r.iso,`${extraDia.toFixed(2)} h extra en un solo día (>2 h). Requiere justificación.`);
+      if(r.inCiclo && r.workH>24) add('BLOQ','I-04',id,emp.nombre,r.iso,'Más de 24 h en un día calendario.');
+      if(r.inCiclo && r.inferido) add('ADV','F-10',id,emp.nombre,r.iso,'El cálculo del día usa un valor INFERIDO. Debe aprobarse explícitamente.');
+    });
+
+    const ciclo = rows.filter(r=>r.inCiclo);
+    const tot = Object.fromEntries(CKEYS.map(k=>[k,
+      cfg.redondeo==='ciclo' ? round05(raw[k]) : ciclo.reduce((s,r)=>s+r.conc[k],0) ]));
+
+    if(!tieneMarcasCiclo && windows.some(w=>w.iso>=cfg.ini && w.iso<=cfg.fin))
+      add('INFO','E-03',id,emp.nombre,'','Empleado activo con turnos programados y sin ninguna marcación en todo el ciclo.');
+    if(!M.sched.has(id) && punches.length)
+      add('BLOQ','A-09',id,emp.nombre,'','Empleado con marcaciones pero sin ninguna programación de turno.');
+    if(emp.estado && /deshab/i.test(emp.estado) && ciclo.some(r=>r.workMin>0))
+      add('ADV','E-10',id,emp.nombre,'','Empleado deshabilitado con marcaciones en el ciclo.');
+    if(!emp.cargo && ciclo.some(r=>r.workMin>0))
+      add('BLOQ','B-14',id,emp.nombre,'','Empleado sin cargo asignado: no se puede determinar el perfil laboral.');
+
+    byEmp.set(id,{emp, perfil, perfilAuto, rows, ciclo, tot, rawMin:raw,
+                  horas:  ciclo.reduce((s,r)=>s+r.workH,0),
+                  ordH:   ciclo.reduce((s,r)=>s+(r.ordH||0),0),
+                  extraH: ciclo.reduce((s,r)=>s+(r.extraH||0),0),
+                  sinAut: ciclo.filter(r=>r.extraMin>=25 && r.autor===null).length,
+                  noAut:  ciclo.filter(r=>r.noAutorizado).length,
+                  tardes: ciclo.filter(r=>r.flags.includes('TARDE')).length,
+                  tieneConceptos: CKEYS.some(k=>tot[k]>0)});
+    days.push(...ciclo);
+  }
+
+  const cons = [...byEmp.values()]
+    .filter(e=>e.tieneConceptos)                                     // H-02
+    .sort((a,b)=>a.emp.nombre.localeCompare(b.emp.nombre,'es'));
+
+  return { byEmp, cons, exc, cfg, days };
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   RENDER
+   ══════════════════════════════════════════════════════════════════ */
+const $  = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+const esc = s => String(s==null?'':s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+const fmt = n => n===0||n==null ? '' : (Math.round(n*100)/100).toString();
+
+const sevCls = s => s==='BLOQ'?'t-err' : s==='ADV'?'t-warn' : 't-mut';
+
+function tipHTML(code){
+  const n = NOV[code];
+  if(!n) return `<div class="pt"><b>${esc(code)}</b></div>`;
+  return `<div class="pt"><span class="tag ${sevCls(n.s)}">${esc(code)}</span> <b>${esc(n.t)}</b></div>
+    <div class="pl"><i>Qué pasó</i>${esc(n.q)}</div>
+    <div class="pl"><i>Por qué</i>${esc(n.p)}</div>
+    <div class="pl"><i>Qué hacer</i>${esc(n.a)}</div>`;
+}
+/** Chip de novedad: tooltip al pasar el cursor, clic lleva a la excepción. */
+function chip(code, r){
+  const n = NOV[code];
+  return `<span class="tag ${sevCls(n?n.s:'INFO')}" data-nov="${esc(code)}"`+
+         (r?` data-emp="${esc(r.id)}" data-fecha="${esc(r.iso)}"`:'')+`>${esc(code)}</span>`;
+}
+function initPop(){
+  const pop = $('#pop');
+  document.addEventListener('mouseover', ev=>{
+    const el = ev.target.closest('[data-nov],[data-tip]');
+    if(!el){ pop.style.display='none'; return; }
+    pop.innerHTML = el.dataset.nov ? tipHTML(el.dataset.nov)
+                                   : `<div class="pl">${esc(el.dataset.tip)}</div>`;
+    pop.style.display='block';
+    const rc = el.getBoundingClientRect(), pr = pop.getBoundingClientRect();
+    let x = rc.left, y = rc.bottom + 8;
+    if(x + pr.width > innerWidth - 12) x = innerWidth - pr.width - 12;
+    if(y + pr.height > innerHeight - 12) y = rc.top - pr.height - 8;
+    pop.style.left = Math.max(12,x)+'px'; pop.style.top = Math.max(12,y)+'px';
+  });
+  document.addEventListener('mouseout', ev=>{
+    if(!ev.relatedTarget || !ev.relatedTarget.closest?.('[data-nov],[data-tip]'))
+      pop.style.display='none';
+  });
+  document.addEventListener('click', ev=>{
+    const el = ev.target.closest('.tag[data-nov]');
+    if(!el || !RESULT) return;
+    $('#fExc').value=''; $('#qExc').value = el.dataset.nov;
+    showTab('exc'); renderExc(); pop.style.display='none';
+  });
+}
+function renderGlosario(){
+  const cfg = RESULT ? RESULT.cfg : {corteOn:false};
+  $('#gConc tbody').innerHTML = CONCEPTS.map(c=>
+    `<tr><td class="mono"><b>${c.code(cfg)}</b></td><td>${esc(c.label)}</td>
+     <td>${esc(CONC_DESC[c.key])}</td></tr>`).join('');
+  $('#gNov tbody').innerHTML = Object.entries(NOV).map(([k,n])=>
+    `<tr><td><span class="tag ${sevCls(n.s)}">${esc(k)}</span></td><td><b>${esc(n.t)}</b></td>
+     <td>${esc(n.q)}</td><td>${esc(n.p)}</td><td>${esc(n.a)}</td></tr>`).join('');
+}
+
+function toast(m){ const t=$('#toast'); t.textContent=m; t.classList.add('on');
+  clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove('on'),2600); }
+
+function conceptCols(cfg){
+  return CONCEPTS.map(c=>({key:c.key, code:c.code(cfg), label:c.label,
+    tip:`${c.code(cfg)} — ${c.label}. ${CONC_DESC[c.key]}`,
+    head:`${c.code(cfg)} - ${c.label}`}));
+}
+
+function renderMatriz(){
+  $('#matriz').innerHTML = MATRIZ.map(r=>
+    `<tr><td>${esc(r[0])}</td><td>${esc(r[1])}</td><td>${esc(r[2])}</td>
+     <td class="mono">${esc(r[3])}</td><td><span class="tag t-mut">${esc(r[4])}</span></td></tr>`).join('');
+}
+
+/** Filtro activo del consolidado. Lo que ve en pantalla es lo que exporta. */
+function filtroActivo(){
+  return { cia:    $('#fCia').value,
+           depto:  $('#fDepto').value,
+           perfil: $('#fPerfil').value,
+           q:      $('#qCons').value.trim().toLowerCase() };
+}
+function filtroHay(){ const f=filtroActivo(); return !!(f.cia||f.depto||f.perfil||f.q); }
+function filtroSlug(){
+  const f = filtroActivo();
+  const t = [f.cia, f.depto, f.perfil].filter(Boolean).join('_');
+  return t ? '_'+t.replace(/[^\wÁÉÍÓÚÑáéíóúñ]+/g,'-').slice(0,40) : '';
+}
+function consFiltrado(){
+  const f = filtroActivo();
+  return RESULT.cons.filter(e=>
+       (!f.cia    || e.emp.empresa===f.cia)
+    && (!f.depto  || e.emp.depto===f.depto)
+    && (!f.perfil || e.perfil===f.perfil)
+    && (!f.q      || e.emp.id.includes(f.q) || e.emp.nombre.toLowerCase().includes(f.q)));
+}
+/** Puebla los desplegables con los valores presentes en los datos cargados. */
+function fillFiltros(){
+  const cias = new Set(), deps = new Set();
+  RESULT.byEmp.forEach(e=>{ if(e.emp.empresa) cias.add(e.emp.empresa);
+                            if(e.emp.depto)   deps.add(e.emp.depto); });
+  const keep = (sel, vals, todos)=>{
+    const prev = sel.value;
+    sel.innerHTML = `<option value="">${todos}</option>` +
+      [...vals].sort((a,b)=>a.localeCompare(b,'es')).map(v=>`<option>${esc(v)}</option>`).join('');
+    if([...vals].includes(prev)) sel.value = prev;
+  };
+  keep($('#fCia'),   cias, 'Todas las compañías');
+  keep($('#fDepto'), deps, 'Todos los departamentos');
+  keep($('#fExcDep'),deps, 'Todos los departamentos');
+}
+
+function renderCons(){
+  const R = RESULT, cols = conceptCols(R.cfg);
+  const list = consFiltrado();
+  $('#fInfo').textContent = filtroHay() ? `${list.length} de ${R.cons.length}` : '';
+
+  $('#tCons thead').innerHTML = `<tr><th>COD_EMPLEADO</th><th>NOMBRE</th><th>DEPARTAMENTO</th><th>COMPAÑÍA</th>` +
+    cols.map(c=>`<th class="num cw" data-tip="${esc(c.tip)}"><b>${esc(c.code)}</b><i>${esc(c.label)}</i></th>`).join('') +
+    `<th class="num cw" data-tip="Horas trabajadas reales del ciclo, sin redondear."><b>Horas</b><i>trabajadas</i></th>
+     <th class="num cw" data-tip="Horas ordinarias del ciclo, redondeadas en pasos de 0,5 h con el mismo criterio D-10 a D-13 (:00-:24 baja, :25-:49 media hora, :50-:59 hora completa)."><b>Ordin.</b><i>redondeadas</i></th>
+     <th class="num cw" data-tip="Horas de trabajo suplementario del ciclo, redondeadas en pasos de 0,5 h. Es la suma de los cuatro conceptos de extra antes de separar por franja."><b>Extras</b><i>redondeadas</i></th>
+     <th>Perfil</th><th data-nov="F-09">Autoriz.</th><th>Estado</th></tr>`;
+
+  $('#tCons tbody').innerHTML = list.map(e=>{
+    const alerts = R.exc.filter(x=>x.id===e.emp.id);
+    const bloq = alerts.filter(x=>x.sev==='BLOQ').length;
+    const adv  = alerts.filter(x=>x.sev==='ADV').length;
+    const st = bloq ? `<span class="tag t-err">${bloq} bloq.</span>`
+             : adv  ? `<span class="tag t-warn">${adv} adv.</span>`
+                    : `<span class="tag t-ok">OK</span>`;
+    return `<tr class="clickable" data-id="${esc(e.emp.id)}">
+      <td class="mono">${esc(e.emp.id)}</td><td>${esc(e.emp.nombre)}</td>
+       <td>${esc(e.emp.depto||'—')}</td><td>${esc(e.emp.empresa||'—')}</td>` +
+      cols.map(c=>`<td class="num cw">${fmt(e.tot[c.key])}</td>`).join('') +
+      `<td class="num cw">${e.horas.toFixed(2)}</td>
+       <td class="num cw">${fmt(e.ordH)}</td>
+       <td class="num cw">${fmt(e.extraH)}</td>
+       <td><span class="tag ${e.perfil==='ADMINISTRATIVO'?'t-info':'t-mut'}">${e.perfil[0]}${e.perfil.slice(1).toLowerCase()}</span></td>
+       <td>${ e.noAut  ? `<span class="tag t-err" data-nov="F-03">${e.noAut} rechaz.</span>`
+                      : e.sinAut ? `<span class="tag t-warn" data-nov="F-09">${e.sinAut} sin autorizar</span>`
+                      : e.extraH ? `<span class="tag t-ok">Autorizado</span>`
+                      : `<span class="tag t-mut">sin extras</span>` }</td>
+       <td>${st}</td></tr>`;
+  }).join('') || `<tr><td colspan="16" class="muted" style="padding:18px">${
+    filtroHay() ? 'Ningún empleado coincide con el filtro activo.'
+                : 'Sin empleados con conceptos en el ciclo.'}</td></tr>`;
+
+  $$('#tCons tbody tr.clickable').forEach(tr=>tr.onclick=()=>{
+    CUR_EMP = tr.dataset.id; $('#selEmp').value = CUR_EMP;
+    showTab('det'); renderDet();
+  });
+
+  const ids  = new Set(list.map(e=>e.emp.id));
+  const totH = list.reduce((s,e)=>s+e.horas,0);
+  const tots = Object.fromEntries(CKEYS.map(k=>[k, list.reduce((s,e)=>s+e.tot[k],0)]));
+  $('#kpis').innerHTML =
+    `<div><div class="k">Empleados con conceptos</div><div class="v">${list.length}</div></div>
+     <div><div class="k">Horas trabajadas</div><div class="v">${totH.toFixed(1)}</div></div>
+     <div><div class="k">Ordinarias</div><div class="v">${fmt(list.reduce((s,e)=>s+e.ordH,0))||0}</div></div>
+     <div><div class="k">Extras</div><div class="v">${fmt(list.reduce((s,e)=>s+e.extraH,0))||0}</div></div>` +
+    cols.filter(c=>tots[c.key]>0).map(c=>
+      `<div data-tip="${esc(c.tip)}"><div class="k">${esc(c.code)}</div>
+       <div class="v">${fmt(tots[c.key])}</div></div>`).join('') +
+    `<div><div class="k">Excepciones</div><div class="v">${
+       filtroHay() ? R.exc.filter(x=>ids.has(x.id)).length : R.exc.length}</div></div>`;
+}
+
+/** Celda de entrada o salida, con color si hay desviacion contra el turno. */
+function celdaHora(r, cual){
+  const ts = cual==='ent' ? r.entTs : r.salTs;
+  if(ts==null) return '<td class="mono muted">—</td>';
+  const d = cual==='ent' ? r.entDelta : r.salDelta;
+  const tol = RESULT.cfg.tolPunt;
+  const mal = d!=null && (cual==='ent' ? d>tol : d<-tol);
+  const sfx = d==null ? '' : ` <span style="font-size:10px;opacity:.8">${d>0?'+':''}${Math.round(d)}</span>`;
+  const tip = d==null ? 'Sin turno programado: no hay hora contra la cual comparar.'
+    : cual==='ent'
+      ? (d>0 ? `Ingreso ${Math.round(d)} min despues del inicio del turno. El tiempo antes del turno nunca cuenta (D-15).`
+             : `Ingreso ${Math.abs(Math.round(d))} min antes del inicio del turno. Ese tiempo no se paga (D-15).`)
+      : (d<0 ? `Salida ${Math.abs(Math.round(d))} min antes del fin del turno.`
+             : `Salida ${Math.round(d)} min despues del fin del turno.`);
+  return `<td class="mono ${mal?'dev':''}" data-tip="${esc(tip)}">${hhmm(ts)}${sfx}</td>`;
+}
+/** Celda del acumulado semanal corrido. */
+function celdaSemana(r){
+  if(r.accH==null) return '<td class="num muted"></td>';
+  const u = r.umbral;
+  const cruza = u!=null && r.accPrevH < u && r.accH >= u;
+  const pasa  = u!=null && r.accH > u;
+  const txt = u!=null ? `${r.accH.toFixed(2)} / ${u}` : r.accH.toFixed(2);
+  const tip = u!=null
+    ? `Semana ${r.semIni} a ${r.semFin}. Al cierre de este dia lleva ${r.accH.toFixed(2)} h de ${u} h. `+
+      (pasa ? `Ya paso el umbral: lo que exceda se paga como extra (D-18).`
+            : `Faltan ${(u-r.accH).toFixed(2)} h para el umbral; por ahora todo es ordinario (D-17).`)+
+      ` Total de la semana: ${r.semTotH.toFixed(2)} h.`
+    : `Personal administrativo: no aplica umbral semanal, cada dia se compara contra su jornada (D-23). Acumulado informativo de la semana ${r.semIni}.`;
+  return `<td class="num ${pasa?'over':'muted'} ${cruza?'cross':''}" data-tip="${esc(tip)}">${txt}</td>`;
+}
+
+/** Rangos de autorizacion de extras del empleado en pantalla. */
+function renderAutor(){
+  const id = CUR_EMP;
+  const list = (AUTOR[id]||[]).slice().sort((a,b)=>a.ini<b.ini?-1:1);
+  $('#tAut tbody').innerHTML = list.map((r,i)=>
+    `<tr><td class="mono">${esc(r.ini)}</td><td class="mono">${esc(r.fin)}</td>
+     <td><span class="tag ${r.estado==='AUT'?'t-ok':'t-err'}">${r.estado==='AUT'?'Autorizado':'No autorizado'}</span></td>
+     <td>${esc(r.motivo||'')}</td>
+     <td><button data-del="${i}" style="padding:2px 8px">Quitar</button></td></tr>`).join('')
+    || `<tr><td colspan="5" class="muted">Sin rangos registrados. Las extras se calculan y se marcan como F-09 hasta que exista una decision.</td></tr>`;
+  $$('#tAut button[data-del]').forEach(b=>b.onclick=()=>{
+    AUTOR[id].splice(+b.dataset.del,1);
+    if(!AUTOR[id].length) delete AUTOR[id];
+    localStorage.setItem('mb_autor',JSON.stringify(AUTOR));
+    runCalc(); showTab('det');
+  });
+}
+function addAutor(ini, fin, estado, motivo){
+  if(!CUR_EMP) return;
+  if(!ini||!fin||ini>fin){ toast('Rango de fechas invalido'); return; }
+  (AUTOR[CUR_EMP] = AUTOR[CUR_EMP]||[]).push({ini, fin, estado, motivo:motivo||''});
+  localStorage.setItem('mb_autor',JSON.stringify(AUTOR));
+  runCalc(); showTab('det');
+}
+
+function renderDet(){
+  const R = RESULT, cols = conceptCols(R.cfg);
+  const e = R.byEmp.get(CUR_EMP);
+  renderAutor();
+  if(!e){ $('#tDet thead').innerHTML=''; $('#tDet tbody').innerHTML=''; $('#kpiDet').innerHTML=''; return; }
+
+  $('#kpiDet').innerHTML =
+    `<div><div class="k">Código</div><div class="v">${esc(e.emp.id)}</div></div>
+     <div data-tip="${e.perfil==='ROTATIVO'
+        ?'Rotativo: las extras se miden contra el umbral semanal lunes a domingo (D-17, D-18). Bajo el umbral todo es ordinario.'
+        :'Administrativo: no aplica umbral semanal. Cada día se compara contra su jornada programada (D-23).'}${
+        e.perfil!==e.perfilAuto?' · Forzado manualmente; el sistema detectó '+e.perfilAuto+'.':''}"
+      ><div class="k">Perfil${e.perfil!==e.perfilAuto?' *':''}</div>
+       <div class="v" style="font-size:13px">${e.perfil}</div></div>
+     <div><div class="k">Cargo</div><div class="v" style="font-size:12px">${esc(e.emp.cargo||'—')}</div></div>
+     <div><div class="k">Horas ciclo</div><div class="v">${e.horas.toFixed(2)}</div></div>
+     <div data-tip="Horas ordinarias del ciclo, redondeadas en pasos de 0,5 h."><div class="k">Ordinarias</div><div class="v">${fmt(e.ordH)||0}</div></div>
+     <div data-tip="Horas suplementarias del ciclo, redondeadas en pasos de 0,5 h."><div class="k">Extras</div><div class="v">${fmt(e.extraH)||0}</div></div>
+     <div data-nov="TARDE"><div class="k">Dias con desvio</div><div class="v">${e.tardes}</div></div>` +
+    cols.filter(c=>e.tot[c.key]>0).map(c=>
+      `<div data-tip="${esc(c.tip)}"><div class="k">${esc(c.code)}</div>
+       <div class="v">${fmt(e.tot[c.key])}</div></div>`).join('');
+
+  $('#tDet thead').innerHTML = `<tr>
+    <th>Fecha</th><th>Día</th><th>Tipo de día</th><th>Turno</th><th>Programado</th>
+    <th>Marcaciones</th>
+    <th data-tip="Primera marcacion del dia. En rojo si es posterior al inicio del turno por encima de la tolerancia de puntualidad. El numero es la desviacion en minutos.">Entro</th>
+    <th data-tip="Ultima marcacion del dia. En rojo si es anterior al fin del turno por encima de la tolerancia de puntualidad. El numero es la desviacion en minutos.">Salio</th>
+    <th>Almuerzo</th>
+    <th class="num" data-tip="Tiempo trabajado real del dia, sin redondear.">Hrs</th>
+    <th class="num" data-tip="Horas ordinarias del dia, redondeadas en pasos de 0,5 h (D-10 a D-13).">Ordin.</th>
+    <th class="num" data-tip="Horas de trabajo suplementario del dia, redondeadas en pasos de 0,5 h. Tachadas si no estan autorizadas.">Extra</th>
+    <th class="num" data-tip="Acumulado corrido de la semana lunes a domingo al cierre de este dia, frente al umbral. En verde el dia en que se cruza el umbral: desde ahi lo trabajado se paga como extra (D-17 y D-18). El personal administrativo no usa umbral: se compara cada dia contra su jornada (D-23).">Acum. semana</th>` +
+    cols.map(c=>`<th class="num cw" data-tip="${esc(c.tip)}"><b>${esc(c.code)}</b><i>${esc(c.label.split(' ').slice(0,2).join(' '))}</i></th>`).join('') +
+    `<th>Novedades</th></tr>`;
+
+  $('#tDet tbody').innerHTML = e.ciclo.map(r=>{
+    const tag = r.tipoDia==='FES' ? 't-warn' : r.tipoDia==='DOM' ? 't-info'
+              : r.tipoDia==='DES' ? 't-mut' : 't-mut';
+    const flags = [...new Set(r.flags)].map(f=>chip(f,r)).join(' ') +
+      (r.inferido?' '+chip('INFERIDO',r):'');
+    return `<tr>
+      <td class="mono">${r.iso}</td><td>${r.dow}</td>
+      <td><span class="tag ${tag}">${esc(r.tipoLabel)}</span></td>
+      <td class="mono">${esc(r.turno)}</td><td class="mono">${esc(r.prog)}</td>
+      <td class="mono">${esc(r.marcas||'—')}${r.descartadas?
+          ` <span class="desc" data-nov="SUGERIDO">${esc(r.descartadas.join(' '))}</span>`:''}</td>
+      ${celdaHora(r,'ent')}${celdaHora(r,'sal')}
+      <td class="mono muted">${esc(r.almuerzo||'—')}</td>
+      <td class="num">${r.workMin?(r.workMin/60).toFixed(2):''}</td>
+      <td class="num">${fmt(r.ordH)}</td>
+      <td class="num ${r.noAutorizado?'noaut':''}">${
+        r.noAutorizado ? fmt(Object.values(r.concNoAut||{}).reduce((a,b)=>a+b,0)) : fmt(r.extraH)}</td>
+      ${celdaSemana(r)}` +
+      cols.map(c=>`<td class="num cw">${fmt(r.conc[c.key])}</td>`).join('') +
+      `<td>${flags||'<span class="tag t-ok">OK</span>'}</td></tr>`;
+  }).join('');
+}
+
+function renderExc(){
+  const f = $('#fExc').value, q = $('#qExc').value.trim().toLowerCase();
+  const dep = $('#fExcDep').value;
+  const list = RESULT.exc
+    .filter(x=>!f||x.sev===f)
+    .filter(x=>!dep || (RESULT.byEmp.get(x.id)||{}).emp?.depto===dep)
+    .filter(x=>!q || x.code.toLowerCase().includes(q) || x.id.toLowerCase().includes(q)
+             || x.nombre.toLowerCase().includes(q))
+    .sort((a,b)=>(a.id+a.fecha).localeCompare(b.id+b.fecha));
+  $('#tExc thead').innerHTML =
+    `<tr><th>Severidad</th><th>Cond.</th><th>Código</th><th>Nombre</th><th>Fecha</th><th>Descripción</th></tr>`;
+  $('#tExc tbody').innerHTML = list.map(x=>{
+    const t = x.sev==='BLOQ'?'t-err':x.sev==='ADV'?'t-warn':'t-mut';
+    return `<tr><td><span class="tag ${t}">${x.sev}</span></td>
+      <td class="mono" data-nov="${esc(x.code)}">${esc(x.code)}</td><td class="mono">${esc(x.id)}</td>
+      <td>${esc(x.nombre)}</td><td class="mono">${esc(x.fecha)}</td><td>${esc(x.msg)}</td></tr>`;
+  }).join('') || `<tr><td colspan="6" class="muted" style="padding:18px">Sin excepciones.</td></tr>`;
+}
+
+function renderCal(){
+  const id = $('#selEmpCal').value, mes = $('#selMes').value;
+  if(!id||!mes) return;
+  const e = RESULT.byEmp.get(id);
+  const [y,m] = mes.split('-').map(Number);
+  const first = `${y}-${pad(m)}-01`;
+  const last  = numd(dnum(`${m===12?y+1:y}-${pad(m===12?1:m+1)}-01`)-1);
+  const lead  = dow(first);
+  const byDate = new Map((e?.rows||[]).map(r=>[r.iso,r]));
+
+  $('#calHd').innerHTML = DOW_ES.map(d=>`<div class="hd">${d}</div>`).join('');
+  let html = '';
+  for(let i=0;i<lead;i++) html += `<div class="d out"></div>`;
+  rangeDays(first,last).forEach(iso=>{
+    const r   = byDate.get(iso);
+    const fes = isHoliday(iso);
+    const sf  = shiftFor(MODEL,id,iso);
+    const seg = sf.code ? segmentFor(MODEL,sf.code,iso) : null;
+    const cls = ['d'];
+    if(fes) cls.push('fes'); else if(dow(iso)===0) cls.push('dom');
+    if(!seg) cls.push('desc');
+    if(OVERRIDES[id+'|'+iso]!==undefined) cls.push('ovr');
+    html += `<div class="${cls.join(' ')}" data-iso="${iso}">
+      <div class="n">${+iso.slice(-2)}</div>
+      ${seg?`<div class="s">${esc(sf.code)}</div><div class="h">${hhmm(seg.ent)}–${hhmm(seg.sal)}</div>`
+           :`<div class="h muted">sin turno</div>`}
+      ${fes?`<div class="h" style="color:#c2410c">${esc(fes)}</div>`:''}
+      ${r&&r.workMin?`<div class="h"><b>${(r.workMin/60).toFixed(1)} h</b></div>`:''}
+    </div>`;
+  });
+  $('#calGrid').innerHTML = html;
+
+  $$('#calGrid .d[data-iso]').forEach(el=>el.onclick=()=>{
+    const iso = el.dataset.iso;
+    const codes = [...MODEL.shifts.keys()];
+    const cur = shiftFor(MODEL,id,iso).code || '';
+    const val = prompt(
+      `Turno para ${iso}\n\nTurnos disponibles:\n${codes.join(', ')}\n\n` +
+      `Escriba el código, "-" para dejar sin turno, o vacío para volver a la programación regular.`, cur);
+    if(val===null) return;
+    const k = id+'|'+iso;
+    if(val.trim()==='') delete OVERRIDES[k];
+    else if(val.trim()==='-') OVERRIDES[k]='';
+    else if(MODEL.shifts.has(val.trim())) OVERRIDES[k]=val.trim();
+    else { toast('Código de turno inexistente'); return; }
+    localStorage.setItem('mb_overrides',JSON.stringify(OVERRIDES));
+    runCalc(); showTab('cal'); renderCal();
+  });
+}
+
+function fillSelects(){
+  const opts = [...RESULT.byEmp.values()]
+    .sort((a,b)=>a.emp.nombre.localeCompare(b.emp.nombre,'es'))
+    .map(e=>`<option value="${esc(e.emp.id)}">${esc(e.emp.id)} — ${esc(e.emp.nombre)}</option>`).join('');
+  $('#selEmp').innerHTML = opts; $('#selEmpCal').innerHTML = opts;
+  if(!CUR_EMP || !RESULT.byEmp.has(CUR_EMP))
+    CUR_EMP = RESULT.cons[0]?.emp.id || [...RESULT.byEmp.keys()][0] || null;
+  if(CUR_EMP){ $('#selEmp').value=CUR_EMP; $('#selEmpCal').value=CUR_EMP;
+               $('#selPerfil').value = PERFILES[CUR_EMP]||''; }
+
+  const ms = new Set();
+  rangeDays(RESULT.cfg.ini, RESULT.cfg.fin).forEach(d=>ms.add(d.slice(0,7)));
+  $('#selMes').innerHTML = [...ms].map(m=>`<option value="${m}">${m}</option>`).join('');
+}
+
+function showTab(t){
+  $$('.tabs button').forEach(b=>b.classList.toggle('on', b.dataset.tab===t));
+  $$('.tabwrap').forEach(s=>s.classList.toggle('on', s.id==='tab-'+t));
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   EXPORTACIONES
+   ══════════════════════════════════════════════════════════════════ */
+function save(aoaMap, name){
+  const wb = XLSX.utils.book_new();
+  Object.entries(aoaMap).forEach(([sh,aoa])=>{
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols'] = (aoa[0]||[]).map((_,i)=>({wch: Math.min(42,
+      Math.max(10, ...aoa.slice(0,300).map(r=>String(r[i]??'').length+2)))}));
+    XLSX.utils.book_append_sheet(wb, ws, sh.slice(0,31));
+  });
+  XLSX.writeFile(wb, name);
+  toast('Archivo generado: '+name);
+}
+const stamp = () => `${filtroSlug()}_${RESULT.cfg.ini}_${RESULT.cfg.fin}`.replace(/^_/,'');
+
+function aoaCons(){
+  const cols = conceptCols(RESULT.cfg);
+  const head = ['COD_EMPLEADO','NOMBRE', ...cols.map(c=>c.head),
+                'HORAS TRABAJADAS','HORAS ORDINARIAS','HORAS EXTRA',
+                'DIAS SIN AUTORIZAR','DIAS RECHAZADOS','DIAS CON DESVIO',
+                'PERFIL','CARGO','DEPARTAMENTO'];
+  const body = consFiltrado().map(e=>[
+    e.emp.id, e.emp.nombre,
+    ...cols.map(c=>e.tot[c.key]||''),
+    +e.horas.toFixed(2), e.ordH||'', e.extraH||'',
+    e.sinAut||'', e.noAut||'', e.tardes||'',
+    e.perfil, e.emp.cargo, e.emp.depto ]);
+  return [head, ...body];
+}
+function aoaDet(e){
+  const cols = conceptCols(RESULT.cfg);
+  const head = ['COD_EMPLEADO','NOMBRE','FECHA','DIA','TIPO DE DIA','TURNO','PROGRAMADO',
+                'MARCACIONES','MARCACIONES DESCARTADAS','ENTRO','SALIO',
+                'MIN TARDE ENTRADA','MIN ANTES SALIDA','ALMUERZO',
+                'HORAS TRABAJADAS','HORAS ORDINARIAS','HORAS EXTRA','EXTRA NO AUTORIZADA',
+                'PERFIL','ACUMULADO SEMANA','TOTAL SEMANA','UMBRAL SEMANA','AUTORIZACION',
+                ...cols.map(c=>c.head), 'INFERIDO','NOVEDADES','EXPLICACION'];
+  const body = e.ciclo.map(r=>[
+    e.emp.id, e.emp.nombre, r.iso, r.dow, r.tipoLabel, r.turno, r.prog, r.marcas,
+    (r.descartadas||[]).join(' '),
+    r.entTs!=null?hhmm(r.entTs):'', r.salTs!=null?hhmm(r.salTs):'',
+    r.entDelta>0?Math.round(r.entDelta):'', r.salDelta<0?Math.round(-r.salDelta):'',
+    r.almuerzo||'',
+    r.workMin?+(r.workMin/60).toFixed(2):'', r.ordH||'',
+    r.noAutorizado?'':(r.extraH||''),
+    r.noAutorizado?Object.values(r.concNoAut||{}).reduce((a,b)=>a+b,0):'',
+    e.perfil, r.accH!=null?+r.accH.toFixed(2):'', r.semTotH!=null?+r.semTotH.toFixed(2):'',
+    r.umbral||'',
+    r.autor==='AUT'?'AUTORIZADO':r.autor==='NO'?'NO AUTORIZADO':(r.extraMin>=25?'SIN DEFINIR':''),
+    ...cols.map(c=>r.conc[c.key]||''),
+    r.inferido?'SI':'', [...new Set(r.flags)].join(' '),
+    [...new Set(r.flags)].map(f=>NOV[f]?`${f}: ${NOV[f].t} — ${NOV[f].q}`:f).join(' | ') ]);
+  return [head, ...body];
+}
+function aoaExc(ids){
+  const src = ids ? RESULT.exc.filter(x=>ids.has(x.id)) : RESULT.exc;
+  return [['SEVERIDAD','CONDICION','COD_EMPLEADO','NOMBRE','DEPARTAMENTO','FECHA','DESCRIPCION'],
+    ...src.map(x=>[x.sev,x.code,x.id,x.nombre,
+                   (RESULT.byEmp.get(x.id)||{}).emp?.depto||'',x.fecha,x.msg])];
+}
+function aoaCal(id, mes){
+  const e = RESULT.byEmp.get(id);
+  const [y,m] = mes.split('-').map(Number);
+  const first = `${y}-${pad(m)}-01`;
+  const last  = numd(dnum(`${m===12?y+1:y}-${pad(m===12?1:m+1)}-01`)-1);
+  const byDate = new Map((e?.rows||[]).map(r=>[r.iso,r]));
+  const head = ['COD_EMPLEADO','NOMBRE','FECHA','DIA','TURNO','HORA ENTRADA','HORA SALIDA',
+                'TIPO DE DIA','FESTIVO','ORIGEN','HORAS TRABAJADAS'];
+  const body = rangeDays(first,last).map(iso=>{
+    const sf = shiftFor(MODEL,id,iso), seg = sf.code?segmentFor(MODEL,sf.code,iso):null;
+    const r = byDate.get(iso), fes = isHoliday(iso);
+    return [id, e?.emp.nombre||'', iso, DOW_ES[dow(iso)], sf.code||'SIN TURNO',
+      seg?hhmm(seg.ent):'', seg?hhmm(seg.sal):'',
+      fes?'FESTIVO':dow(iso)===0?'DOMINGO':seg?'ORDINARIO':'DESCANSO',
+      fes||'', sf.source, r&&r.workMin?+(r.workMin/60).toFixed(2):''];
+  });
+  return [head, ...body];
+}
+/** H-01..H-12: TAB, UTF-8, LF, sin encabezado, una fila por empleado y concepto. */
+function sinergyTxt(){
+  const cfg = RESULT.cfg, cols = conceptCols(cfg);
+  const sel = consFiltrado();
+  if(filtroHay() && !confirm(
+     `Hay un filtro activo: el archivo saldría con ${sel.length} de ${RESULT.cons.length} empleados.\n\n`+
+     `Acepte para generar solo con los filtrados, o cancele y limpie el filtro para el ciclo completo.`)) return;
+  const f = iso => { const [y,m,d]=iso.split('-'); return `${+d}/${m}/${y}`; };   // H-09
+  const lines = [];
+  sel.forEach(e=>cols.forEach(c=>{
+    const v = e.tot[c.key];
+    if(!v) return;                                                                // H-01
+    lines.push([e.emp.id, c.code, '+', (Math.round(v*100)/100).toString(),
+                f(cfg.ini), f(cfg.fin), '','','','','',''].join('\t'));
+  }));
+  const blob = new Blob([lines.join('\n')], {type:'text/plain;charset=utf-8'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `FINAL_SINER_${cfg.ini.replace(/-/g,'')}_${cfg.fin.replace(/-/g,'')}.txt`;
+  a.click(); URL.revokeObjectURL(a.href);
+  const bloq = RESULT.exc.filter(x=>x.sev==='BLOQ').length;
+  toast(bloq ? `Archivo generado con ${bloq} excepción(es) BLOQUEANTE(S) sin resolver.`
+             : `Archivo Sinergy generado · ${lines.length} filas.`);
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   ARRANQUE
+   ══════════════════════════════════════════════════════════════════ */
+function checkReady(){
+  const ok = DATA.emp&&DATA.tur&&DATA.hor&&DATA.mar;
+  $('#btnCalc').disabled = !ok;
+  const n = k => DATA[k] ? DATA[k].rows.length : 0;
+  $('#loadInfo').textContent =
+    `Empleados: ${n('emp')} · Turnos: ${n('tur')} · Programación: ${n('hor')} · Marcaciones: ${n('mar')}`;
+  if(ok && !$('#cIni').value && DATA.mar.rows.length){
+    const ds = DATA.mar.rows.map(r=>toISO(pick(r,'^fecha'))).filter(Boolean).sort();
+    $('#cIni').value = ds[0]; $('#cFin').value = ds[ds.length-1];
+    $('#aIni').value = ds[0]; $('#aFin').value = ds[ds.length-1];
+  }
+}
+function hook(inputId, key){
+  $('#'+inputId).addEventListener('change', async ev=>{
+    const f = ev.target.files[0]; if(!f) return;
+    try{ DATA[key] = readSheet(await f.arrayBuffer()); toast(`${f.name}: ${DATA[key].rows.length} filas`); }
+    catch(err){ DATA[key]=null; toast('Error leyendo '+f.name+': '+err.message); }
+    checkReady();
+  });
+}
+function runCalc(){
+  try{
+    MODEL  = buildModel();
+    RESULT = compute(MODEL, readConfig());
+    fillSelects(); fillFiltros(); renderCons(); renderDet(); renderExc(); renderCal(); renderGlosario();
+    const b = RESULT.exc.filter(x=>x.sev==='BLOQ').length;
+    $('#status').innerHTML = `${RESULT.cons.length} empleados con conceptos · ` +
+      (b?`<b style="color:#fca5a5">${b} bloqueantes</b>`:'sin bloqueantes');
+  }catch(err){ console.error(err); toast('Error de cálculo: '+err.message); }
+}
+
+document.addEventListener('DOMContentLoaded',()=>{
+  renderMatriz(); renderGlosario(); initPop();
+  hook('fEmp','emp'); hook('fTur','tur'); hook('fHor','hor'); hook('fMar','mar');
+  $('#btnCalc').onclick = runCalc;
+  $$('.tabs button').forEach(b=>b.onclick=()=>showTab(b.dataset.tab));
+  $('#qCons').oninput   = ()=>RESULT&&renderCons();
+  $('#fCia').onchange    = ()=>RESULT&&renderCons();
+  $('#fDepto').onchange  = ()=>RESULT&&renderCons();
+  $('#fPerfil').onchange = ()=>RESULT&&renderCons();
+  $('#fExcDep').onchange = ()=>RESULT&&renderExc();
+  $('#fClear').onclick   = ()=>{ $('#fCia').value=''; $('#fDepto').value='';
+    $('#fPerfil').value=''; $('#qCons').value=''; RESULT&&renderCons(); };
+  $('#fExc').onchange = ()=>RESULT&&renderExc();
+  $('#qExc').oninput   = ()=>RESULT&&renderExc();
+  $('#selEmp').onchange = e=>{ CUR_EMP=e.target.value;
+    $('#selPerfil').value = PERFILES[CUR_EMP]||''; renderDet(); };
+  $('#aAdd').onclick  = ()=>addAutor($('#aIni').value,$('#aFin').value,$('#aEst').value,$('#aMot').value);
+  $('#aAll').onclick  = ()=>addAutor(RESULT?.cfg.ini,RESULT?.cfg.fin,'AUT','Autorizacion global del ciclo');
+  $('#aNone').onclick = ()=>addAutor(RESULT?.cfg.ini,RESULT?.cfg.fin,'NO','Sin autorizacion para el ciclo');
+  $('#selPerfil').onchange = e=>{
+    if(!CUR_EMP) return;
+    if(e.target.value) PERFILES[CUR_EMP]=e.target.value; else delete PERFILES[CUR_EMP];
+    localStorage.setItem('mb_perfiles',JSON.stringify(PERFILES));
+    runCalc(); showTab('det'); };
+  $('#selEmpCal').onchange = ()=>renderCal();
+  $('#selMes').onchange = ()=>renderCal();
+  $('#expCons').onclick = ()=>RESULT&&save({Consolidado:aoaCons()},`Consolidado_${stamp()}.xlsx`);
+  $('#expDet').onclick  = ()=>{ const e=RESULT?.byEmp.get(CUR_EMP); if(e)
+    save({Detalle:aoaDet(e)},`Detalle_${e.emp.id}_${stamp()}.xlsx`); };
+  $('#expTodo').onclick = ()=>{ if(!RESULT) return;
+    const sel = consFiltrado();
+    if(!sel.length){ toast('El filtro activo no deja ningún empleado'); return; }
+    const head = aoaDet(sel[0])[0];
+    const body = sel.flatMap(e=>aoaDet(e).slice(1));
+    const ids  = new Set(sel.map(e=>e.emp.id));
+    save({Consolidado:aoaCons(), Detalle:[head,...body],
+          Excepciones:aoaExc(filtroHay()?ids:null)},
+         `Reporte_Horas_${stamp()}.xlsx`); };
+  $('#expExc').onclick  = ()=>RESULT&&save({Excepciones:aoaExc()},`Excepciones_${stamp()}.xlsx`);
+  $('#expCal').onclick  = ()=>{ if(!RESULT) return;
+    const id=$('#selEmpCal').value, m=$('#selMes').value;
+    save({Calendario:aoaCal(id,m)},`Calendario_${id}_${m}.xlsx`); };
+  $('#btnClrOvr').onclick = ()=>{ if(!confirm('¿Borrar todos los cambios puntuales de turno?')) return;
+    Object.keys(OVERRIDES).forEach(k=>delete OVERRIDES[k]);
+    localStorage.setItem('mb_overrides','{}'); runCalc(); showTab('cal'); renderCal(); };
+  $$('#cIni,#cFin').forEach(()=>{});
+  ['cIni','cFin','cNocIni','cNocFin','cUmbral','cAnclaje','cDoble','cTolIni','cTolFin',
+   'cAdmin','cCorte','cDesc','cDom','cDescRec','cInfer','cRedon','cImpar','cTolPunt','cAutor']
+    .forEach(k=>$('#'+k).addEventListener('change',()=>{ if(RESULT) runCalc(); }));
+});
+</script>
+</body>
+</html>
