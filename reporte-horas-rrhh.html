@@ -19,6 +19,20 @@
          align-items:center;gap:14px;flex-wrap:wrap;position:sticky;top:0;z-index:20}
   header h1{font-size:14px;margin:0;font-weight:600;letter-spacing:.2px}
   header .sub{font-size:11px;color:#9aa7b5}
+  #btnGear{background:transparent;border:1px solid #3a4757;color:#fff;border-radius:5px;
+    width:30px;height:30px;font-size:15px;cursor:pointer;line-height:1}
+  #btnGear:hover{background:#22303f}
+  dialog#dlgConfig{border:none;border-radius:8px;padding:0;max-width:920px;width:92vw;
+    max-height:86vh;box-shadow:0 20px 60px rgba(0,0,0,.35)}
+  dialog#dlgConfig::backdrop{background:rgba(10,14,20,.55)}
+  dialog#dlgConfig .dlg-head{display:flex;align-items:center;justify-content:space-between;
+    padding:12px 16px;border-bottom:1px solid var(--line);position:sticky;top:0;background:#fff;z-index:1}
+  dialog#dlgConfig .dlg-head h2{font-size:14px}
+  dialog#dlgConfig .dlg-head button{background:none;border:none;font-size:22px;line-height:1;
+    cursor:pointer;color:var(--muted);padding:0 4px}
+  dialog#dlgConfig .dlg-body{padding:14px 16px;overflow-y:auto;max-height:calc(86vh - 108px)}
+  dialog#dlgConfig .dlg-foot{padding:10px 16px;border-top:1px solid var(--line);
+    display:flex;gap:8px;justify-content:flex-end;position:sticky;bottom:0;background:#fff}
   main{padding:14px 16px 60px}
   .panel{background:var(--panel);border:1px solid var(--line);border-radius:6px;
          padding:12px 14px;margin-bottom:12px}
@@ -126,10 +140,11 @@
 <body>
 
 <header>
-  <h1>Reporte de Horas, Extras y Recargos</h1>
-  <span class="sub">SIRH Plastitec &middot; ciclo 11&rarr;10 &middot; procesamiento 100% local</span>
+  <h1>Reporte de Horas &middot; RRHH</h1>
+  <span class="sub">SIRH Plastitec &middot; contabilización y seguimiento &middot; procesamiento 100% local</span>
   <span class="sp" style="flex:1"></span>
   <span id="status" class="sub">Sin datos cargados</span>
+  <button id="btnGear" title="Configuración avanzada" aria-label="Configuración avanzada">&#9881;</button>
 </header>
 
 <main>
@@ -155,82 +170,103 @@
 
 <!-- ============ CONFIG ============ -->
 <section class="panel">
-  <h2>2 &middot; Parámetros del cálculo</h2>
-  <div class="grid g6">
+  <h2>2 &middot; Ciclo a procesar</h2>
+  <div class="bar">
     <div><label class="f">Inicio de ciclo</label><input type="date" id="cIni"></div>
     <div><label class="f">Fin de ciclo</label><input type="date" id="cFin"></div>
-    <div><label class="f">Franja nocturna &mdash; inicio</label><input type="text" id="cNocIni" value="19:00"></div>
-    <div><label class="f">Franja nocturna &mdash; fin</label><input type="text" id="cNocFin" value="06:00"></div>
-    <div><label class="f">Umbral semanal rotativos (h)</label><input type="number" id="cUmbral" value="42" step="0.5"></div>
-    <div><label class="f">Anclaje de redondeo <span class="muted">(D-14)</span></label>
-      <select id="cAnclaje">
-        <option value="rel">Relativo al fin de turno (duración)</option>
-        <option value="abs">Reloj absoluto</option>
-      </select></div>
-    <div><label class="f">Agrupar marcaciones consecutivas (min) <span class="muted">(A-07)</span></label>
-      <input type="number" id="cDoble" value="5" step="1" min="0"></div>
-    <div><label class="f">Marcaciones impares <span class="muted">(A-04)</span></label>
-      <select id="cImpar">
-        <option value="sugerir">Resolucion sugerida (descartar la espuria)</option>
-        <option value="no">No resolver (excepcion, 0 h)</option>
-      </select></div>
-    <div><label class="f">Tolerancia antes del turno (min)</label><input type="number" id="cTolIni" value="120"></div>
-    <div><label class="f">Tolerancia después del turno (min)</label><input type="number" id="cTolFin" value="360"></div>
-    <div><label class="f">Prefijo turnos administrativos</label><input type="text" id="cAdmin" value="T_ADM"></div>
-    <div><label class="f">Corte códigos 0253&rarr;0252 / 0259&rarr;0258 <span class="muted">(H-06)</span></label>
-      <input type="date" id="cCorte" value="2026-07-15"></div>
-    <div><label class="f">Descontar descanso si dura &ge; (h) <span class="muted">(B-10/B-12)</span></label>
-      <input type="number" id="cDesc" value="1" step="0.25"></div>
-    <div><label class="f">Domingo genera recargo dominical</label>
-      <select id="cDom"><option value="1">Sí</option><option value="0">No</option></select></div>
-    <div><label class="f">Descanso propio (no dominical) genera recargo</label>
-      <select id="cDescRec"><option value="0">No (solo se marca)</option><option value="1">Sí</option></select></div>
-    <div><label class="f">Inferir salida faltante desde el turno <span class="muted">(A-02/A-03)</span></label>
-      <select id="cInfer"><option value="0">No (excepción, 0 h)</option><option value="1">Sí, marcar INFERIDO</option></select></div>
-    <div><label class="f">Tolerancia de puntualidad (min)</label>
-      <input type="number" id="cTolPunt" value="5" min="0"></div>
-    <div><label class="f">Fecha de ingreso masiva si la comparten más de (empleados)</label>
-      <input type="number" id="cIngMasivo" value="15" min="0"></div>
-    <div><label class="f">Extras sin autorizacion registrada <span class="muted">(F-09)</span></label>
-      <select id="cAutor">
-        <option value="marcar">Calcular y marcar (requiere decision)</option>
-        <option value="exigir">Exigir autorizacion (no se pagan)</option>
-      </select></div>
-    <div><label class="f">Redondeo</label>
-      <select id="cRedon">
-        <option value="dia">Por día y concepto</option>
-        <option value="ciclo">Solo al total del ciclo</option>
-      </select></div>
+    <span class="sp"></span>
+    <button id="btnGear2">&#9881; Configuración avanzada</button>
   </div>
-
-  <details class="rules">
-    <summary>Matriz de clasificación aplicada (D-01 a D-08) &mdash; default documentado, mutuamente excluyente</summary>
-    <table>
-      <thead><tr><th>Tipo de día</th><th>Dentro / fuera de jornada</th><th>Franja</th><th>Concepto</th></tr></thead>
-      <tbody id="matriz"></tbody>
-    </table>
-    <p class="muted" style="font-size:11px;margin:8px 0 0">
-      Los conceptos son <b>mutuamente excluyentes por minuto</b> (invariante I-02). Un minuto nocturno en
-      festivo genera <b>0259</b>, no 0253+0220. Si RRHH define acumulación, se cambia aquí y en
-      <code>classify()</code>. Redondeo D-10&ndash;D-13: <code>:00&ndash;:24&rarr;0h</code>,
-      <code>:25&ndash;:49&rarr;0,5h</code>, <code>:50&ndash;:59&rarr;1,0h</code> por cada hora completa.
-    </p>
-  </details>
-
-  <details class="rules">
-    <summary>Reglas de cálculo aplicadas</summary>
-    <table><tbody>
-      <tr><td><b>Redondeo</b> (D-10 a D-13)</td><td>Pasos de 0,5 h. Por cada hora completa: minutos <code>:00–:24</code> &rarr; 0 h &middot; <code>:25–:49</code> &rarr; 0,5 h &middot; <code>:50–:59</code> &rarr; 1,0 h. Ejemplo: 25 min de sobretiempo &rarr; 0,5 h; 1 h 50 min &rarr; 2,0 h.</td></tr>
-      <tr><td><b>Tiempo antes del turno</b> (D-15)</td><td>No cuenta. La jornada empieza en la hora programada, aunque el empleado marque antes.</td></tr>
-      <tr><td><b>Almuerzo</b> (B-10)</td><td>Se descuenta cuando el turno lo tiene configurado con duración igual o mayor al parámetro (por defecto 1 h).</td></tr>
-      <tr><td><b>Descanso de café</b> (B-12)</td><td>Los 20 min NO se descuentan. La empresa los paga.</td></tr>
-      <tr><td><b>Umbral semanal</b> (D-17, D-18)</td><td>Personal rotativo: dentro de la semana lunes–domingo, las horas por encima del umbral son extra; las de abajo son ordinarias y solo generan recargo si caen en franja nocturna o en domingo/festivo.</td></tr>
-      <tr><td><b>Personal administrativo</b> (D-23)</td><td>No aplica umbral semanal. Se compara cada día contra su jornada programada.</td></tr>
-      <tr><td><b>Franja nocturna</b> (C-02, C-03)</td><td>Configurable. Por defecto 19:00 a 06:00.</td></tr>
-      <tr><td><b>Exclusividad</b> (I-02, I-03)</td><td>Cada minuto trabajado genera exactamente un concepto, nunca dos, nunca ninguno.</td></tr>
-    </tbody></table>
-  </details>
+  <p class="muted" style="font-size:11px;margin:8px 0 0">
+    Los parámetros del cálculo (franja nocturna, redondeo, tolerancias, autorización de extras, etc.)
+    ya vienen con los valores estándar de la empresa. Ábralos solo si necesita ajustar algo puntual.
+  </p>
 </section>
+
+<dialog id="dlgConfig">
+  <div class="dlg-head">
+    <h2 style="margin:0">Configuración avanzada del cálculo</h2>
+    <button id="btnGearClose" aria-label="Cerrar">&times;</button>
+  </div>
+  <div class="dlg-body">
+    <div class="grid g6">
+      <div><label class="f">Franja nocturna &mdash; inicio</label><input type="text" id="cNocIni" value="19:00"></div>
+      <div><label class="f">Franja nocturna &mdash; fin</label><input type="text" id="cNocFin" value="06:00"></div>
+      <div><label class="f">Umbral semanal rotativos (h)</label><input type="number" id="cUmbral" value="42" step="0.5"></div>
+      <div><label class="f">Anclaje de redondeo <span class="muted">(D-14)</span></label>
+        <select id="cAnclaje">
+          <option value="rel">Relativo al fin de turno (duración)</option>
+          <option value="abs">Reloj absoluto</option>
+        </select></div>
+      <div><label class="f">Agrupar marcaciones consecutivas (min) <span class="muted">(A-07)</span></label>
+        <input type="number" id="cDoble" value="5" step="1" min="0"></div>
+      <div><label class="f">Marcaciones impares <span class="muted">(A-04)</span></label>
+        <select id="cImpar">
+          <option value="sugerir">Resolucion sugerida (descartar la espuria)</option>
+          <option value="no">No resolver (excepcion, 0 h)</option>
+        </select></div>
+      <div><label class="f">Tolerancia antes del turno (min)</label><input type="number" id="cTolIni" value="120"></div>
+      <div><label class="f">Tolerancia después del turno (min)</label><input type="number" id="cTolFin" value="360"></div>
+      <div><label class="f">Prefijo turnos administrativos</label><input type="text" id="cAdmin" value="T_ADM"></div>
+      <div><label class="f">Corte códigos 0253&rarr;0252 / 0259&rarr;0258 <span class="muted">(H-06)</span></label>
+        <input type="date" id="cCorte" value="2026-07-15"></div>
+      <div><label class="f">Descontar descanso si dura &ge; (h) <span class="muted">(B-10/B-12)</span></label>
+        <input type="number" id="cDesc" value="1" step="0.25"></div>
+      <div><label class="f">Domingo genera recargo dominical</label>
+        <select id="cDom"><option value="1">Sí</option><option value="0">No</option></select></div>
+      <div><label class="f">Descanso propio (no dominical) genera recargo</label>
+        <select id="cDescRec"><option value="0">No (solo se marca)</option><option value="1">Sí</option></select></div>
+      <div><label class="f">Inferir salida faltante desde el turno <span class="muted">(A-02/A-03)</span></label>
+        <select id="cInfer"><option value="0">No (excepción, 0 h)</option><option value="1">Sí, marcar INFERIDO</option></select></div>
+      <div><label class="f">Tolerancia de puntualidad (min)</label>
+        <input type="number" id="cTolPunt" value="5" min="0"></div>
+      <div><label class="f">Fecha de ingreso masiva si la comparten más de (empleados)</label>
+        <input type="number" id="cIngMasivo" value="15" min="0"></div>
+      <div><label class="f">Extras sin autorizacion registrada <span class="muted">(F-09)</span></label>
+        <select id="cAutor">
+          <option value="marcar">Calcular y marcar (requiere decision)</option>
+          <option value="exigir">Exigir autorizacion (no se pagan)</option>
+        </select></div>
+      <div><label class="f">Redondeo</label>
+        <select id="cRedon">
+          <option value="dia">Por día y concepto</option>
+          <option value="ciclo">Solo al total del ciclo</option>
+        </select></div>
+    </div>
+
+    <details class="rules">
+      <summary>Matriz de clasificación aplicada (D-01 a D-08) &mdash; default documentado, mutuamente excluyente</summary>
+      <table>
+        <thead><tr><th>Tipo de día</th><th>Dentro / fuera de jornada</th><th>Franja</th><th>Concepto</th></tr></thead>
+        <tbody id="matriz"></tbody>
+      </table>
+      <p class="muted" style="font-size:11px;margin:8px 0 0">
+        Los conceptos son <b>mutuamente excluyentes por minuto</b> (invariante I-02). Un minuto nocturno en
+        festivo genera <b>0259</b>, no 0253+0220. Si RRHH define acumulación, se cambia aquí y en
+        <code>classify()</code>. Redondeo D-10&ndash;D-13: <code>:00&ndash;:24&rarr;0h</code>,
+        <code>:25&ndash;:49&rarr;0,5h</code>, <code>:50&ndash;:59&rarr;1,0h</code> por cada hora completa.
+      </p>
+    </details>
+
+    <details class="rules">
+      <summary>Reglas de cálculo aplicadas</summary>
+      <table><tbody>
+        <tr><td><b>Redondeo</b> (D-10 a D-13)</td><td>Pasos de 0,5 h. Por cada hora completa: minutos <code>:00–:24</code> &rarr; 0 h &middot; <code>:25–:49</code> &rarr; 0,5 h &middot; <code>:50–:59</code> &rarr; 1,0 h. Ejemplo: 25 min de sobretiempo &rarr; 0,5 h; 1 h 50 min &rarr; 2,0 h.</td></tr>
+        <tr><td><b>Tiempo antes del turno</b> (D-15)</td><td>No cuenta. La jornada empieza en la hora programada, aunque el empleado marque antes.</td></tr>
+        <tr><td><b>Almuerzo</b> (B-10)</td><td>Se descuenta cuando el turno lo tiene configurado con duración igual o mayor al parámetro (por defecto 1 h).</td></tr>
+        <tr><td><b>Descanso de café</b> (B-12)</td><td>Los 20 min NO se descuentan. La empresa los paga.</td></tr>
+        <tr><td><b>Umbral semanal</b> (D-17, D-18)</td><td>Personal rotativo: dentro de la semana lunes–domingo, las horas por encima del umbral son extra; las de abajo son ordinarias y solo generan recargo si caen en franja nocturna o en domingo/festivo.</td></tr>
+        <tr><td><b>Personal administrativo</b> (D-23)</td><td>No aplica umbral semanal. Se compara cada día contra su jornada programada.</td></tr>
+        <tr><td><b>Franja nocturna</b> (C-02, C-03)</td><td>Configurable. Por defecto 19:00 a 06:00.</td></tr>
+        <tr><td><b>Exclusividad</b> (I-02, I-03)</td><td>Cada minuto trabajado genera exactamente un concepto, nunca dos, nunca ninguno.</td></tr>
+      </tbody></table>
+    </details>
+  </div>
+  <div class="dlg-foot">
+    <button id="btnGearApply" class="primary">Aplicar y recalcular</button>
+    <button id="btnGearClose2">Cerrar</button>
+  </div>
+</dialog>
 
 <!-- ============ TABS ============ -->
 <div class="tabs">
@@ -1742,6 +1778,12 @@ function runCalc(){
 
 document.addEventListener('DOMContentLoaded',()=>{
   renderMatriz(); initPop();
+  const dlgConfig = $('#dlgConfig');
+  $('#btnGear').onclick  = ()=>dlgConfig.showModal();
+  $('#btnGear2').onclick = ()=>dlgConfig.showModal();
+  $('#btnGearClose').onclick  = ()=>dlgConfig.close();
+  $('#btnGearClose2').onclick = ()=>dlgConfig.close();
+  $('#btnGearApply').onclick  = ()=>{ dlgConfig.close(); if(RESULT) runCalc(); };
   hook('fEmp','emp'); hook('fTur','tur'); hook('fHor','hor'); hook('fMar','mar');
   $('#btnCalc').onclick = runCalc;
   $$('.tabs button').forEach(b=>b.onclick=()=>showTab(b.dataset.tab));
@@ -1794,10 +1836,10 @@ document.addEventListener('DOMContentLoaded',()=>{
   $('#btnClrOvr').onclick = ()=>{ if(!confirm('¿Borrar todos los cambios puntuales de turno?')) return;
     Object.keys(OVERRIDES).forEach(k=>delete OVERRIDES[k]);
     localStorage.setItem('mb_overrides','{}'); runCalc(); showTab('cal'); renderCal(); };
-  $$('#cIni,#cFin').forEach(()=>{});
-  ['cIni','cFin','cNocIni','cNocFin','cUmbral','cAnclaje','cDoble','cTolIni','cTolFin',
-   'cAdmin','cCorte','cDesc','cDom','cDescRec','cInfer','cRedon','cImpar','cTolPunt','cAutor','cIngMasivo']
-    .forEach(k=>$('#'+k).addEventListener('change',()=>{ if(RESULT) runCalc(); }));
+  /* cIni/cFin quedan a la vista y recalculan al cambiar. El resto de los parámetros vive en el
+     modal de configuración avanzada: ahí se aplican todos juntos con el botón "Aplicar y
+     recalcular", no uno por uno, para no relanzar el cálculo con cada tecla mientras se ajustan. */
+  ['cIni','cFin'].forEach(k=>$('#'+k).addEventListener('change',()=>{ if(RESULT) runCalc(); }));
 });
 </script>
 </body>
