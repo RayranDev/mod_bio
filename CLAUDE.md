@@ -48,13 +48,14 @@ Verificado línea por línea contra el código actual (no es una lista de memori
 CONCEPTS, CKEYS, DOW_ES, NOV, CONC_DESC, MATRIZ        (diccionarios de datos)
 toISO, toMin, addDays, rangeDays, weekStart             (utilidades de fecha)
 easter, nextMonday, holidaysCO                          (festivos de Colombia)
-DATA, OVERRIDES, PERFILES, AUTOR                        (estado global persistido en localStorage)
+DATA, OVERRIDES, PERFILES, AUTOR, CONFIANZA             (estado global persistido en localStorage)
 autorFor, readSheet, pick, normId                       (parseo de Excel)
 buildModel                                              (construye el modelo desde los 4 Excel)
 marcarIngresosMasivos                                   (detección de fecha de ingreso masiva)
 shiftFor, segmentFor                                    (turno vigente por fecha)
 round05, dayType, classify, atomize                     (clasificación y redondeo)
 escalera, quitarDescanso, tramosAcreditados             (jornada fija + escalera de sobretiempo)
+huecosInternos, topeCafe                                (descanso de café pagado, B-12)
 readConfig                                              (lee los parámetros del formulario)
 limpiarMarcaciones                                      (dedupe A-06 + agrupación A-07)
 compute                                                 (el motor de horas y conceptos, ~490 líneas)
@@ -168,6 +169,24 @@ git — ver `.gitignore`). Nombres típicos (el prefijo/timestamp varía en cada
   caso sintético de 5 noches, da 8 h fijas + 3 h de extra diaria por noche (40 h ordinarias + 15 h
   extra en la semana, sin tocar nunca el umbral). Si alguien "corrige" ese turno a 06:00 en BioTime,
   las extras se mueven solas a la bolsa semanal — que es justamente lo que se quería evitar.
+- **Las marcaciones intermedias del día son el descanso de café, y los turnos ya lo declaran.** Un
+  día con 4 marcaciones (`07:17 10:05 10:28 17:00`) no es un error: la persona salió a tomar café y
+  volvió. Se analizaron los 12.376 huecos de 60 minutos o menos dentro del turno en agosto 2026: el
+  90,7% ocurre en los biométricos de **VESTIER** (mujeres y hombres), la duración tiene un pico marcado
+  entre 19 y 25 minutos, se concentra en las franjas 08:00–09:59 y 16:00–18:59, afecta a 11.505
+  empleado-día y el **96,6% de esos días tiene exactamente un hueco**. Es un patrón de descanso, no de
+  ausentismo. El resto de los huecos cae en porterías y recepción, que son salidas reales de la
+  empresa — **se decidió no distinguir por dispositivo**: el tope diario de minutos perdonados hace
+  innecesaria esa distinción y evita hardcodear ids de biométricos que pueden cambiar.
+- **El tope del café sale del propio turno, no de una constante.** Todos los turnos de planta declaran
+  `Descanso 0.333` (20 min) en el Excel de Turno, además de su almuerzo. Ese valor es el tope. Solo
+  `T_ADM1` declara únicamente la hora de almuerzo, y para esos casos existe el parámetro `cCafeAdm`
+  (default 20) como respaldo. Si mañana un turno declara 15 o 30 minutos de café, el motor lo respeta
+  solo — no hay que tocar código.
+- **El turno `TP` es de un jefe, no un turno de producción.** Se creó para que el tiempo empezara a
+  contar desde la primera marcación de la persona. Es un cargo de dirección y confianza, y por eso
+  existe la marca `CONFIANZA` (ver abajo) en vez de un tratamiento especial del código de turno: el
+  turno puede cambiar de nombre, la condición del cargo no.
 - **Ventana de validación real acordada con el usuario: agosto 2026 en adelante.** El uso cuidadoso de
   BioTime empezó junio–julio 2026; los datos de marzo a mayo son ruido esperado de una implementación
   que recién arrancaba (turnos no cargados, marcaciones erráticas). No tratar esos meses como bugs a
@@ -237,8 +256,10 @@ cuando los 21 minutos de más nunca alcanzaron el umbral de 25. Hoy el modelo es
 realmente trabajó dentro de la ventana del turno. No descuenta nada — se le paga la jornada completa
 igual — pero queda registrada por día, sumada por empleado (`pendH`) y exportada a Excel. Es el
 sustento para un reclamo: *"vea, usted no me está cumpliendo el turno, y aun así le estoy pagando
-como si lo hiciera"*. En agosto 2026 hay ~6.400 h pendientes en 10.187 días; el grueso son atrasos de
-11 a 30 minutos, pero hay 735 días con más de 2 h.
+como si lo hiciera"*. En agosto 2026, ya con el café pagado descontado, quedan ~3.974 h pendientes; el
+grueso son atrasos de 11 a 30 minutos, pero hay 735 días con más de 2 h. Antes de reconocer el café
+eran ~6.396 h en 10.187 días — la diferencia no era incumplimiento, era el descanso de las 10 de la
+mañana.
 
 **Un efecto de este modelo que conviene conocer:** alguien puede llegar 3 h tarde y quedarse 4 h
 después del fin de turno; el sistema le acredita la jornada fija **y** las extras de la escalera, y
@@ -249,15 +270,47 @@ eso es una regla nueva que hay que pedir — hoy no existe.
 `HRS` es el tiempo de reloj efectivamente trabajado y `ORDIN.` es lo que se acredita (la jornada
 fija). Un caso real: el empleado 385 el 2026-08-06 marcó `07:17 10:05 10:28 17:00` — cuatro
 marcaciones, porque salió 23 minutos a media mañana. `HRS` mostró 8,12 h (reloj real) y `ORDIN.`
-mostró 8,50 h (lo que se paga), con `PEND.` 0,38 h = esos 23 minutos. **No era un error de cálculo,**
+mostró 8,50 h (lo que se paga). Antes del café pagado, `PEND.` marcaba 0,38 h = esos 23 minutos;
+hoy 20 de esos 23 se reconocen como café y solo quedan **3 minutos** pendientes. **No era un error de
+cálculo,**
 pero el orden de las columnas invita a leer `HRS` como si fuera el resultado. Si el reporte se sigue
 malinterpretando, conviene renombrar las columnas antes que tocar el motor.
 
-**Pendiente de definición del usuario (sept-2026): el descanso de café en administrativos (B-12).**
-Hoy cualquier hueco dentro del turno —como esos 23 minutos— genera pendientes. El catálogo dice que
-el café de 20 min lo paga la empresa, pero con la nota "falta definir si aplica a administrativos", y
-`T_ADM1` solo declara la hora de almuerzo. **El usuario pidió explícitamente no tocar esto todavía**;
-va a dar el contexto de cómo evaluarlo. No implementar nada por iniciativa propia acá.
+**Descanso de café pagado (B-12, `huecosInternos` + `topeCafe`).** El café lo paga la empresa, así
+que los minutos en que la persona **salió y volvió a marcar dentro de su turno** se perdonan hasta un
+tope diario, en vez de convertirse en horas pendientes. Los tres puntos que hacen que esto no se
+preste a abuso:
+
+- **La señal es el hueco interno, nunca la llegada tarde.** `huecosInternos()` solo mira el espacio
+  entre un par de marcaciones y el siguiente, recortado a la ventana del turno. Alguien que llega 3 h
+  tarde y no vuelve a salir tiene café = 0 y conserva las 3 h completas en pendientes. Verificado
+  contra el empleado 74, que llegó entre 261 y 313 minutos tarde en varios días y no perdió un solo
+  minuto de pendiente.
+- **La ventana del almuerzo se excluye del cálculo.** El almuerzo ya viene restado de la jornada fija
+  por `quitarDescanso()`; si no se excluyera, se descontaría dos veces. Por eso `quitarDescanso()`
+  ahora devuelve también `ventana:{ini,fin}` — ese es todo el motivo del campo.
+- **El tope es diario y sale del turno.** `topeCafe(W,cfg)` devuelve el `Descanso` declarado por el
+  propio turno cuando es menor al umbral de almuerzo (`cfg.descMin`), y si no, `cfg.cafeAdm`. Un hueco
+  de 71 minutos perdona 20 y deja 51 pendientes; uno de 172 perdona 20 y deja 152.
+
+Efecto medido en agosto 2026: 8.357 días con café reconocido, 2.671 h pagadas, y las horas pendientes
+del ciclo bajaron de **6.395,8 h a 3.973,6 h**. Los minutos reconocidos se ven en el tooltip de la
+celda `PEND.` y se exportan en la columna `MIN CAFE RECONOCIDO` del Detalle.
+
+**Dirección, confianza y manejo (Art. 162 CST, `CONFIANZA`).** Marca por empleado —checkbox en la
+barra de Detalle, persistida en `localStorage.mb_confianza`— para los cargos que la ley excluye de la
+jornada máxima legal. Un empleado marcado:
+
+- **no tiene jornada fija**: se le acredita el tiempo efectivamente trabajado (`dentroMin = workMin`),
+- **no genera horas extra** (`extraCredMin = 0`, la escalera no corre) **ni horas pendientes**,
+- **queda fuera del umbral semanal** — la rama es `if(perfil==='ROTATIVO' && !esConfianza)`,
+- **sigue generando los recargos** nocturno, dominical y festivo, que no dependen de la jornada máxima.
+
+Es una marca por persona y no por código de turno a propósito: el turno `TP` existe hoy para un solo
+jefe, pero el turno puede renombrarse o reasignarse y la condición del cargo no viaja con él. Caso
+real de verificación, empleado 3956: pasó de (ordinarias 180 h, extras 24 h, pendientes 72,9 h) a
+**(ordinarias 131,1 h, extras 0, pendientes 0)**. La novedad `CONFIANZA` explica la marca en el
+tooltip de cada día afectado.
 
 **Segmentación temporal (`atomize`).** Parte un intervalo `[a,b)` en tramos atómicos cortando en cada
 medianoche, en el inicio/fin de la franja nocturna, y en cualquier frontera adicional que se le pase
@@ -310,6 +363,7 @@ engranaje), con un botón explícito "Aplicar y recalcular" en vez de recalcular
 | `cAdmin` | Prefijo de turnos administrativos | B-06/D-23 |
 | `cCorte` | Fecha de corte 0253→0252 / 0259→0258 | H-06 |
 | `cDesc` | Horas mínimas de descanso para descontarlo como almuerzo | B-10/B-12 |
+| `cCafeAdm` | Café para turnos que no lo declaran, minutos (default 20). Solo se usa cuando el turno no trae un `Descanso` menor al umbral de almuerzo | B-12 |
 | `cDom` | ¿El domingo genera recargo dominical? | — |
 | `cDescRec` | ¿El descanso propio (no dominical) genera recargo? | — |
 | `cInfer` | ¿Inferir la marcación faltante desde el turno programado? | A-02/A-03 |
