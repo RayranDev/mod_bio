@@ -54,9 +54,11 @@ buildModel                                              (construye el modelo des
 marcarIngresosMasivos                                   (detección de fecha de ingreso masiva)
 shiftFor, segmentFor                                    (turno vigente por fecha)
 round05, dayType, classify, atomize                     (clasificación y redondeo)
+escalera, quitarDescanso, tramosAcreditados             (jornada fija + escalera de sobretiempo)
 readConfig                                              (lee los parámetros del formulario)
 limpiarMarcaciones                                      (dedupe A-06 + agrupación A-07)
 compute                                                 (el motor de horas y conceptos, ~490 líneas)
+celdaPendiente                                          (celda de horas no cumplidas)
 tipHTML, chip, initPop                                  (sistema de tooltips — ver nota abajo)
 toast, conceptCols, renderMatriz
 filtroActivo, filtroHay, filtroSlug, consFiltrado, fillFiltros
@@ -145,6 +147,17 @@ git — ver `.gitignore`). Nombres típicos (el prefijo/timestamp varía en cada
   exclusión por departamento en la pestaña KPI (`#fExclDeptos`, persistido en
   `localStorage.mb_kpi_excl`), no filtrando estos ids a nivel de motor — si aparecen más cuentas de
   prueba en el futuro, agregar su departamento ahí, no hardcodear el id en el código.
+- **Solo 3 de los 13 turnos suman 42 h semanales.** Se validó turno por turno sumando los segmentos de
+  cada día de la semana, netos de almuerzo. Cumplen exactamente: `T_NORMAL1` (8+7+7+7+7+6),
+  `T_NORMAL2` (8+8,5×4) y `T_ADM1` (47 brutas − 5 de almuerzo). **No cumplen:** `T_NORMAL3` = 50 h
+  (trabaja domingo, +8 h), `TP` = 60 h netas (turnos de 13 h brutas, +18 h — es el turno de 12 h del
+  B-13, con sustento legal pendiente), y `T3_AGO`, `T2_AGO`, `T1_AGO`, `T_FESTIVO1/2/3` y
+  `T_12H_NOCHE` todos en 40 h (−2 h). `T_MANT_PREVENT` solo tiene sábado, 8 h. Esto importa porque
+  el umbral semanal de 42 h **sí se activa** para T_NORMAL3 y TP, no es decorativo.
+- **`T_12H_NOCHE` se llama "6PM A 6AM" pero está configurado 18:00–03:00.** Son 9 h brutas, no 12.
+  O el nombre está desactualizado o a esa gente le faltan 3 h por noche en el cálculo. Es un dato de
+  origen: se reportó al usuario y **no se tocó desde el código**. Si algún día se corrige en BioTime,
+  el motor lo toma solo.
 - **Ventana de validación real acordada con el usuario: agosto 2026 en adelante.** El uso cuidadoso de
   BioTime empezó junio–julio 2026; los datos de marzo a mayo son ruido esperado de una implementación
   que recién arrancaba (turnos no cargados, marcaciones erráticas). No tratar esos meses como bugs a
@@ -189,9 +202,38 @@ las ~4 horas después del fin de la franja nocturna (`cfg.nocFin + 240`). Solo s
 puntual, nunca el día completo — así un día con jornada normal (par, completa) nunca se confunde con
 el inicio de un turno nocturno no programado.
 
-**Redondeo (D-10 a D-13, función `round05`).** Pasos de 0,5 h por cada hora completa de exceso: minutos
-`:00`–`:24` → 0 h, `:25`–`:49` → 0,5 h, `:50`–`:59` → 1,0 h. Se aplica tanto a extras como a recargos,
-siempre sobre minutos ya segmentados por `atomize()`.
+**Jornada fija del turno + escalera de sobretiempo (reemplazó al redondeo plano en sept-2026).**
+Este es el corazón del cálculo y el cambio más importante que ha tenido el motor. Antes se sumaban los
+minutos del reloj y se redondeaba el total del día con `round05()`; eso producía un error real: un
+T_ADM1 de 07:30 a 17:00 con salida 17:21 daba 8,85 h trabajadas y el redondeo lo empujaba a **9 h**,
+cuando los 21 minutos de más nunca alcanzaron el umbral de 25. Hoy el modelo es:
+
+- **La base del día son las horas fijas del turno**, calculadas como `salida − entrada − almuerzo`.
+  Para T_ADM1 lunes a jueves son 8,5 h. Se acreditan **completas** aunque la persona haya trabajado
+  algunos minutos menos: el faltante no se descuenta, se registra en `pendienteMin` (ver abajo).
+  Ojo: la base sale del **cálculo**, no de las columnas "Horas hábiles" / "Horas por día" del Excel de
+  Turno, que están desactualizadas en al menos 4 turnos (ver hallazgos de datos).
+- **El sobretiempo se cuenta desde el fin del turno**, con la escalera de `escalera(min, cfg)`: la
+  primera media hora exige `cfg.escPrimer` minutos (default 25) y cada media hora siguiente se
+  acredita `cfg.escGracia` minutos antes de completarse (default 10). Con los defaults:
+  `+25 → 0,5 h · +50 → 1,0 h · +80 → 1,5 h · +110 → 2,0 h · +140 → 2,5 h`. Un turno que acaba 16:30
+  acredita media hora a las 16:55 y la hora completa a las 17:20. **Los dos números son parámetros del
+  formulario, no constantes** — se pidió explícitamente que fueran cambiables.
+- **`round05()` sigue existiendo** y se usa solo como normalizador final por concepto. Es idempotente
+  sobre los valores limpios que produce el modelo nuevo (8,5 h sigue siendo 8,5 h), y protege contra
+  turnos definidos con minutos raros. **No volver a usarlo sobre el total del día: ese era el bug.**
+
+**Horas pendientes (`pendienteMin`).** Diferencia entre las horas fijas del turno y lo que la persona
+realmente trabajó dentro de la ventana del turno. No descuenta nada — se le paga la jornada completa
+igual — pero queda registrada por día, sumada por empleado (`pendH`) y exportada a Excel. Es el
+sustento para un reclamo: *"vea, usted no me está cumpliendo el turno, y aun así le estoy pagando
+como si lo hiciera"*. En agosto 2026 hay ~6.400 h pendientes en 10.187 días; el grueso son atrasos de
+11 a 30 minutos, pero hay 735 días con más de 2 h.
+
+**Un efecto de este modelo que conviene conocer:** alguien puede llegar 3 h tarde y quedarse 4 h
+después del fin de turno; el sistema le acredita la jornada fija **y** las extras de la escalera, y
+deja las 3 h en pendientes. Si algún día se quiere que no se paguen extras en días con pendientes,
+eso es una regla nueva que hay que pedir — hoy no existe.
 
 **Segmentación temporal (`atomize`).** Parte un intervalo `[a,b)` en tramos atómicos cortando en cada
 medianoche, en el inicio/fin de la franja nocturna, y en cualquier frontera adicional que se le pase
@@ -221,6 +263,9 @@ engranaje), con un botón explícito "Aplicar y recalcular" en vez de recalcular
 | `cIni` / `cFin` | Rango de fechas del ciclo | — |
 | `cNocIni` / `cNocFin` | Franja nocturna (default 19:00–06:00) | C-02/C-03 |
 | `cUmbral` | Umbral semanal rotativos en horas (default 42) | D-17/D-18 |
+| `cEscPrimer` | Minutos después del fin de turno para la primera media hora (default 25) | D-10/D-11 |
+| `cEscGracia` | Minutos de gracia antes de cada media hora siguiente (default 10) | D-12/D-13 |
+| `cSemIni` | Día en que arranca la semana del umbral: domingo (default) o lunes | D-17 |
 | `cAnclaje` | Anclaje de redondeo: relativo/absoluto | D-14 — **ver nota de gap abajo** |
 | `cDoble` | Ventana de agrupación de marcaciones consecutivas, minutos | A-07 |
 | `cImpar` | Resolución de marcaciones impares: sugerir / no resolver | A-04 |
@@ -238,10 +283,10 @@ engranaje), con un botón explícito "Aplicar y recalcular" en vez de recalcular
 
 **Gap conocido y honesto: `cAnclaje` no hace nada.** El dropdown existe en la interfaz (D-14: ¿el
 redondeo ancla contra el reloj absoluto o contra el fin de turno?) pero `cfg.anclaje` nunca se lee en
-ninguna otra parte del motor — se guarda y no se usa. El comportamiento actual siempre es "relativo al
-fin de turno", que es lo único que `round05()` implementa. Si alguna vez hay que resolver D-14 de
-verdad, hay que decidir qué significa "reloj absoluto" en términos de código y escribir esa rama en
-`round05()` o en quien la llame — no basta con cambiar el `<option>`.
+ninguna otra parte del motor — se guarda y no se usa. Con el modelo nuevo la pregunta de D-14 quedó
+respondida de hecho: **la escalera se mide siempre desde el fin del turno asignado**, que es la opción
+"relativo". El `<option>` de "reloj absoluto" no tiene implementación detrás. Lo honesto sería quitar
+el dropdown; se dejó por ahora para no cambiar la interfaz sin pedirlo, pero **no confiar en él**.
 
 ---
 
@@ -309,14 +354,19 @@ El patrón usado en toda la sesión, y el que hay que seguir para cualquier camb
    las pruebas de Node — evita reabrir el `.xlsx` en cada corrida.
 3. **Llamar cada función de render y export**, no solo `compute()` — un `ReferenceError` en
    `renderCal()` no aparece si solo se prueba `compute()`.
-4. **Verificar los invariantes I-01/I-02/I-03 en cada corrida de prueba:**
+4. **Verificar los invariantes I-01/I-02/I-03 en cada corrida de prueba.** Ojo: desde el cambio al
+   modelo de jornada fija, **I-01 compara contra el tiempo ACREDITADO (`creditMin`), no contra los
+   minutos del reloj (`workMin`)** — son cosas distintas a propósito, y su diferencia es justamente
+   `pendienteMin` más el redondeo de la escalera.
    ```js
-   let i1=0,i2=0;
+   let i1=0,i2=0,i3=0;
    R.byEmp.forEach(x=>x.ciclo.forEach(r=>{
-     if(Math.abs((r.tramos||[]).reduce((s,t)=>s+t.min,0)-r.workMin)>0.001) i1++;
-     const T=r.tramos||[]; if(T.some((t,i)=>T.some((u,j)=>j>i&&t.ini<u.fin&&u.ini<t.fin))) i2++;
+     const T=r.tramos||[];
+     if(Math.abs(T.reduce((s,t)=>s+t.min,0)-(r.creditMin||0))>0.001) i1++;   // I-01
+     if(T.some((t,i)=>T.some((u,j)=>j>i&&t.ini<u.fin&&u.ini<t.fin))) i2++;   // I-02/I-03
+     if(Math.abs((r.ordMin||0)+(r.extraMin||0)-(r.creditMin||0))>0.001) i3++;
    }));
-   // ambos deben dar 0 siempre
+   // los tres deben dar 0 siempre
    ```
 5. **Si el cambio toca el motor compartido, repetir los pasos 1 a 4 en los dos archivos.**
 6. Para cambios de interfaz que el usuario deba juzgar visualmente (un gráfico, un color, un layout),
