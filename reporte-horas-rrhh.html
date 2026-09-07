@@ -1138,11 +1138,15 @@ function compute(M, cfg){
       r.creditMin = r.tramos.reduce((s,t)=>s+t.min,0);
     });
 
-    /* ── acumulado semanal corrido, dia a dia. Se acumula el tiempo YA ACREDITADO
-       (jornada fija + sobretiempo escalonado), no los minutos crudos del reloj. ── */
+    /* ── acumulado semanal corrido, dia a dia. Acumula SOLO las horas que compiten contra
+       el umbral: la jornada fija acreditada. El sobretiempo de la escalera queda afuera
+       porque ya es extra del mismo dia y nunca entra a la bolsa semanal — si se sumara,
+       un turno como T_12H_NOCHE (que declara su fin temprano justamente para que las
+       ultimas horas salgan como extra diaria) mostraria 55/42 sin haber pasado el umbral. ── */
     const accW = new Map();
     rows.forEach(r=>{
-      const k = weekStart(r.iso, cfg), prev = accW.get(k)||0, now = prev + (r.creditMin||0);
+      const propias = (r.tramos||[]).filter(t=>!t.extra).reduce((s,t)=>s+t.min,0);
+      const k = weekStart(r.iso, cfg), prev = accW.get(k)||0, now = prev + propias;
       accW.set(k, now);
       r.semIni = k; r.semFin = addDays(k,6);
       r.accPrevH = prev/60; r.accH = now/60;
@@ -1512,7 +1516,7 @@ function celdaSemana(r){
   const pasa  = u!=null && r.accH > u;
   const txt = u!=null ? `${r.accH.toFixed(2)} / ${u}` : r.accH.toFixed(2);
   const tip = u!=null
-    ? `Semana ${r.semIni} a ${r.semFin}. Al cierre de este dia lleva ${r.accH.toFixed(2)} h de ${u} h. `+
+    ? `Semana ${r.semIni} a ${r.semFin}. Al cierre de este dia lleva ${r.accH.toFixed(2)} h de jornada fija, de ${u} h. `+
       (pasa ? `Ya paso el umbral: lo que exceda se paga como extra (D-18).`
             : `Faltan ${(u-r.accH).toFixed(2)} h para el umbral; por ahora todo es ordinario (D-17).`)+
       ` Total de la semana: ${r.semTotH.toFixed(2)} h.`
@@ -1579,7 +1583,7 @@ function renderDet(){
     <th class="num" data-tip="Horas fijas del turno de ese dia (salida menos entrada menos almuerzo). Se acreditan completas aunque la persona haya trabajado algunos minutos menos; lo que falto queda en la columna Pendiente.">Ordin.</th>
     <th class="num" data-tip="Horas pendientes: lo que le falto para completar su turno y aun asi se le pago. Sirve para sustentar un reclamo sin dejar de pagarle la jornada.">Pend.</th>
     <th class="num" data-tip="Sobretiempo del dia, contado desde el FIN DEL TURNO con la escalera: la primera media hora exige 25 minutos y cada media hora siguiente se acredita 10 minutos antes de completarse. Tachado si no esta autorizado.">Extra</th>
-    <th class="num" data-tip="Acumulado corrido de la semana lunes a domingo al cierre de este dia, frente al umbral. En verde el dia en que se cruza el umbral: desde ahi lo trabajado se paga como extra (D-17 y D-18). El personal administrativo no usa umbral: se compara cada dia contra su jornada (D-23).">Acum. semana</th>` +
+    <th class="num" data-tip="Acumulado corrido de la semana al cierre de este dia, contando solo las horas que compiten contra el umbral (la jornada fija de cada turno). El sobretiempo del mismo dia no entra: ya es extra por la escalera. En verde el dia en que se cruza el umbral: desde ahi lo demas se paga como extra (D-17 y D-18). El personal administrativo no usa umbral: se compara cada dia contra su jornada (D-23).">Acum. semana</th>` +
     cols.map(c=>`<th class="num cw" data-tip="${esc(c.tip)}"><b>${esc(c.code)}</b><i>${esc(c.label.split(' ').slice(0,2).join(' '))}</i></th>`).join('') +
     `<th>Novedades</th></tr>`;
 
