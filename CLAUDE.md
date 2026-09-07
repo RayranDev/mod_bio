@@ -3,7 +3,8 @@
 Herramientas locales de nómina para Plastitec / SIRH: calculan horas trabajadas, horas extra y
 recargos a partir de exportaciones de BioTime, sin backend, sin base de datos, sin conexión a
 internet salvo la librería de Excel (SheetJS, cargada desde `cdnjs.cloudflare.com`). Todo el cálculo
-corre en el navegador del usuario, sobre los cuatro archivos Excel que él mismo carga.
+corre en el navegador del usuario, sobre los cinco archivos Excel que él mismo carga (cuatro
+obligatorios más `Renuncia_*.xlsx`, que es opcional).
 
 El diseño de negocio completo (137 condiciones, bloques A a J) está en
 **[CATALOGO-CONDICIONES.md](CATALOGO-CONDICIONES.md)**. Ese documento es la intención original; este
@@ -50,7 +51,7 @@ toISO, toMin, addDays, rangeDays, weekStart             (utilidades de fecha)
 easter, nextMonday, holidaysCO                          (festivos de Colombia)
 DATA, OVERRIDES, PERFILES, AUTOR, CONFIANZA             (estado global persistido en localStorage)
 autorFor, readSheet, pick, normId                       (parseo de Excel)
-buildModel                                              (construye el modelo desde los 4 Excel)
+buildModel                                              (construye el modelo desde los Excel cargados)
 marcarIngresosMasivos                                   (detección de fecha de ingreso masiva)
 shiftFor, segmentFor                                    (turno vigente por fecha)
 round05, dayType, classify, atomize                     (clasificación y redondeo)
@@ -60,6 +61,7 @@ readConfig                                              (lee los parámetros del
 limpiarMarcaciones                                      (dedupe A-06 + agrupación A-07)
 compute                                                 (el motor de horas y conceptos, ~490 líneas)
 celdaPendiente                                          (celda de horas no cumplidas)
+tagRetiro                                               (marca de empleado retirado, A-16)
 tipHTML, chip, initPop                                  (sistema de tooltips — ver nota abajo)
 toast, conceptCols, renderMatriz
 filtroActivo, filtroHay, filtroSlug, consFiltrado, fillFiltros
@@ -113,7 +115,8 @@ git — ver `.gitignore`). Nombres típicos (el prefijo/timestamp varía en cada
 | `Empleado_*.xlsx` | Maestro de empleados | Empleado ID, Nombres, Apellidos, Fecha de contratación, Departamento, Compañía, Cargo, Estado |
 | `Turno_*.xlsx` | Catálogo de turnos | Código, Hora Entrada, Hora Salida, Dom..Sáb (día de semana), Descanso, **Descontar descansso en** (sic, con doble "s" — typo real de BioTime, ver abajo) |
 | `Horario_*.xlsx` | Asignación de turno por empleado y rango de fechas | Empleado ID, Código, Fecha Inicial, Fecha Final |
-| `Reporte de Marcaciones_*.xlsx` | Marcaciones crudas del reloj biométrico | Employee ID, Fecha, Hora, Tipo de Marcación, Origen del registro |
+| `Reporte de Marcaciones_*.xlsx` | Marcaciones crudas del reloj biométrico | Employee ID, Fecha, Hora, Tipo de Marcación, Origen del registro, **Branch** |
+| `Renuncia_*.xlsx` | **Opcional.** Personal que ya no está en la empresa | Empleado (id + nombre pegados), Departamento, Cargo, Tipo de renuncia, Fecha de retiro |
 
 ### Hallazgos reales sobre estos datos (no hipotéticos — confirmados contra exportaciones reales)
 
@@ -187,6 +190,40 @@ git — ver `.gitignore`). Nombres típicos (el prefijo/timestamp varía en cada
   contar desde la primera marcación de la persona. Es un cargo de dirección y confianza, y por eso
   existe la marca `CONFIANZA` (ver abajo) en vez de un tratamiento especial del código de turno: el
   turno puede cambiar de nombre, la condición del cargo no.
+- **El maestro de Empleados solo exporta a los Habilitados.** En la exportación del 2026-09-07 son
+  1.063 (antes eran 1.273: se depuraron 210). Los **483 renunciantes no están ahí, ninguno** — se
+  verificó el cruce completo, la intersección es cero. De esos 483, **151 tienen marcaciones en el
+  período**, así que sin el archivo de Renuncia se pierden: 64 caían enteros en huérfanos (A-10,
+  **1.196 marcaciones descartadas**) y 88 entraban a medias por el archivo de Horario, sin
+  departamento ni cargo — de los cuales 47 aparecían en Consolidado **con horas reales y el filtro de
+  departamento vacío**, o sea invisibles al filtrar. Con el archivo leído: huérfanos → 0, sin
+  departamento → 0, y las 52 excepciones bloqueantes B-14 ("empleado sin cargo") desaparecen porque
+  Renuncia sí trae el cargo.
+- **La llave del archivo de Renuncia viene pegada:** la columna `Empleado` trae el id y el nombre en
+  una sola celda (`"9094 BRAYAN EDUARDO"`). **No hay columna de id limpia.** Se separa con
+  `/^(\d+)\s+(.*)$/`; los 483 registros parsean bien hoy, pero es frágil: un id con letras rompe el
+  regex silenciosamente (la fila se ignora, no lanza error).
+- **`Branch` en las marcaciones ES la `Compañía` del maestro.** Verificado sobre los 1.039 activos con
+  marcación: **1.039 coincidencias exactas, 0 discrepancias, 0 empleados con dos valores distintos.**
+  Es la única forma de saber si un retirado era PLASTITECSA o GRANSERVICIOS, porque el archivo de
+  Renuncia no trae compañía. Y esa distinción **no es cosmética**: `Compañía` vale PLASTITECSA (619) o
+  GRANSERVICIOS (444), y GRANSERVICIOS son los temporales del E-06, que van a otro archivo de nómina.
+  De los 151 renunciantes recuperables, **135 son GRANSERVICIOS**. Por eso el vínculo activo/retirado
+  es una dimensión propia (`emp.vinculo`) y **nunca** se estampa dentro de `Compañía`: se evaluó esa
+  opción y habría borrado justamente la separación que más importa.
+- **`Centro de costos` está inservible y se eliminó del modelo.** 972 de 1.063 filas traen el literal
+  `"Centro de costos"` como valor — la cabecera se coló como dato en BioTime. Solo hay 12 valores
+  distintos en todo el maestro. El campo `emp.centro` se leía y no se usaba en ningún filtro, render
+  ni exportación; se quitó.
+- **`Motivo de renuncia` no sirve hoy.** De 483 registros: **207 traen una fecha** en vez de un motivo,
+  260 están vacíos y solo 16 tienen texto real. No se lee.
+- **Las fechas de retiro todavía no son confiables.** Hay **218 marcaciones posteriores a la fecha de
+  retiro en 31 personas**, y un caso grosero: el empleado **8592, retiro 2026-05-22, última marcación
+  2026-09-05 — 163 marcaciones después**. El usuario lo está investigando (sospecha de registro mal
+  hecho o de alguien marcando con esa credencial). Por eso A-16 **no bloquea** (ver abajo).
+- **La programación de turnos llega hasta 2027-01-31.** Un retirado sigue teniendo turno asignado
+  meses después de irse, así que sin un corte de vigencia cada día posterior a su salida contaría como
+  ausencia y hundiría el KPI. De ahí `emp.vigFin`.
 - **Ventana de validación real acordada con el usuario: agosto 2026 en adelante.** El uso cuidadoso de
   BioTime empezó junio–julio 2026; los datos de marzo a mayo son ruido esperado de una implementación
   que recién arrancaba (turnos no cargados, marcaciones erráticas). No tratar esos meses como bugs a
@@ -200,6 +237,7 @@ Pipeline de una corrida (`runCalc()`):
 
 ```
 buildModel()              → MODEL   { employees, shifts, sched, punches, orphan, ingresoMasivo }
+                                    (cada employee lleva vinculo ACTIVO/RETIRADO y vigFin)
 marcarIngresosMasivos(MODEL, cfg)  → agrega MODEL.ingresoMasivo (Map fecha→conteo)
 compute(MODEL, cfg)       → RESULT  { byEmp, cons, todos, exc, cfg, days }
 computeAsistencia(MODEL, cfg)      → ASISTENCIA (Map)   [solo reporte-horas.html]
@@ -311,6 +349,27 @@ jefe, pero el turno puede renombrarse o reasignarse y la condición del cargo no
 real de verificación, empleado 3956: pasó de (ordinarias 180 h, extras 24 h, pendientes 72,9 h) a
 **(ordinarias 131,1 h, extras 0, pendientes 0)**. La novedad `CONFIANZA` explica la marca en el
 tooltip de cada día afectado.
+
+**Vigencia real de un retirado (`emp.vigFin`, A-16).** Se calcula una sola vez en `buildModel()` y es
+la única fuente de verdad para `compute()` y para `computeAsistencia()` — no se duplica la regla:
+
+```js
+e.vigFin = (ultimaMarcacion && ultimaMarcacion > e.retiro) ? ultimaMarcacion : e.retiro;
+```
+
+**La última marcación manda sobre la fecha de retiro.** Es una decisión explícita del usuario
+(sept-2026) tomada con las fechas de retiro actuales a la vista: se prefiere no perder tiempo
+realmente trabajado por un dato mal registrado en BioTime. Consecuencias:
+
+- Los días entre el retiro y esa última marca **se calculan normal** y quedan marcados `A-16`.
+- Los días posteriores a `vigFin` salen del cálculo (igual que A-15 antes del ingreso) — eso es lo que
+  impide que el KPI cuente como ausencia cada día programado de alguien que ya se fue.
+- **A-16 dejó de ser bloqueante** (`BLOQ` → `ADV`) y se emite **una sola vez por empleado** con el
+  conteo de días, no una fila por día: el caso real que motivó esto tenía 163 marcaciones posteriores
+  al retiro y habría inundado Excepciones (misma lección que A-18/B-03).
+
+Cuando RRHH termine de corregir las fechas de retiro en BioTime, se puede endurecer esto; hoy sería
+prematuro y perdería horas legítimas.
 
 **Segmentación temporal (`atomize`).** Parte un intervalo `[a,b)` en tramos atómicos cortando en cada
 medianoche, en el inicio/fin de la franja nocturna, y en cualquier frontera adicional que se le pase
@@ -467,6 +526,11 @@ El patrón usado en toda la sesión, y el que hay que seguir para cualquier camb
 
 ## Convenciones de trabajo con este proyecto
 
+- **El archivo de Renuncia es OPCIONAL y debe seguir siéndolo.** `checkReady()` NO lo exige: quien no
+  lo tenga calcula exactamente igual que antes. Verificado comparando la huella de salida completa
+  (empleado × conceptos × ordinarias × extras × pendientes) contra el commit anterior: **idéntica en
+  los dos archivos** cuando no se carga Renuncia. Si algún cambio futuro hace que el motor dependa de
+  ese archivo, se rompe esta garantía.
 - **Nunca subir los `.xlsx`/`.xls` a git** — contienen datos personales reales de empleados (nombres,
   marcaciones, cargos). Ya están en `.gitignore`; si se agrega un nuevo tipo de exportación, agregar su
   patrón también.
