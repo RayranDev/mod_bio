@@ -225,6 +225,8 @@
       <select id="cInfer"><option value="0">No (excepción, 0 h)</option><option value="1">Sí, marcar INFERIDO</option></select></div>
     <div><label class="f">Tolerancia de puntualidad (min)</label>
       <input type="number" id="cTolPunt" value="5" min="0"></div>
+    <div><label class="f">Café para turnos que no lo declaran (min) <span class="muted">(B-12)</span></label>
+      <input type="number" id="cCafeAdm" value="20" min="0"></div>
     <div><label class="f">Sobretiempo: minutos para la primera media hora</label>
       <input type="number" id="cEscPrimer" value="25" min="0"></div>
     <div><label class="f">Sobretiempo: gracia para cada media hora siguiente (min)</label>
@@ -305,6 +307,9 @@
       <option value="ROTATIVO">Rotativo (umbral semanal)</option>
       <option value="ADMINISTRATIVO">Administrativo (jornada diaria)</option>
     </select>
+    <label style="display:flex;align-items:center;gap:5px;font-size:12px;white-space:nowrap;color:var(--muted)"
+           data-nov="CONFIANZA">
+      <input type="checkbox" id="chkConfianza" style="width:auto">Dirección y confianza</label>
     <span class="sp"></span>
     <button id="expDet">Exportar detalle de este empleado (Excel)</button>
   </div>
@@ -572,6 +577,10 @@ const NOV = {
    q:'El empleado figura deshabilitado en el maestro pero registro marcaciones.',
    p:'Estado desactualizado o retiro no procesado.',
    a:'Confirme el estado real antes de exportar a nomina.'},
+ 'CONFIANZA':{s:'INFO',t:'Direccion, confianza y manejo',
+   q:'Este empleado esta marcado como personal de direccion, confianza y manejo.',
+   p:'El Art. 162 del CST excluye a estos cargos de la jornada maxima legal, asi que no generan horas extra. Tampoco se les calculan horas pendientes: se reporta el tiempo efectivamente trabajado.',
+   a:'Los recargos por trabajo nocturno, dominical o festivo se siguen calculando normalmente. Si la marca esta mal puesta, se quita desde el detalle del empleado.'},
  'F-09':{s:'ADV',t:'Extra sin autorizacion previa',
    q:'El dia genero tiempo suplementario y no existe una autorizacion registrada que cubra esa fecha.',
    p:'El catalogo exige decision explicita: las extras se calculan igual, pero no deberian pagarse sin que el jefe las autorice.',
@@ -704,6 +713,9 @@ let MODEL = null, RESULT = null, CUR_EMP = null, ASISTENCIA = null;
 const OVERRIDES = JSON.parse(localStorage.getItem('mb_overrides')||'{}'); // "id|fecha" -> shiftCode|""
 const PERFILES  = JSON.parse(localStorage.getItem('mb_perfiles')||'{}');
 const AUTOR     = JSON.parse(localStorage.getItem('mb_autor')||'{}');  // id -> [{ini,fin,estado,motivo}]
+/* Direccion, confianza y manejo (Art. 162 CST): no estan sujetos a la jornada maxima,
+   asi que no generan extras ni horas pendientes. Se reportan sus horas trabajadas. */
+let CONFIANZA = new Set(JSON.parse(localStorage.getItem('mb_confianza')||'[]'));
 let KPI_EXCL = new Set(JSON.parse(localStorage.getItem('mb_kpi_excl')||'[]'));  // departamentos (mayúsculas) fuera del KPI
 
 /** Estado de autorizacion de extras de un empleado en una fecha. F-09 / F-02 / F-03. */
@@ -890,7 +902,7 @@ function escalera(min, cfg){
  *  no se descuenta: solo se descuenta si dura al menos `cfg.descMin`. */
 function quitarDescanso(intervalos, W, iso, cfg){
   if(!(W && W.seg.breakH*60 >= cfg.descMin && W.seg.breakAt!=null))
-    return { iv:intervalos, etiqueta:null };
+    return { iv:intervalos, etiqueta:null, ventana:null };
   const base = dnum(iso)*1440;
   let bIni = base + W.seg.breakAt;
   if(bIni < W.ini) bIni += 1440;
@@ -901,7 +913,37 @@ function quitarDescanso(intervalos, W, iso, cfg){
     if(p.ini<bIni) cut.push({...p, fin:bIni});
     if(p.fin>bFin) cut.push({...p, ini:bFin});
   });
-  return { iv: cut.filter(p=>p.fin>p.ini), etiqueta:`${hhmm(bIni%1440)}–${hhmm(bFin%1440)}` };
+  return { iv: cut.filter(p=>p.fin>p.ini), etiqueta:`${hhmm(bIni%1440)}–${hhmm(bFin%1440)}`,
+           ventana:{ini:bIni, fin:bFin} };
+}
+
+/** Minutos que la persona estuvo fuera SIN salir del turno: salio y volvio a marcar.
+ *  Es el descanso de cafe (B-12). Se excluye la franja del almuerzo, que ya viene
+ *  descontada de la jornada fija y no debe contarse dos veces. */
+function huecosInternos(pares, W, almVentana){
+  if(!W || !pares || pares.length<2) return 0;
+  const ps = pares.slice().sort((a,b)=>a.ini-b.ini);
+  let tot = 0;
+  for(let i=1;i<ps.length;i++){
+    const a = Math.max(ps[i-1].fin, W.ini), b = Math.min(ps[i].ini, W.fin);
+    if(b<=a) continue;
+    let dur = b-a;
+    if(almVentana){
+      const ov = Math.min(b, almVentana.fin) - Math.max(a, almVentana.ini);
+      if(ov>0) dur -= ov;
+    }
+    if(dur>0) tot += dur;
+  }
+  return tot;
+}
+
+/** Tope de cafe pagado del dia. Sale del PROPIO turno: si declara un descanso menor al
+ *  umbral de almuerzo, ese es el cafe (los turnos de planta declaran 20 min). Si declara
+ *  el almuerzo o no declara nada, se usa el parametro del formulario. */
+function topeCafe(W, cfg){
+  if(!W) return 0;
+  const declarado = W.seg.breakH*60;
+  return (declarado>0 && declarado < cfg.descMin) ? declarado : cfg.cafeAdm;
 }
 
 /** Acredita exactamente `credMin` minutos tomados cronológicamente del tiempo en exceso.
@@ -979,6 +1021,7 @@ function readConfig(){
     tolPunt: +v('cTolPunt')||0, autor: v('cAutor'),
     ingMasivo: +v('cIngMasivo')||0,
     escPrimer: +v('cEscPrimer')||0, escGracia: +v('cEscGracia')||0,
+    cafeAdm: +v('cCafeAdm')||0,
     semIni: +v('cSemIni')||0
   };
   cfg.corteOn = cfg.corte && cfg.fin >= cfg.corte;      // H-06
@@ -1201,19 +1244,37 @@ function compute(M, cfg){
        registra como `pendienteMin` para el reporte de horas no cumplidas. El sobretiempo
        solo cuenta pasado el umbral de la escalera, medido desde el FIN DEL TURNO asignado,
        nunca redondeando el total del día (que era el bug: 8,85 h se iba a 9 h). */
+    const esConfianza = CONFIANZA.has(id);
     rows.forEach(r=>{
       if(!r.iv) return;
-      if(r.W){
+      if(esConfianza){
+        /* Art. 162 CST: no sujeto a jornada maxima. Se acredita lo efectivamente
+           trabajado, sin jornada fija, sin escalera y sin pendientes. */
+        r.confianza = true;
+        r.jornadaFijaMin = 0; r.dentroMin = r.workMin; r.pendienteMin = 0;
+        r.excesoMin = 0; r.extraCredMin = 0; r.cafePagadoMin = 0; r.huecosMin = 0;
+        const cortes = r.W ? [r.W.ini, r.W.fin] : [];
+        r.tramos = [];
+        r.iv.forEach(p=>atomize(p.ini,p.fin,cfg,cortes)
+          .forEach(t=>r.tramos.push({...t, extra:false, inferido:p.inferido})));
+        if(!r.flags.includes('CONFIANZA')) r.flags.push('CONFIANZA');
+      } else if(r.W){
         const cortes = [r.W.ini, r.W.fin];
-        const baseIv = quitarDescanso([{ini:r.W.ini, fin:r.W.fin}], r.W, r.iso, cfg).iv;
+        const alm = quitarDescanso([{ini:r.W.ini, fin:r.W.fin}], r.W, r.iso, cfg);
         const base = [];
-        baseIv.forEach(p=>atomize(p.ini,p.fin,cfg,cortes)
+        alm.iv.forEach(p=>atomize(p.ini,p.fin,cfg,cortes)
           .forEach(t=>base.push({...t, extra:false})));
         r.jornadaFijaMin = base.reduce((s,t)=>s+t.min,0);
 
         r.dentroMin = r.iv.reduce((s,p)=>
           s + Math.max(0, Math.min(p.fin, r.W.fin) - Math.max(p.ini, r.W.ini)), 0);
-        r.pendienteMin = Math.max(0, r.jornadaFijaMin - r.dentroMin);
+
+        /* B-12: el cafe lo paga la empresa. Solo se perdonan los minutos en que la persona
+           efectivamente salio y volvio dentro del turno — nunca una llegada tarde. */
+        r.huecosMin = huecosInternos(r.pares, r.W, alm.ventana);
+        r.topeCafeMin = topeCafe(r.W, cfg);
+        r.cafePagadoMin = Math.min(r.topeCafeMin, r.huecosMin);
+        r.pendienteMin = Math.max(0, r.jornadaFijaMin - r.dentroMin - r.cafePagadoMin);
 
         const exc = [];
         r.iv.forEach(p=>{ if(p.fin > r.W.fin)
@@ -1252,7 +1313,7 @@ function compute(M, cfg){
        y reclasifica como extra lo que pase del umbral. Lo que ya es extra por la escalera
        NO entra al pool: esa media hora ya se ganó por pasar el fin de turno, y se suma
        aparte (las dos reglas conviven, decisión del usuario). ── */
-    if(perfil==='ROTATIVO'){                                        // D-17..D-22
+    if(perfil==='ROTATIVO' && !esConfianza){                        // D-17..D-22
       const weeks = new Map();
       rows.forEach(r=>{ if(!r.tramos || !r.tramos.length) return;
         const k = weekStart(r.iso, cfg); if(!weeks.has(k)) weeks.set(k,[]); weeks.get(k).push(r); });
@@ -2039,11 +2100,18 @@ function celdaHora(r, cual){
 }
 /** Celda de horas pendientes: lo que falto para completar el turno y aun asi se pago. */
 function celdaPendiente(r){
+  if(r.confianza) return '<td class="num muted" data-nov="CONFIANZA">—</td>';
   const min = r.pendienteMin||0;
-  if(!min) return '<td class="num muted"></td>';
+  const cafe = r.cafePagadoMin||0;
+  if(!min){
+    if(!cafe) return '<td class="num muted"></td>';
+    return `<td class="num muted" data-tip="${esc(`Salio ${r.huecosMin} min dentro del turno y se le reconocen `+
+      `${cafe} min de descanso de cafe (B-12, lo paga la empresa), asi que no queda nada pendiente.`)}">·</td>`;
+  }
   const ent = r.entDelta>0 ? `Entro ${Math.round(r.entDelta)} min tarde. ` : '';
   const sal = r.salDelta<0 ? `Salio ${Math.abs(Math.round(r.salDelta))} min antes del fin de turno. ` : '';
-  const tip = `${ent}${sal}Trabajo ${(r.dentroMin/60).toFixed(2)} h de las ${(r.jornadaFijaMin/60).toFixed(2)} h `+
+  const caf = cafe ? `Se le reconocen ${cafe} min de cafe de los ${r.huecosMin} min que estuvo fuera dentro del turno (B-12). ` : '';
+  const tip = `${ent}${sal}${caf}Trabajo ${(r.dentroMin/60).toFixed(2)} h de las ${(r.jornadaFijaMin/60).toFixed(2)} h `+
               `de su turno. Se le acreditan las ${(r.jornadaFijaMin/60).toFixed(2)} h completas igual; `+
               `estas ${(min/60).toFixed(2)} h quedan registradas como pendientes.`;
   return `<td class="num pend" data-tip="${esc(tip)}">${fmt(min/60)}</td>`;
@@ -2247,7 +2315,8 @@ function fillSelects(){
   if(!CUR_EMP || !RESULT.byEmp.has(CUR_EMP))
     CUR_EMP = RESULT.cons[0]?.emp.id || [...RESULT.byEmp.keys()][0] || null;
   if(CUR_EMP){ $('#selEmp').value=CUR_EMP; $('#selEmpCal').value=CUR_EMP;
-               $('#selPerfil').value = PERFILES[CUR_EMP]||''; }
+               $('#selPerfil').value = PERFILES[CUR_EMP]||'';
+               $('#chkConfianza').checked = CONFIANZA.has(CUR_EMP); }
 
   $('#dlEmpCal').innerHTML = [...RESULT.byEmp.values()]
     .sort((a,b)=>a.emp.id.localeCompare(b.emp.id,'es',{numeric:true}))
@@ -2319,7 +2388,7 @@ function aoaDet(e){
   const head = ['COD_EMPLEADO','NOMBRE','FECHA','DIA','TIPO DE DIA','TURNO','PROGRAMADO',
                 'MARCACIONES','MARCACIONES DESCARTADAS','ENTRO','SALIO',
                 'MIN TARDE ENTRADA','MIN ANTES SALIDA','ALMUERZO',
-                'HORAS TRABAJADAS','JORNADA FIJA','HORAS PENDIENTES','HORAS EXTRA','EXTRA NO AUTORIZADA',
+                'HORAS TRABAJADAS','JORNADA FIJA','MIN CAFE RECONOCIDO','HORAS PENDIENTES','HORAS EXTRA','EXTRA NO AUTORIZADA',
                 'PERFIL','ACUMULADO SEMANA','TOTAL SEMANA','UMBRAL SEMANA','AUTORIZACION',
                 ...cols.map(c=>c.head), 'INFERIDO','NOVEDADES','EXPLICACION'];
   const body = e.ciclo.map(r=>[
@@ -2329,6 +2398,7 @@ function aoaDet(e){
     r.entDelta>0?Math.round(r.entDelta):'', r.salDelta<0?Math.round(-r.salDelta):'',
     r.almuerzo||'',
     r.workMin?+(r.workMin/60).toFixed(2):'', r.ordH||'',
+    r.cafePagadoMin||'',
     r.pendienteMin?+(r.pendienteMin/60).toFixed(2):'',
     r.noAutorizado?'':(r.extraH||''),
     r.noAutorizado?Object.values(r.concNoAut||{}).reduce((a,b)=>a+b,0):'',
@@ -2444,7 +2514,8 @@ document.addEventListener('DOMContentLoaded',()=>{
   $('#fExc').onchange = ()=>RESULT&&renderExc();
   $('#qExc').oninput   = ()=>RESULT&&renderExc();
   $('#selEmp').onchange = e=>{ CUR_EMP=e.target.value;
-    $('#selPerfil').value = PERFILES[CUR_EMP]||''; renderDet(); };
+    $('#selPerfil').value = PERFILES[CUR_EMP]||'';
+    $('#chkConfianza').checked = CONFIANZA.has(CUR_EMP); renderDet(); };
   $('#aAdd').onclick  = ()=>addAutor($('#aIni').value,$('#aFin').value,$('#aEst').value,$('#aMot').value);
   $('#aAll').onclick  = ()=>addAutor(RESULT?.cfg.ini,RESULT?.cfg.fin,'AUT','Autorizacion global del ciclo');
   $('#aNone').onclick = ()=>addAutor(RESULT?.cfg.ini,RESULT?.cfg.fin,'NO','Sin autorizacion para el ciclo');
@@ -2453,6 +2524,11 @@ document.addEventListener('DOMContentLoaded',()=>{
     if(e.target.value) PERFILES[CUR_EMP]=e.target.value; else delete PERFILES[CUR_EMP];
     localStorage.setItem('mb_perfiles',JSON.stringify(PERFILES));
     runCalc(); showTab('det'); };
+  $('#chkConfianza').onchange = e=>{
+    if(!CUR_EMP) return;
+    if(e.target.checked) CONFIANZA.add(CUR_EMP); else CONFIANZA.delete(CUR_EMP);
+    localStorage.setItem('mb_confianza', JSON.stringify([...CONFIANZA]));
+    runCalc(); showTab('det'); };
   $('#selEmpCal').onchange = ()=>renderCal();
   $('#selMes').onchange = ()=>renderCal();
   const destCal = { inputSel:'#qEmpCal', selectSel:'#selEmpCal', onJump:()=>renderCal() };
@@ -2460,7 +2536,8 @@ document.addEventListener('DOMContentLoaded',()=>{
   $('#qEmpCal').addEventListener('keydown', e=>{ if(e.key==='Enter' && RESULT) buscarEmp(e.target.value, destCal); });
 
   const destDet = { inputSel:'#qEmpDet', selectSel:'#selEmp', onJump:id=>{
-    $('#selPerfil').value = PERFILES[id]||''; renderDet(); } };
+    $('#selPerfil').value = PERFILES[id]||'';
+    $('#chkConfianza').checked = CONFIANZA.has(id); renderDet(); } };
   $('#qEmpDet').addEventListener('change', e=>RESULT&&buscarEmp(e.target.value, destDet));
   $('#qEmpDet').addEventListener('keydown', e=>{ if(e.key==='Enter' && RESULT) buscarEmp(e.target.value, destDet); });
   $('#expCons').onclick = ()=>RESULT&&save({Consolidado:aoaCons()},`Consolidado_${stamp()}.xlsx`);
