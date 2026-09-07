@@ -162,6 +162,9 @@
       <input type="file" id="fHor" accept=".xlsx,.xls"></div>
     <div><label class="f">Marcaciones (Reporte de Marcaciones_*.xlsx)</label>
       <input type="file" id="fMar" accept=".xlsx,.xls"></div>
+    <div><label class="f">Renuncias (Renuncia_*.xlsx)
+      <span class="muted">&mdash; opcional</span></label>
+      <input type="file" id="fRen" accept=".xlsx,.xls"></div>
   </div>
   <div class="bar" style="margin-top:10px">
     <button class="primary" id="btnCalc" disabled>Calcular ciclo</button>
@@ -296,6 +299,8 @@
     <select id="fDepto" style="max-width:250px"><option value="">Todos los departamentos</option></select>
     <select id="fPerfil" style="max-width:150px"><option value="">Todos los perfiles</option>
       <option value="ROTATIVO">Rotativo</option><option value="ADMINISTRATIVO">Administrativo</option></select>
+    <select id="fVinc" style="max-width:160px" data-nov="RETIRADO"><option value="">Activos y retirados</option>
+      <option value="ACTIVO">Solo activos</option><option value="RETIRADO">Solo retirados</option></select>
     <label style="display:flex;align-items:center;gap:5px;font-size:12px;white-space:nowrap;color:var(--muted)">
       <input type="checkbox" id="fSinConc" style="width:auto">Ver sin conceptos</label>
     <input type="text" id="qCons" placeholder="Código o nombre…" style="max-width:190px">
@@ -440,10 +445,14 @@ const NOV = {
    q:'Muchos empleados distintos comparten exactamente la misma fecha de ingreso.',
    p:'No es gente contratada el mismo día: es la fecha en que se migró o se empezó a usar este sistema. Tratarla como límite duro descartaría trabajo real de la mayoría de la nómina en los días anteriores.',
    a:'No requiere acción. El sistema deja de usar esa fecha como límite para asistencia y horas, solo para ese grupo de empleados. Ajuste el umbral en «Fecha de ingreso masiva si la comparten más de…» si el corte no es el correcto.'},
- 'A-16':{s:'BLOQ',t:'Marcacion posterior al retiro',
-   q:'Hay marcaciones con fecha posterior a la fecha de retiro.',
-   p:'Error de reconciliacion o retiro mal registrado.',
-   a:'Verifique la fecha de retiro. El dia no se calcula.'},
+ 'A-16':{s:'ADV',t:'Marcacion posterior al retiro',
+   q:'Hay marcaciones con fecha posterior a la fecha de retiro que trae el archivo de Renuncias.',
+   p:'La fecha de retiro esta mal registrada en BioTime, o alguien mas esta marcando con esa credencial.',
+   a:'El dia SI se calcula: la ultima marcacion manda sobre la fecha de retiro, para no perder tiempo realmente trabajado por un dato malo. Se reporta una sola alerta por empleado con el conteo de dias. Verifiquelo antes de exportar a nomina.'},
+ 'RETIRADO':{s:'INFO',t:'Empleado retirado',
+   q:'Este empleado ya no esta en la empresa: viene del archivo de Renuncias, no del maestro.',
+   p:'Aparece en el reporte porque tiene marcaciones dentro del ciclo consultado, y ese tiempo se le debe pagar igual.',
+   a:'El vinculo (activo/retirado) es una dimension propia y se filtra aparte. NO se mezcla con Compania, que distingue PLASTITECSA de GRANSERVICIOS (los temporales, E-06).'},
  'A-17':{s:'BLOQ',t:'Salida anterior a la entrada',
    q:'Un par quedo con la hora de salida igual o anterior a la de entrada, sin cruce de medianoche.',
    p:'Emparejamiento incorrecto o reloj de terminal desfasado.',
@@ -623,7 +632,7 @@ const isHoliday = iso => holidaysCO(+iso.slice(0,4))[iso] || null;
 /* ══════════════════════════════════════════════════════════════════
    PARSEO DE LOS XLSX
    ══════════════════════════════════════════════════════════════════ */
-const DATA = { emp:null, tur:null, hor:null, mar:null };
+const DATA = { emp:null, tur:null, hor:null, mar:null, ren:null };
 let MODEL = null, RESULT = null, CUR_EMP = null;
 const OVERRIDES = JSON.parse(localStorage.getItem('mb_overrides')||'{}'); // "id|fecha" -> shiftCode|""
 const PERFILES  = JSON.parse(localStorage.getItem('mb_perfiles')||'{}');
@@ -694,11 +703,42 @@ function buildModel(){
       retiro:  toISO(pick(r,'fecha de retiro')),
       depto:   String(pick(r,'^departamento')||'').trim(),
       empresa: String(pick(r,'^compania$','^empresa$')||'').trim(),
-      centro:  String(pick(r,'centro de costos')||'').trim(),
       cargo:   String(pick(r,'^cargo')||'').trim(),
       tipo:    String(pick(r,'tipo de empleado')||'').trim(),
-      estado:  String(pick(r,'estado empleado')||'').trim()
+      estado:  String(pick(r,'estado empleado')||'').trim(),
+      vinculo: 'ACTIVO', vigFin: null
     });
+  });
+
+  /* ── Renuncias (archivo OPCIONAL) ─────────────────────────────
+     El maestro de Empleados solo exporta a los Habilitados, asi que los retirados no
+     estan ahi: sin este archivo sus marcaciones caen en huerfanos (A-10) o entran a
+     medias por el Horario, sin departamento y por tanto invisibles a los filtros.
+     Ojo con la llave: la columna "Empleado" trae el id y el nombre PEGADOS en una sola
+     celda ("9094 BRAYAN EDUARDO"). No hay columna de id limpia; se separa por regex. */
+  if(DATA.ren) DATA.ren.rows.forEach(r=>{
+    const crudo = String(pick(r,'^empleado$','^empleado ','^empleado id')||'').trim();
+    const m = /^(\d+)\s+(.*)$/.exec(crudo);
+    if(!m) return;
+    const id = normId(m[1]);
+    const prev = employees.get(id);
+    const e = {
+      id, raw:m[1], nombre:m[2].trim(), nombres:m[2].trim(), apellidos:'',
+      ingreso:null, retiro:toISO(pick(r,'fecha de retiro')),
+      depto:  String(pick(r,'^departamento')||'').trim(),
+      empresa:'',                          // se recupera de Branch en las marcaciones
+      cargo:  String(pick(r,'^cargo')||'').trim(),
+      tipo:'', estado:'Retirado', vinculo:'RETIRADO',
+      tipoRetiro: String(pick(r,'tipo de renuncia')||'').trim(),
+      vigFin: null
+    };
+    /* Si ya venia en el maestro, el maestro manda para los datos personales y la
+       renuncia solo aporta el retiro. No se pisa lo bueno con lo pobre. */
+    if(prev) employees.set(id, {...prev, retiro:e.retiro, vinculo:'RETIRADO',
+                                tipoRetiro:e.tipoRetiro,
+                                depto: prev.depto || e.depto,
+                                cargo: prev.cargo || e.cargo});
+    else employees.set(id, e);
   });
 
   /* ── Turnos: código -> segmentos por día de semana ── */
@@ -736,8 +776,8 @@ function buildModel(){
     if(!employees.has(id)){
       const nom=String(pick(r,'^nombres')||'').trim(), ape=String(pick(r,'^apellidos')||'').trim();
       employees.set(id,{id,raw:id,nombre:(ape?ape+' ':'')+nom,nombres:nom,apellidos:ape,
-        ingreso:null,retiro:null,depto:'',empresa:'',centro:'',cargo:'',tipo:'',estado:'',
-        _soloHorario:true});
+        ingreso:null,retiro:null,depto:'',empresa:'',cargo:'',tipo:'',estado:'',
+        vinculo:'ACTIVO',vigFin:null,_soloHorario:true});
     }
   });
   sched.forEach(a=>a.sort((x,y)=>x.ini<y.ini?-1:1));
@@ -753,11 +793,34 @@ function buildModel(){
     const p = { id, iso, min, ts: dnum(iso)*1440+min, seq:i,
                 origen:String(pick(r,'origen del registro')||'').trim(),
                 tipo:String(pick(r,'tipo de marcacion')||'').trim() };
-    if(!employees.has(id)){ orphan.push(p); return; }        // A-10
+    const e = employees.get(id);
+    if(!e){ orphan.push(p); return; }                        // A-10
+    /* La columna "Branch" de las marcaciones ES la Compania del maestro: verificado
+       contra los 1.039 activos con marcacion, 1.039 coincidencias exactas y ningun
+       empleado con dos valores distintos. Es la unica forma de saber si un retirado
+       era PLASTITECSA o GRANSERVICIOS, porque el archivo de Renuncia no lo trae y esa
+       distincion importa (GRANSERVICIOS son los temporales, E-06). */
+    if(!e.empresa){
+      const br = String(pick(r,'^branch$','^branch')||'').trim();
+      if(br) e.empresa = br;
+    }
     if(!punches.has(id)) punches.set(id,[]);
     punches.get(id).push(p);
   });
   punches.forEach(arr=>arr.sort((a,b)=>a.ts-b.ts||a.seq-b.seq));
+
+  /* ── Vigencia real de un retirado ──────────────────────────────
+     Hasta la fecha de retiro, O hasta su ultima marcacion si marco despues. Las fechas
+     de retiro de BioTime todavia no son confiables (hay un caso con 163 marcaciones
+     posteriores al retiro), asi que la ultima marcacion manda: nunca se pierde tiempo
+     realmente trabajado por un dato mal registrado. Los dias entre el retiro y esa
+     ultima marca se calculan normal y quedan senalados con A-16 para seguimiento. */
+  employees.forEach(e=>{
+    if(!e.retiro){ e.vigFin = null; return; }
+    const arr = punches.get(e.id);
+    const ult = arr && arr.length ? arr[arr.length-1].iso : null;
+    e.vigFin = (ult && ult > e.retiro) ? ult : e.retiro;
+  });
 
   return { employees, shifts, sched, punches, orphan };
 }
@@ -1032,6 +1095,7 @@ function compute(M, cfg){
 
     /* ── construir tramos trabajados ── */
     const rows = [];
+    const postRetiro = [];        // dias con marcacion posteriores a la fecha de retiro
     jornadas.forEach(J=>{
       const iso = J.iso, W = J.w, ps = J.ps;
       const inCiclo = iso>=cfg.ini && iso<=cfg.fin;
@@ -1049,8 +1113,13 @@ function compute(M, cfg){
         if(ps.length) add('BLOQ','A-15',id,emp.nombre,iso,'Marcación anterior a la fecha de ingreso.');
         row.flags.push('A-15'); rows.push(row); return;
       }
+      /* A-16: pasado el retiro pero dentro de la vigencia real (hay marcaciones
+         posteriores). NO se bloquea: se calcula el dia y se deja la senal. */
       if(emp.retiro && iso > emp.retiro){
-        if(ps.length) add('BLOQ','A-16',id,emp.nombre,iso,'Marcación posterior a la fecha de retiro.');
+        row.flags.push('A-16');
+        if(ps.length) postRetiro.push(iso);
+      }
+      if(emp.vigFin && iso > emp.vigFin){        // ya no hay vinculo ni marcaciones
         row.flags.push('A-16'); rows.push(row); return;
       }
 
@@ -1207,6 +1276,15 @@ function compute(M, cfg){
       }
       r.creditMin = r.tramos.reduce((s,t)=>s+t.min,0);
     });
+
+    /* A-16 se reporta UNA vez por empleado con el conteo, no una fila por dia: el caso
+       real que motivo esto tenia 163 marcaciones posteriores al retiro y habria inundado
+       la pestana de Excepciones (misma leccion que A-18/B-03). */
+    if(postRetiro.length)
+      add('ADV','A-16',id,emp.nombre,postRetiro[0],
+        `Marcaciones posteriores a la fecha de retiro (${emp.retiro}) en ${postRetiro.length} día(s): `+
+        `${postRetiro[0]} a ${postRetiro[postRetiro.length-1]}. Se calculan igual; `+
+        `verifique si la fecha de retiro está mal registrada o si otra persona está marcando.`);
 
     /* ── acumulado semanal corrido, dia a dia. Acumula SOLO las horas que compiten contra
        el umbral: la jornada fija acreditada. El sobretiempo de la escalera queda afuera
@@ -1425,6 +1503,14 @@ function initPop(){
 function toast(m){ const t=$('#toast'); t.textContent=m; t.classList.add('on');
   clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove('on'),2600); }
 
+/** Marca de retirado al lado del nombre. El vinculo es una dimension propia: NUNCA se
+ *  mezcla con Compania, que ya significa PLASTITECSA vs GRANSERVICIOS (temporales). */
+function tagRetiro(emp){
+  if((emp.vinculo||'ACTIVO')!=='RETIRADO') return '';
+  const t = `Retirado el ${emp.retiro||'?'}${emp.tipoRetiro?' ('+emp.tipoRetiro+')':''}. `+
+            `Aparece porque tiene marcaciones dentro del ciclo consultado.`;
+  return ` <span class="tag t-warn" data-tip="${esc(t)}">Retirado</span>`;
+}
 function conceptCols(cfg){
   return CONCEPTS.map(c=>({key:c.key, code:c.code(cfg), label:c.label,
     tip:`${c.code(cfg)} — ${c.label}. ${CONC_DESC[c.key]}`,
@@ -1442,13 +1528,14 @@ function filtroActivo(){
   return { cia:    $('#fCia').value,
            depto:  $('#fDepto').value,
            perfil: $('#fPerfil').value,
+           vinc:   $('#fVinc').value,
            q:      $('#qCons').value.trim().toLowerCase() };
 }
 function filtroHay(){ const f=filtroActivo();
-  return !!(f.cia||f.depto||f.perfil||f.q||$('#fSinConc').checked); }
+  return !!(f.cia||f.depto||f.perfil||f.vinc||f.q||$('#fSinConc').checked); }
 function filtroSlug(){
   const f = filtroActivo();
-  const t = [f.cia, f.depto, f.perfil].filter(Boolean).join('_');
+  const t = [f.cia, f.depto, f.perfil, f.vinc].filter(Boolean).join('_');
   return t ? '_'+t.replace(/[^\wÁÉÍÓÚÑáéíóúñ]+/g,'-').slice(0,40) : '';
 }
 function consFiltrado(){
@@ -1458,6 +1545,7 @@ function consFiltrado(){
        (!f.cia    || e.emp.empresa===f.cia)
     && (!f.depto  || e.emp.depto===f.depto)
     && (!f.perfil || e.perfil===f.perfil)
+    && (!f.vinc   || (e.emp.vinculo||'ACTIVO')===f.vinc)
     && (!f.q      || e.emp.id.includes(f.q) || e.emp.nombre.toLowerCase().includes(f.q)));
 }
 /** Puebla los desplegables con los valores presentes en los datos cargados. */
@@ -1491,7 +1579,7 @@ function renderCons(){
 
   $('#tCons tbody').innerHTML = list.map(e=>{
     if(!e.tieneConceptos) return `<tr class="clickable" data-id="${esc(e.emp.id)}" style="opacity:.6">
-      <td class="mono">${esc(e.emp.id)}</td><td>${esc(e.emp.nombre)}</td>
+      <td class="mono">${esc(e.emp.id)}</td><td>${esc(e.emp.nombre)}${tagRetiro(e.emp)}</td>
       <td>${esc(e.emp.depto||'—')}</td><td>${esc(e.emp.empresa||'—')}</td>` +
       cols.map(()=>`<td class="num cw muted">—</td>`).join('') +
       `<td class="num cw">${e.horas.toFixed(2)}</td>
@@ -1508,7 +1596,7 @@ function renderCons(){
              : adv  ? `<span class="tag t-warn">${adv} adv.</span>`
                     : `<span class="tag t-ok">OK</span>`;
     return `<tr class="clickable" data-id="${esc(e.emp.id)}">
-      <td class="mono">${esc(e.emp.id)}</td><td>${esc(e.emp.nombre)}</td>
+      <td class="mono">${esc(e.emp.id)}</td><td>${esc(e.emp.nombre)}${tagRetiro(e.emp)}</td>
        <td>${esc(e.emp.depto||'—')}</td><td>${esc(e.emp.empresa||'—')}</td>` +
       cols.map(c=>`<td class="num cw">${fmt(e.tot[c.key])}</td>`).join('') +
       `<td class="num cw">${e.horas.toFixed(2)}</td>
@@ -1842,13 +1930,16 @@ function aoaCons(){
   const head = ['COD_EMPLEADO','NOMBRE', ...cols.map(c=>c.head),
                 'HORAS TRABAJADAS','HORAS ORDINARIAS','HORAS PENDIENTES','HORAS EXTRA',
                 'DIAS SIN AUTORIZAR','DIAS RECHAZADOS','DIAS CON DESVIO',
-                'PERFIL','CARGO','DEPARTAMENTO','EN ARCHIVO SINERGY'];
+                'PERFIL','CARGO','DEPARTAMENTO','COMPANIA','VINCULO','FECHA DE RETIRO',
+                'EN ARCHIVO SINERGY'];
   const body = consFiltrado().map(e=>[
     e.emp.id, e.emp.nombre,
     ...cols.map(c=>e.tot[c.key]||''),
     +e.horas.toFixed(2), e.ordH||'', +(e.pendH||0).toFixed(2)||'', e.extraH||'',
     e.sinAut||'', e.noAut||'', e.tardes||'',
-    e.perfil, e.emp.cargo, e.emp.depto, e.tieneConceptos?'SI':'NO' ]);
+    e.perfil, e.emp.cargo, e.emp.depto, e.emp.empresa||'',
+    e.emp.vinculo||'ACTIVO', e.emp.retiro||'',
+    e.tieneConceptos?'SI':'NO' ]);
   return [head, ...body];
 }
 function aoaDet(e){
@@ -1935,8 +2026,11 @@ function checkReady(){
   const ok = DATA.emp&&DATA.tur&&DATA.hor&&DATA.mar;
   $('#btnCalc').disabled = !ok;
   const n = k => DATA[k] ? DATA[k].rows.length : 0;
+  /* Renuncias NO entra en `ok`: es opcional a proposito, para que quien no la tenga
+     siga calculando exactamente como antes. */
   $('#loadInfo').textContent =
-    `Empleados: ${n('emp')} · Turnos: ${n('tur')} · Programación: ${n('hor')} · Marcaciones: ${n('mar')}`;
+    `Empleados: ${n('emp')} · Turnos: ${n('tur')} · Programación: ${n('hor')} · Marcaciones: ${n('mar')}` +
+    (DATA.ren ? ` · Renuncias: ${n('ren')}` : '');
   if(ok && !$('#cIni').value && DATA.mar.rows.length){
     const ds = DATA.mar.rows.map(r=>toISO(pick(r,'^fecha'))).filter(Boolean).sort();
     $('#cIni').value = ds[0]; $('#cFin').value = ds[ds.length-1];
@@ -1973,12 +2067,14 @@ document.addEventListener('DOMContentLoaded',()=>{
   $('#btnGearClose2').onclick = ()=>dlgConfig.close();
   $('#btnGearApply').onclick  = ()=>{ dlgConfig.close(); if(RESULT) runCalc(); };
   hook('fEmp','emp'); hook('fTur','tur'); hook('fHor','hor'); hook('fMar','mar');
+  hook('fRen','ren');
   $('#btnCalc').onclick = runCalc;
   $$('.tabs button').forEach(b=>b.onclick=()=>showTab(b.dataset.tab));
   $('#qCons').oninput   = ()=>RESULT&&renderCons();
   $('#fCia').onchange    = ()=>RESULT&&renderCons();
   $('#fDepto').onchange  = ()=>RESULT&&renderCons();
   $('#fPerfil').onchange  = ()=>RESULT&&renderCons();
+  $('#fVinc').onchange    = ()=>RESULT&&renderCons();
   $('#fSinConc').onchange = ()=>RESULT&&renderCons();
   $('#fExcDep').onchange = ()=>RESULT&&renderExc();
   $('#fClear').onclick   = ()=>{ $('#fCia').value=''; $('#fDepto').value='';
