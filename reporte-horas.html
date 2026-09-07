@@ -112,6 +112,7 @@
   .tag[data-nov]{cursor:pointer}
   .desc{text-decoration:line-through;color:var(--err);opacity:.75}
   td.dev{background:var(--err-soft);color:var(--err);font-weight:700}
+  td.pend{background:var(--warn-soft);color:var(--warn);font-weight:700}
   td.cross{box-shadow:inset 3px 0 0 var(--ok)}
   td.over{color:var(--ok);font-weight:700}
   td.noaut{background:var(--err-soft);color:var(--err);text-decoration:line-through}
@@ -450,11 +451,12 @@
   </div>
   <div class="glos"><h3>Reglas de cálculo aplicadas</h3>
     <table><tbody>
-      <tr><td><b>Redondeo</b> (D-10 a D-13)</td><td>Pasos de 0,5 h. Por cada hora completa: minutos <code>:00–:24</code> &rarr; 0 h &middot; <code>:25–:49</code> &rarr; 0,5 h &middot; <code>:50–:59</code> &rarr; 1,0 h. Ejemplo: 25 min de sobretiempo &rarr; 0,5 h; 1 h 50 min &rarr; 2,0 h.</td></tr>
+      <tr><td><b>Jornada fija del turno</b></td><td>El día acredita las horas fijas del turno (salida &minus; entrada &minus; almuerzo), no el total del reloj redondeado. Un T_ADM1 de 07:30 a 17:00 acredita 8,5 h. Si la persona trabajó algunos minutos menos, se le acreditan las 8,5 h igual y el faltante queda en la columna <b>Pendiente</b>.</td></tr>
+      <tr><td><b>Escalera de sobretiempo</b> (D-10 a D-13)</td><td>El sobretiempo se cuenta desde el <b>fin del turno</b>. La primera media hora exige 25 minutos; cada media hora siguiente se acredita 10 minutos antes de completarse. Turno que acaba 16:30: 0,5 h a las 16:55 &middot; 1,0 h a las 17:20 &middot; 1,5 h a las 17:50 &middot; 2,0 h a las 18:20. Los dos números son parámetros configurables.</td></tr>
       <tr><td><b>Tiempo antes del turno</b> (D-15)</td><td>No cuenta. La jornada empieza en la hora programada, aunque el empleado marque antes.</td></tr>
       <tr><td><b>Almuerzo</b> (B-10)</td><td>Se descuenta cuando el turno lo tiene configurado con duración igual o mayor al parámetro (por defecto 1 h).</td></tr>
       <tr><td><b>Descanso de café</b> (B-12)</td><td>Los 20 min NO se descuentan. La empresa los paga.</td></tr>
-      <tr><td><b>Umbral semanal</b> (D-17, D-18)</td><td>Personal rotativo: dentro de la semana lunes–domingo, las horas por encima del umbral son extra; las de abajo son ordinarias y solo generan recargo si caen en franja nocturna o en domingo/festivo.</td></tr>
+      <tr><td><b>Umbral semanal</b> (D-17, D-18)</td><td>Personal rotativo: dentro de la semana, las horas por encima del umbral son extra; las de abajo son ordinarias y solo generan recargo si caen en franja nocturna o en domingo/festivo. El acumulado suma el tiempo <b>ya acreditado</b> (jornada fija + escalera), no los minutos crudos del reloj. El día en que arranca la semana es configurable; por defecto domingo, para que un turno que entra el domingo en la noche cierre su semana el viernes.</td></tr>
       <tr><td><b>Personal administrativo</b> (D-23)</td><td>No aplica umbral semanal. Se compara cada día contra su jornada programada.</td></tr>
       <tr><td><b>Franja nocturna</b> (C-02, C-03)</td><td>Configurable. Por defecto 19:00 a 06:00.</td></tr>
       <tr><td><b>Exclusividad</b> (I-02, I-03)</td><td>Cada minuto trabajado genera exactamente un concepto, nunca dos, nunca ninguno.</td></tr>
@@ -1940,8 +1942,9 @@ function renderCons(){
   $('#tCons thead').innerHTML = `<tr><th>COD_EMPLEADO</th><th>NOMBRE</th><th>DEPARTAMENTO</th><th>COMPAÑÍA</th>` +
     cols.map(c=>`<th class="num cw" data-tip="${esc(c.tip)}"><b>${esc(c.code)}</b><i>${esc(c.label)}</i></th>`).join('') +
     `<th class="num cw" data-tip="Horas trabajadas reales del ciclo, sin redondear."><b>Horas</b><i>trabajadas</i></th>
-     <th class="num cw" data-tip="Horas ordinarias del ciclo, redondeadas en pasos de 0,5 h con el mismo criterio D-10 a D-13 (:00-:24 baja, :25-:49 media hora, :50-:59 hora completa)."><b>Ordin.</b><i>redondeadas</i></th>
-     <th class="num cw" data-tip="Horas de trabajo suplementario del ciclo, redondeadas en pasos de 0,5 h. Es la suma de los cuatro conceptos de extra antes de separar por franja."><b>Extras</b><i>redondeadas</i></th>
+     <th class="num cw" data-tip="Suma de las horas fijas de los turnos del ciclo. Se acreditan completas aunque algun dia haya trabajado de menos; ese faltante esta en la columna Pendientes."><b>Ordin.</b><i>jornada fija</i></th>
+     <th class="num cw" data-tip="Horas que le faltaron para completar sus turnos en el ciclo y aun asi se le pagaron. Es el sustento para un reclamo, no un descuento."><b>Pend.</b><i>no cumplidas</i></th>
+     <th class="num cw" data-tip="Sobretiempo del ciclo, contado desde el fin de cada turno con la escalera (25 min la primera media hora, luego 10 min antes de cada media hora siguiente)."><b>Extras</b><i>escalera</i></th>
      <th>Perfil</th><th data-nov="F-09">Autoriz.</th><th>Estado</th></tr>`;
 
   $('#tCons tbody').innerHTML = list.map(e=>{
@@ -1951,6 +1954,7 @@ function renderCons(){
       cols.map(()=>`<td class="num cw muted">—</td>`).join('') +
       `<td class="num cw">${e.horas.toFixed(2)}</td>
        <td class="num cw">${fmt(e.ordH)}</td>
+       <td class="num cw ${e.pendH?'pend':''}">${fmt(e.pendH)}</td>
        <td class="num cw">${fmt(e.extraH)}</td>
        <td><span class="tag ${e.perfil==='ADMINISTRATIVO'?'t-info':'t-mut'}">${e.perfil[0]}${e.perfil.slice(1).toLowerCase()}</span></td>
        <td class="muted">—</td>
@@ -1967,6 +1971,7 @@ function renderCons(){
       cols.map(c=>`<td class="num cw">${fmt(e.tot[c.key])}</td>`).join('') +
       `<td class="num cw">${e.horas.toFixed(2)}</td>
        <td class="num cw">${fmt(e.ordH)}</td>
+       <td class="num cw ${e.pendH?'pend':''}">${fmt(e.pendH)}</td>
        <td class="num cw">${fmt(e.extraH)}</td>
        <td><span class="tag ${e.perfil==='ADMINISTRATIVO'?'t-info':'t-mut'}">${e.perfil[0]}${e.perfil.slice(1).toLowerCase()}</span></td>
        <td>${ e.noAut  ? `<span class="tag t-err" data-nov="F-03">${e.noAut} rechaz.</span>`
@@ -2019,6 +2024,18 @@ function celdaHora(r, cual){
              : `Salida ${Math.round(d)} min despues del fin del turno.`);
   return `<td class="mono ${mal?'dev':''}" data-tip="${esc(tip)}">${hhmm(ts)}${sfx}</td>`;
 }
+/** Celda de horas pendientes: lo que falto para completar el turno y aun asi se pago. */
+function celdaPendiente(r){
+  const min = r.pendienteMin||0;
+  if(!min) return '<td class="num muted"></td>';
+  const ent = r.entDelta>0 ? `Entro ${Math.round(r.entDelta)} min tarde. ` : '';
+  const sal = r.salDelta<0 ? `Salio ${Math.abs(Math.round(r.salDelta))} min antes del fin de turno. ` : '';
+  const tip = `${ent}${sal}Trabajo ${(r.dentroMin/60).toFixed(2)} h de las ${(r.jornadaFijaMin/60).toFixed(2)} h `+
+              `de su turno. Se le acreditan las ${(r.jornadaFijaMin/60).toFixed(2)} h completas igual; `+
+              `estas ${(min/60).toFixed(2)} h quedan registradas como pendientes.`;
+  return `<td class="num pend" data-tip="${esc(tip)}">${fmt(min/60)}</td>`;
+}
+
 /** Celda del acumulado semanal corrido. */
 function celdaSemana(r){
   if(r.accH==null) return '<td class="num muted"></td>';
@@ -2077,7 +2094,8 @@ function renderDet(){
      <div><div class="k">Cargo</div><div class="v" style="font-size:12px">${esc(e.emp.cargo||'—')}</div></div>
      <div><div class="k">Horas ciclo</div><div class="v">${e.horas.toFixed(2)}</div></div>
      <div data-tip="Horas ordinarias del ciclo, redondeadas en pasos de 0,5 h."><div class="k">Ordinarias</div><div class="v">${fmt(e.ordH)||0}</div></div>
-     <div data-tip="Horas suplementarias del ciclo, redondeadas en pasos de 0,5 h."><div class="k">Extras</div><div class="v">${fmt(e.extraH)||0}</div></div>
+     <div data-tip="Horas suplementarias del ciclo, contadas desde el fin de cada turno con la escalera."><div class="k">Extras</div><div class="v">${fmt(e.extraH)||0}</div></div>
+     <div data-tip="Horas que le faltaron para completar sus turnos y aun asi se le pagaron."><div class="k">Pendientes</div><div class="v">${fmt(e.pendH)||0}</div></div>
      <div data-nov="TARDE"><div class="k">Dias con desvio</div><div class="v">${e.tardes}</div></div>` +
     cols.filter(c=>e.tot[c.key]>0).map(c=>
       `<div data-tip="${esc(c.tip)}"><div class="k">${esc(c.code)}</div>
@@ -2090,8 +2108,9 @@ function renderDet(){
     <th data-tip="Ultima marcacion del dia. En rojo si es anterior al fin del turno por encima de la tolerancia de puntualidad. El numero es la desviacion en minutos.">Salio</th>
     <th>Almuerzo</th>
     <th class="num" data-tip="Tiempo trabajado real del dia, sin redondear.">Hrs</th>
-    <th class="num" data-tip="Horas ordinarias del dia, redondeadas en pasos de 0,5 h (D-10 a D-13).">Ordin.</th>
-    <th class="num" data-tip="Horas de trabajo suplementario del dia, redondeadas en pasos de 0,5 h. Tachadas si no estan autorizadas.">Extra</th>
+    <th class="num" data-tip="Horas fijas del turno de ese dia (salida menos entrada menos almuerzo). Se acreditan completas aunque la persona haya trabajado algunos minutos menos; lo que falto queda en la columna Pendiente.">Ordin.</th>
+    <th class="num" data-tip="Horas pendientes: lo que le falto para completar su turno y aun asi se le pago. Sirve para sustentar un reclamo sin dejar de pagarle la jornada.">Pend.</th>
+    <th class="num" data-tip="Sobretiempo del dia, contado desde el FIN DEL TURNO con la escalera: la primera media hora exige 25 minutos y cada media hora siguiente se acredita 10 minutos antes de completarse. Tachado si no esta autorizado.">Extra</th>
     <th class="num" data-tip="Acumulado corrido de la semana lunes a domingo al cierre de este dia, frente al umbral. En verde el dia en que se cruza el umbral: desde ahi lo trabajado se paga como extra (D-17 y D-18). El personal administrativo no usa umbral: se compara cada dia contra su jornada (D-23).">Acum. semana</th>` +
     cols.map(c=>`<th class="num cw" data-tip="${esc(c.tip)}"><b>${esc(c.code)}</b><i>${esc(c.label.split(' ').slice(0,2).join(' '))}</i></th>`).join('') +
     `<th>Novedades</th></tr>`;
@@ -2111,6 +2130,7 @@ function renderDet(){
       <td class="mono muted">${esc(r.almuerzo||'—')}</td>
       <td class="num">${r.workMin?(r.workMin/60).toFixed(2):''}</td>
       <td class="num">${fmt(r.ordH)}</td>
+      ${celdaPendiente(r)}
       <td class="num ${r.noAutorizado?'noaut':''}">${
         r.noAutorizado ? fmt(Object.values(r.concNoAut||{}).reduce((a,b)=>a+b,0)) : fmt(r.extraH)}</td>
       ${celdaSemana(r)}` +
@@ -2270,13 +2290,13 @@ const stamp = () => `${filtroSlug()}_${RESULT.cfg.ini}_${RESULT.cfg.fin}`.replac
 function aoaCons(){
   const cols = conceptCols(RESULT.cfg);
   const head = ['COD_EMPLEADO','NOMBRE', ...cols.map(c=>c.head),
-                'HORAS TRABAJADAS','HORAS ORDINARIAS','HORAS EXTRA',
+                'HORAS TRABAJADAS','HORAS ORDINARIAS','HORAS PENDIENTES','HORAS EXTRA',
                 'DIAS SIN AUTORIZAR','DIAS RECHAZADOS','DIAS CON DESVIO',
                 'PERFIL','CARGO','DEPARTAMENTO','EN ARCHIVO SINERGY'];
   const body = consFiltrado().map(e=>[
     e.emp.id, e.emp.nombre,
     ...cols.map(c=>e.tot[c.key]||''),
-    +e.horas.toFixed(2), e.ordH||'', e.extraH||'',
+    +e.horas.toFixed(2), e.ordH||'', +(e.pendH||0).toFixed(2)||'', e.extraH||'',
     e.sinAut||'', e.noAut||'', e.tardes||'',
     e.perfil, e.emp.cargo, e.emp.depto, e.tieneConceptos?'SI':'NO' ]);
   return [head, ...body];
@@ -2286,7 +2306,7 @@ function aoaDet(e){
   const head = ['COD_EMPLEADO','NOMBRE','FECHA','DIA','TIPO DE DIA','TURNO','PROGRAMADO',
                 'MARCACIONES','MARCACIONES DESCARTADAS','ENTRO','SALIO',
                 'MIN TARDE ENTRADA','MIN ANTES SALIDA','ALMUERZO',
-                'HORAS TRABAJADAS','HORAS ORDINARIAS','HORAS EXTRA','EXTRA NO AUTORIZADA',
+                'HORAS TRABAJADAS','JORNADA FIJA','HORAS PENDIENTES','HORAS EXTRA','EXTRA NO AUTORIZADA',
                 'PERFIL','ACUMULADO SEMANA','TOTAL SEMANA','UMBRAL SEMANA','AUTORIZACION',
                 ...cols.map(c=>c.head), 'INFERIDO','NOVEDADES','EXPLICACION'];
   const body = e.ciclo.map(r=>[
@@ -2296,6 +2316,7 @@ function aoaDet(e){
     r.entDelta>0?Math.round(r.entDelta):'', r.salDelta<0?Math.round(-r.salDelta):'',
     r.almuerzo||'',
     r.workMin?+(r.workMin/60).toFixed(2):'', r.ordH||'',
+    r.pendienteMin?+(r.pendienteMin/60).toFixed(2):'',
     r.noAutorizado?'':(r.extraH||''),
     r.noAutorizado?Object.values(r.concNoAut||{}).reduce((a,b)=>a+b,0):'',
     e.perfil, r.accH!=null?+r.accH.toFixed(2):'', r.semTotH!=null?+r.semTotH.toFixed(2):'',
