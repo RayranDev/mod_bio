@@ -216,6 +216,20 @@
       <code>:25&ndash;:49&rarr;0,5h</code>, <code>:50&ndash;:59&rarr;1,0h</code> por cada hora completa.
     </p>
   </details>
+
+  <details class="rules">
+    <summary>Reglas de cálculo aplicadas</summary>
+    <table><tbody>
+      <tr><td><b>Redondeo</b> (D-10 a D-13)</td><td>Pasos de 0,5 h. Por cada hora completa: minutos <code>:00–:24</code> &rarr; 0 h &middot; <code>:25–:49</code> &rarr; 0,5 h &middot; <code>:50–:59</code> &rarr; 1,0 h. Ejemplo: 25 min de sobretiempo &rarr; 0,5 h; 1 h 50 min &rarr; 2,0 h.</td></tr>
+      <tr><td><b>Tiempo antes del turno</b> (D-15)</td><td>No cuenta. La jornada empieza en la hora programada, aunque el empleado marque antes.</td></tr>
+      <tr><td><b>Almuerzo</b> (B-10)</td><td>Se descuenta cuando el turno lo tiene configurado con duración igual o mayor al parámetro (por defecto 1 h).</td></tr>
+      <tr><td><b>Descanso de café</b> (B-12)</td><td>Los 20 min NO se descuentan. La empresa los paga.</td></tr>
+      <tr><td><b>Umbral semanal</b> (D-17, D-18)</td><td>Personal rotativo: dentro de la semana lunes–domingo, las horas por encima del umbral son extra; las de abajo son ordinarias y solo generan recargo si caen en franja nocturna o en domingo/festivo.</td></tr>
+      <tr><td><b>Personal administrativo</b> (D-23)</td><td>No aplica umbral semanal. Se compara cada día contra su jornada programada.</td></tr>
+      <tr><td><b>Franja nocturna</b> (C-02, C-03)</td><td>Configurable. Por defecto 19:00 a 06:00.</td></tr>
+      <tr><td><b>Exclusividad</b> (I-02, I-03)</td><td>Cada minuto trabajado genera exactamente un concepto, nunca dos, nunca ninguno.</td></tr>
+    </tbody></table>
+  </details>
 </section>
 
 <!-- ============ TABS ============ -->
@@ -224,7 +238,6 @@
   <button data-tab="det">Detalle por empleado</button>
   <button data-tab="cal">Calendario de turnos</button>
   <button data-tab="exc">Excepciones</button>
-  <button data-tab="glo">Glosario</button>
 </div>
 
 <section id="tab-cons" class="tabwrap on">
@@ -317,27 +330,6 @@
     <button id="expExc">Exportar excepciones (Excel)</button>
   </div>
   <div class="scroll"><table id="tExc"><thead></thead><tbody></tbody></table></div>
-</section>
-
-<section id="tab-glo" class="tabwrap">
-  <div class="glos"><h3>Conceptos de nómina</h3>
-    <table id="gConc"><thead><tr><th>Código</th><th>Concepto</th><th>Qué cuenta</th></tr></thead><tbody></tbody></table>
-  </div>
-  <div class="glos"><h3>Novedades del cálculo</h3>
-    <table id="gNov"><thead><tr><th>Código</th><th>Novedad</th><th>Qué pasó</th><th>Por qué</th><th>Qué hacer</th></tr></thead><tbody></tbody></table>
-  </div>
-  <div class="glos"><h3>Reglas de cálculo aplicadas</h3>
-    <table><tbody>
-      <tr><td><b>Redondeo</b> (D-10 a D-13)</td><td>Pasos de 0,5 h. Por cada hora completa: minutos <code>:00–:24</code> &rarr; 0 h &middot; <code>:25–:49</code> &rarr; 0,5 h &middot; <code>:50–:59</code> &rarr; 1,0 h. Ejemplo: 25 min de sobretiempo &rarr; 0,5 h; 1 h 50 min &rarr; 2,0 h.</td></tr>
-      <tr><td><b>Tiempo antes del turno</b> (D-15)</td><td>No cuenta. La jornada empieza en la hora programada, aunque el empleado marque antes.</td></tr>
-      <tr><td><b>Almuerzo</b> (B-10)</td><td>Se descuenta cuando el turno lo tiene configurado con duración igual o mayor al parámetro (por defecto 1 h).</td></tr>
-      <tr><td><b>Descanso de café</b> (B-12)</td><td>Los 20 min NO se descuentan. La empresa los paga.</td></tr>
-      <tr><td><b>Umbral semanal</b> (D-17, D-18)</td><td>Personal rotativo: dentro de la semana lunes–domingo, las horas por encima del umbral son extra; las de abajo son ordinarias y solo generan recargo si caen en franja nocturna o en domingo/festivo.</td></tr>
-      <tr><td><b>Personal administrativo</b> (D-23)</td><td>No aplica umbral semanal. Se compara cada día contra su jornada programada.</td></tr>
-      <tr><td><b>Franja nocturna</b> (C-02, C-03)</td><td>Configurable. Por defecto 19:00 a 06:00.</td></tr>
-      <tr><td><b>Exclusividad</b> (I-02, I-03)</td><td>Cada minuto trabajado genera exactamente un concepto, nunca dos, nunca ninguno.</td></tr>
-    </tbody></table>
-  </div>
 </section>
 
 </main>
@@ -1184,14 +1176,54 @@ function compute(M, cfg){
   return { byEmp, cons, todos, exc, cfg, days };
 }
 
-function renderGlosario(){
-  const cfg = RESULT ? RESULT.cfg : {corteOn:false};
-  $('#gConc tbody').innerHTML = CONCEPTS.map(c=>
-    `<tr><td class="mono"><b>${c.code(cfg)}</b></td><td>${esc(c.label)}</td>
-     <td>${esc(CONC_DESC[c.key])}</td></tr>`).join('');
-  $('#gNov tbody').innerHTML = Object.entries(NOV).map(([k,n])=>
-    `<tr><td><span class="tag ${sevCls(n.s)}">${esc(k)}</span></td><td><b>${esc(n.t)}</b></td>
-     <td>${esc(n.q)}</td><td>${esc(n.p)}</td><td>${esc(n.a)}</td></tr>`).join('');
+/* ══════════════════════════════════════════════════════════════════
+   RENDER
+   ══════════════════════════════════════════════════════════════════ */
+const $  = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+const esc = s => String(s==null?'':s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+const fmt = n => n===0||n==null ? '' : (Math.round(n*100)/100).toString();
+
+const sevCls = s => s==='BLOQ'?'t-err' : s==='ADV'?'t-warn' : 't-mut';
+
+function tipHTML(code){
+  const n = NOV[code];
+  if(!n) return `<div class="pt"><b>${esc(code)}</b></div>`;
+  return `<div class="pt"><span class="tag ${sevCls(n.s)}">${esc(code)}</span> <b>${esc(n.t)}</b></div>
+    <div class="pl"><i>Qué pasó</i>${esc(n.q)}</div>
+    <div class="pl"><i>Por qué</i>${esc(n.p)}</div>
+    <div class="pl"><i>Qué hacer</i>${esc(n.a)}</div>`;
+}
+/** Chip de novedad: tooltip al pasar el cursor, clic lleva a la excepción. */
+function chip(code, r){
+  const n = NOV[code];
+  return `<span class="tag ${sevCls(n?n.s:'INFO')}" data-nov="${esc(code)}"`+
+         (r?` data-emp="${esc(r.id)}" data-fecha="${esc(r.iso)}"`:'')+`>${esc(code)}</span>`;
+}
+function initPop(){
+  const pop = $('#pop');
+  document.addEventListener('mouseover', ev=>{
+    const el = ev.target.closest('[data-nov],[data-tip]');
+    if(!el){ pop.style.display='none'; return; }
+    pop.innerHTML = el.dataset.nov ? tipHTML(el.dataset.nov)
+                                   : `<div class="pl">${esc(el.dataset.tip)}</div>`;
+    pop.style.display='block';
+    const rc = el.getBoundingClientRect(), pr = pop.getBoundingClientRect();
+    let x = rc.left, y = rc.bottom + 8;
+    if(x + pr.width > innerWidth - 12) x = innerWidth - pr.width - 12;
+    if(y + pr.height > innerHeight - 12) y = rc.top - pr.height - 8;
+    pop.style.left = Math.max(12,x)+'px'; pop.style.top = Math.max(12,y)+'px';
+  });
+  document.addEventListener('mouseout', ev=>{
+    if(!ev.relatedTarget || !ev.relatedTarget.closest?.('[data-nov],[data-tip]'))
+      pop.style.display='none';
+  });
+  document.addEventListener('click', ev=>{
+    const el = ev.target.closest('.tag[data-nov]');
+    if(!el || !RESULT) return;
+    $('#fExc').value=''; $('#qExc').value = el.dataset.nov;
+    showTab('exc'); renderExc(); pop.style.display='none';
+  });
 }
 
 function toast(m){ const t=$('#toast'); t.textContent=m; t.classList.add('on');
@@ -1702,7 +1734,6 @@ function runCalc(){
     marcarIngresosMasivos(MODEL, cfg);
     RESULT = compute(MODEL, cfg);
     fillSelects(); fillFiltros(); renderCons(); renderDet(); renderExc(); renderCal();
-    renderGlosario();
     const b = RESULT.exc.filter(x=>x.sev==='BLOQ').length;
     $('#status').innerHTML = `${RESULT.cons.length} empleados con conceptos · ` +
       (b?`<b style="color:#fca5a5">${b} bloqueantes</b>`:'sin bloqueantes');
@@ -1710,7 +1741,7 @@ function runCalc(){
 }
 
 document.addEventListener('DOMContentLoaded',()=>{
-  renderMatriz(); renderGlosario(); initPop();
+  renderMatriz(); initPop();
   hook('fEmp','emp'); hook('fTur','tur'); hook('fHor','hor'); hook('fMar','mar');
   $('#btnCalc').onclick = runCalc;
   $$('.tabs button').forEach(b=>b.onclick=()=>showTab(b.dataset.tab));
