@@ -220,6 +220,15 @@
         <select id="cInfer"><option value="0">No (excepción, 0 h)</option><option value="1">Sí, marcar INFERIDO</option></select></div>
       <div><label class="f">Tolerancia de puntualidad (min)</label>
         <input type="number" id="cTolPunt" value="5" min="0"></div>
+      <div><label class="f">Sobretiempo: minutos para la primera media hora</label>
+        <input type="number" id="cEscPrimer" value="25" min="0"></div>
+      <div><label class="f">Sobretiempo: gracia para cada media hora siguiente (min)</label>
+        <input type="number" id="cEscGracia" value="10" min="0"></div>
+      <div><label class="f">La semana del umbral arranca el</label>
+        <select id="cSemIni">
+          <option value="0">Domingo</option>
+          <option value="1">Lunes</option>
+        </select></div>
       <div><label class="f">Fecha de ingreso masiva si la comparten más de (empleados)</label>
         <input type="number" id="cIngMasivo" value="15" min="0"></div>
       <div><label class="f">Extras sin autorizacion registrada <span class="muted">(F-09)</span></label>
@@ -564,7 +573,11 @@ const dow   = iso => new Date(dnum(iso)*864e5).getUTCDay();
 function addDays(iso,k){ return numd(dnum(iso)+k); }
 function rangeDays(a,b){ const r=[]; for(let d=dnum(a); d<=dnum(b); d++) r.push(numd(d)); return r; }
 // lunes de la semana ISO que contiene iso
-function weekStart(iso){ const w=dow(iso); return addDays(iso, w===0?-6:1-w); }
+function weekStart(iso, cfg){
+  const w = dow(iso);                                   // 0=Dom .. 6=Sab
+  const ini = (cfg && cfg.semIni!=null) ? cfg.semIni : 1;
+  return addDays(iso, -(((w - ini) % 7 + 7) % 7));
+}
 
 /* ── Festivos de Colombia (Ley Emiliani + Pascua) ─────────────────── */
 const holidayCache = {};
@@ -764,6 +777,56 @@ function round05(min){
   return h + (r<25 ? 0 : r<50 ? 0.5 : 1);
 }
 
+/** Escalera de sobretiempo. Reemplaza al redondeo plano para el tiempo trabajado
+ *  DESPUES del fin del turno asignado. La primera media hora exige `escPrimer` minutos
+ *  (default 25). Cada media hora siguiente se acredita `escGracia` minutos antes de
+ *  completarse (default 10): 1,0 h a los 50 min, 1,5 h a los 80, 2,0 h a los 110, y así.
+ *  Ambos números son parámetros del formulario, no constantes del código. */
+function escalera(min, cfg){
+  if(min < cfg.escPrimer) return 0;
+  let n = 1;
+  while(min >= 30*(n+1) - cfg.escGracia) n++;
+  return n*0.5;
+}
+
+/** Quita el descanso de almuerzo de una lista de intervalos (B-10/B-12). El café de 20 min
+ *  no se descuenta: solo se descuenta si dura al menos `cfg.descMin`. */
+function quitarDescanso(intervalos, W, iso, cfg){
+  if(!(W && W.seg.breakH*60 >= cfg.descMin && W.seg.breakAt!=null))
+    return { iv:intervalos, etiqueta:null };
+  const base = dnum(iso)*1440;
+  let bIni = base + W.seg.breakAt;
+  if(bIni < W.ini) bIni += 1440;
+  const bFin = bIni + W.seg.breakH*60;
+  const cut = [];
+  intervalos.forEach(p=>{
+    if(bFin<=p.ini || bIni>=p.fin){ cut.push(p); return; }
+    if(p.ini<bIni) cut.push({...p, fin:bIni});
+    if(p.fin>bFin) cut.push({...p, ini:bFin});
+  });
+  return { iv: cut.filter(p=>p.fin>p.ini), etiqueta:`${hhmm(bIni%1440)}–${hhmm(bFin%1440)}` };
+}
+
+/** Acredita exactamente `credMin` minutos tomados cronológicamente del tiempo en exceso.
+ *  Si la escalera acredita más de lo efectivamente trabajado (p. ej. 50 min trabajados
+ *  acreditan 1,0 h), se extiende desde el final del último tramo conservando su franja. */
+function tramosAcreditados(exc, credMin, cfg){
+  const out = [];
+  let resta = credMin;
+  const orden = exc.slice().sort((a,b)=>a.ini-b.ini);
+  for(const p of orden){
+    if(resta<=0) break;
+    const dur = Math.min(p.fin-p.ini, resta);
+    atomize(p.ini, p.ini+dur, cfg).forEach(t=>out.push({...t, inferido:p.inferido}));
+    resta -= dur;
+  }
+  if(resta>0 && orden.length){
+    const ult = orden[orden.length-1];
+    atomize(ult.fin, ult.fin+resta, cfg).forEach(t=>out.push({...t, inferido:ult.inferido}));
+  }
+  return out;
+}
+
 /** Tipo de día. Devuelve {kind, label}. */
 function dayType(iso, hasShift, cfg){
   const fes = isHoliday(iso);
@@ -817,7 +880,9 @@ function readConfig(){
     domRecargo: v('cDom')==='1', descRecargo: v('cDescRec')==='1',
     inferir: v('cInfer')==='1', redondeo: v('cRedon'),
     tolPunt: +v('cTolPunt')||0, autor: v('cAutor'),
-    ingMasivo: +v('cIngMasivo')||0
+    ingMasivo: +v('cIngMasivo')||0,
+    escPrimer: +v('cEscPrimer')||0, escGracia: +v('cEscGracia')||0,
+    semIni: +v('cSemIni')||0
   };
   cfg.corteOn = cfg.corte && cfg.fin >= cfg.corte;      // H-06
   return cfg;
@@ -1014,35 +1079,14 @@ function compute(M, cfg){
       iv = iv.filter(p=>p.fin>p.ini);
 
       /* ── B-10/B-12: descuento de almuerzo ── */
-      if(W && W.seg.breakH*60 >= cfg.descMin && W.seg.breakAt!=null){
-        const base = dnum(iso)*1440;
-        let bIni = base + W.seg.breakAt;
-        if(bIni < W.ini) bIni += 1440;
-        const bFin = bIni + W.seg.breakH*60;
-        const cut = [];
-        iv.forEach(p=>{
-          if(bFin<=p.ini || bIni>=p.fin){ cut.push(p); return; }
-          if(p.ini<bIni) cut.push({...p, fin:bIni});
-          if(p.fin>bFin) cut.push({...p, ini:bFin});
-        });
-        iv = cut.filter(p=>p.fin>p.ini);
-        row.almuerzo = `${hhmm(bIni%1440)}–${hhmm(bFin%1440)}`;
-      }
+      const alm = quitarDescanso(iv, W, iso, cfg);
+      iv = alm.iv;
+      if(alm.etiqueta) row.almuerzo = alm.etiqueta;
 
       row.workMin = iv.reduce((s,p)=>s+(p.fin-p.ini),0);
       row.iv = iv; row.W = W;
       rows.push(row);
     });
-
-    /* ── acumulado semanal corrido, dia a dia (independiente del perfil) ── */
-    const accW = new Map();
-    rows.forEach(r=>{
-      const k = weekStart(r.iso), prev = accW.get(k)||0, now = prev + r.workMin;
-      accW.set(k, now);
-      r.semIni = k; r.semFin = addDays(k,6);
-      r.accPrevH = prev/60; r.accH = now/60;
-    });
-    rows.forEach(r=>{ r.semTotH = (accW.get(r.semIni)||0)/60; });
 
     /* ── PERFIL: administrativo vs rotativo ── */
     const codes = rows.map(r=>r.turno).filter(c=>c&&c!=='—');
@@ -1054,21 +1098,63 @@ function compute(M, cfg){
       add('ADV','B-06',id,emp.nombre,'',
         `Perfil forzado a ${perfil}; por sus turnos el sistema había detectado ${perfilAuto}.`);
 
-    /* ── determinar qué minutos son EXTRA ── */
-    if(perfil==='ADMINISTRATIVO'){                                  // D-23: diario
-      rows.forEach(r=>{
-        if(!r.iv) return;
-        r.tramos = [];
-        const cuts = r.W ? [r.W.ini, r.W.fin] : [];
-        r.iv.forEach(p=>atomize(p.ini,p.fin,cfg,cuts).forEach(t=>{
-          const dentro = r.W && t.ini>=r.W.ini && t.fin<=r.W.fin;
-          r.tramos.push({...t, extra:!dentro, inferido:p.inferido});
-        }));
-      });
-    } else {                                                        // D-17..D-22: semanal
+    /* ── jornada fija del turno + sobretiempo por escalera ──
+       El día acredita las HORAS FIJAS del turno (salida − entrada − almuerzo), aunque la
+       persona haya trabajado algunos minutos menos: esa diferencia no se descuenta, se
+       registra como `pendienteMin` para el reporte de horas no cumplidas. El sobretiempo
+       solo cuenta pasado el umbral de la escalera, medido desde el FIN DEL TURNO asignado,
+       nunca redondeando el total del día (que era el bug: 8,85 h se iba a 9 h). */
+    rows.forEach(r=>{
+      if(!r.iv) return;
+      if(r.W){
+        const cortes = [r.W.ini, r.W.fin];
+        const baseIv = quitarDescanso([{ini:r.W.ini, fin:r.W.fin}], r.W, r.iso, cfg).iv;
+        const base = [];
+        baseIv.forEach(p=>atomize(p.ini,p.fin,cfg,cortes)
+          .forEach(t=>base.push({...t, extra:false})));
+        r.jornadaFijaMin = base.reduce((s,t)=>s+t.min,0);
+
+        r.dentroMin = r.iv.reduce((s,p)=>
+          s + Math.max(0, Math.min(p.fin, r.W.fin) - Math.max(p.ini, r.W.ini)), 0);
+        r.pendienteMin = Math.max(0, r.jornadaFijaMin - r.dentroMin);
+
+        const exc = [];
+        r.iv.forEach(p=>{ if(p.fin > r.W.fin)
+          exc.push({ini: Math.max(p.ini, r.W.fin), fin: p.fin, inferido:p.inferido}); });
+        r.excesoMin = exc.reduce((s,p)=>s+(p.fin-p.ini),0);
+        r.extraCredMin = escalera(r.excesoMin, cfg)*60;
+        r.tramos = base.concat(
+          tramosAcreditados(exc, r.extraCredMin, cfg).map(t=>({...t, extra:true})));
+      } else {
+        /* A-19: sin turno asignado no hay jornada fija que acreditar. Se acredita lo
+           trabajado con la misma escalera medida desde cero, y todo es sobretiempo. */
+        r.jornadaFijaMin = 0; r.dentroMin = 0; r.pendienteMin = 0;
+        r.excesoMin = r.workMin;
+        r.extraCredMin = escalera(r.workMin, cfg)*60;
+        r.tramos = tramosAcreditados(r.iv, r.extraCredMin, cfg).map(t=>({...t, extra:true}));
+      }
+      r.creditMin = r.tramos.reduce((s,t)=>s+t.min,0);
+    });
+
+    /* ── acumulado semanal corrido, dia a dia. Se acumula el tiempo YA ACREDITADO
+       (jornada fija + sobretiempo escalonado), no los minutos crudos del reloj. ── */
+    const accW = new Map();
+    rows.forEach(r=>{
+      const k = weekStart(r.iso, cfg), prev = accW.get(k)||0, now = prev + (r.creditMin||0);
+      accW.set(k, now);
+      r.semIni = k; r.semFin = addDays(k,6);
+      r.accPrevH = prev/60; r.accH = now/60;
+    });
+    rows.forEach(r=>{ r.semTotH = (accW.get(r.semIni)||0)/60; });
+
+    /* ── D-17/D-18: umbral semanal, solo rotativos. Acumula sobre el tiempo ya acreditado
+       y reclasifica como extra lo que pase del umbral. Lo que ya es extra por la escalera
+       NO entra al pool: esa media hora ya se ganó por pasar el fin de turno, y se suma
+       aparte (las dos reglas conviven, decisión del usuario). ── */
+    if(perfil==='ROTATIVO'){                                        // D-17..D-22
       const weeks = new Map();
-      rows.forEach(r=>{ if(!r.iv) return;
-        const k = weekStart(r.iso); if(!weeks.has(k)) weeks.set(k,[]); weeks.get(k).push(r); });
+      rows.forEach(r=>{ if(!r.tramos || !r.tramos.length) return;
+        const k = weekStart(r.iso, cfg); if(!weeks.has(k)) weeks.set(k,[]); weeks.get(k).push(r); });
       weeks.forEach((rs,wk)=>{
         const wEnd = addDays(wk,6);
         if(wk < cfg.ini || wEnd > cfg.fin){                          // D-21
@@ -1077,32 +1163,27 @@ function compute(M, cfg){
             `La semana ${wk} → ${wEnd} cruza el corte del ciclo. El umbral de ${cfg.umbral} h se evalúa con los días disponibles.`);
         }
         let acc = 0;
-        const allT = [];
-        rs.sort((a,b)=>a.iso<b.iso?-1:1).forEach(r=>{
-          r.tramos = [];
-          const cuts = r.W ? [r.W.ini, r.W.fin] : [];
-          r.iv.forEach(p=>atomize(p.ini,p.fin,cfg,cuts).forEach(t=>{
-            allT.push({t, r, inferido:p.inferido});
-          }));
-        });
-        allT.sort((a,b)=>a.t.ini-b.t.ini);
         const lim = cfg.umbral*60;
-        allT.forEach(({t,r,inferido})=>{
-          const start = acc, end = acc + t.min; acc = end;
-          if(end<=lim){ r.tramos.push({...t, extra:false, inferido}); }
-          else if(start>=lim){ r.tramos.push({...t, extra:true, inferido}); }
-          else {                                                    // parte ordinaria + parte extra
-            const cut = t.ini + (lim-start);
-            r.tramos.push({...t, fin:cut, min:cut-t.ini, extra:false, inferido});
-            r.tramos.push({...t, ini:cut, min:t.fin-cut, extra:true,  inferido});
-          }
+        rs.sort((a,b)=>a.iso<b.iso?-1:1).forEach(r=>{
+          const nuevos = [];
+          r.tramos.forEach(t=>{
+            if(t.extra){ nuevos.push(t); return; }   // ya es extra por la escalera
+            const ini = acc, fin = acc + t.min; acc = fin;
+            if(fin<=lim) nuevos.push(t);
+            else if(ini>=lim) nuevos.push({...t, extra:true});
+            else {                                   // parte ordinaria + parte extra
+              const corte = t.ini + (lim-ini);
+              nuevos.push({...t, fin:corte, min:corte-t.ini});
+              nuevos.push({...t, ini:corte, min:t.fin-corte, extra:true});
+            }
+          });
+          r.tramos = nuevos;
         });
-        const totH = acc/60;
-        const extraH = Math.max(0, totH-cfg.umbral);
-        if(extraH>12){                                              // D-19
+        const excesoSemH = Math.max(0, (acc-lim)/60);
+        if(excesoSemH>12){                                          // D-19
           const anyIn = rs.some(r=>r.inCiclo);
           if(anyIn) add('ADV','D-19',id,emp.nombre,wk,
-            `Semana con ${extraH.toFixed(2)} h de exceso (>12 h). Requiere justificación obligatoria.`);
+            `Semana con ${excesoSemH.toFixed(2)} h por encima del umbral (>12 h). Requiere justificación obligatoria.`);
         }
       });
     }
@@ -1121,11 +1202,13 @@ function compute(M, cfg){
       r.workH = r.workMin/60;
       r.umbral = perfil==='ROTATIVO' ? cfg.umbral : null;
 
-      /* horas ordinarias y suplementarias del dia, con el mismo redondeo D-10..D-13 */
+      /* Ordinarias y suplementarias salen del tiempo YA ACREDITADO: la jornada fija del
+         turno y el sobretiempo ya escalonado. No se vuelve a redondear aquí — hacerlo era
+         exactamente el bug que empujaba 8,85 h a 9 h. */
       r.extraMin = (r.tramos||[]).filter(t=>t.extra).reduce((s,t)=>s+t.min,0);
-      r.ordMin   = r.workMin - r.extraMin;
-      r.ordH     = round05(r.ordMin);
-      r.extraH   = round05(r.extraMin);
+      r.ordMin   = (r.tramos||[]).filter(t=>!t.extra).reduce((s,t)=>s+t.min,0);
+      r.ordH     = r.ordMin/60;
+      r.extraH   = r.extraMin/60;
 
       /* entrada y salida reales, y desviacion contra el turno programado */
       if(r.pares && r.pares.length){
@@ -1198,6 +1281,7 @@ function compute(M, cfg){
                   horas:  ciclo.reduce((s,r)=>s+r.workH,0),
                   ordH:   ciclo.reduce((s,r)=>s+(r.ordH||0),0),
                   extraH: ciclo.reduce((s,r)=>s+(r.extraH||0),0),
+                  pendH:  ciclo.reduce((s,r)=>s+((r.pendienteMin||0)/60),0),
                   sinAut: ciclo.filter(r=>r.extraMin>=25 && r.autor===null).length,
                   noAut:  ciclo.filter(r=>r.noAutorizado).length,
                   tardes: ciclo.filter(r=>r.flags.includes('TARDE')).length,
