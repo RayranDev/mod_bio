@@ -723,7 +723,16 @@ function readSheet(buf){
     const row = aoa[i].map(c=>String(c).toLowerCase());
     if(row.some(c=>/empleado id|employee id|c[oó]digo$/.test(c))){ hi=i; break; }
   }
-  const hdr = aoa[hi].map(c=>String(c).trim());
+  /* El maestro de Empleados trae DOS columnas llamadas "Cargo": la primera es el nombre
+     del cargo y la segunda un codigo numerico. Sin desambiguar, la segunda pisaba a la
+     primera y el reporte mostraba "18" en vez de "OPERARIA AREA FARMACEUTICA". Se conserva
+     la primera con su nombre original y las repeticiones quedan como "Cargo (2)", "(3)"... */
+  const vistos = {};
+  const hdr = aoa[hi].map(c=>String(c).trim()).map(h=>{
+    if(!h) return h;
+    vistos[h] = (vistos[h]||0) + 1;
+    return vistos[h]===1 ? h : `${h} (${vistos[h]})`;
+  });
   const rows = aoa.slice(hi+1)
     .filter(r=>r.some(c=>String(c).trim()!==''))
     .map(r=>{ const o={}; hdr.forEach((h,i)=>{ if(h) o[h]=r[i]; }); return o; });
