@@ -245,19 +245,46 @@ después del fin de turno; el sistema le acredita la jornada fija **y** las extr
 deja las 3 h en pendientes. Si algún día se quiere que no se paguen extras en días con pendientes,
 eso es una regla nueva que hay que pedir — hoy no existe.
 
+**`HRS` y `ORDIN.` son cosas distintas y esto ya generó una confusión real.** En la pestaña Detalle,
+`HRS` es el tiempo de reloj efectivamente trabajado y `ORDIN.` es lo que se acredita (la jornada
+fija). Un caso real: el empleado 385 el 2026-08-06 marcó `07:17 10:05 10:28 17:00` — cuatro
+marcaciones, porque salió 23 minutos a media mañana. `HRS` mostró 8,12 h (reloj real) y `ORDIN.`
+mostró 8,50 h (lo que se paga), con `PEND.` 0,38 h = esos 23 minutos. **No era un error de cálculo,**
+pero el orden de las columnas invita a leer `HRS` como si fuera el resultado. Si el reporte se sigue
+malinterpretando, conviene renombrar las columnas antes que tocar el motor.
+
+**Pendiente de definición del usuario (sept-2026): el descanso de café en administrativos (B-12).**
+Hoy cualquier hueco dentro del turno —como esos 23 minutos— genera pendientes. El catálogo dice que
+el café de 20 min lo paga la empresa, pero con la nota "falta definir si aplica a administrativos", y
+`T_ADM1` solo declara la hora de almuerzo. **El usuario pidió explícitamente no tocar esto todavía**;
+va a dar el contexto de cómo evaluarlo. No implementar nada por iniciativa propia acá.
+
 **Segmentación temporal (`atomize`).** Parte un intervalo `[a,b)` en tramos atómicos cortando en cada
 medianoche, en el inicio/fin de la franja nocturna, y en cualquier frontera adicional que se le pase
 (típicamente el inicio/fin de la jornada programada, para separar "dentro de turno" de "fuera de
 turno"). El invariante I-01 (suma de tramos = tiempo trabajado) se verifica contra esto en cada sesión
 de pruebas.
 
-**Perfil laboral (ROTATIVO vs ADMINISTRATIVO, B-06).** Se infiere automáticamente por el prefijo del
-código de turno (`cfg.adminPref`, default `T_ADM`): si todos los turnos de un empleado en el ciclo
-empiezan con ese prefijo, es ADMINISTRATIVO (D-23, cálculo diario contra jornada programada); si no,
-es ROTATIVO (D-17/D-18, umbral semanal). Esta inferencia es una heurística, no un dato real del
-maestro de empleados (el campo "Cargo" existe pero no trae una columna de perfil) — por eso existe un
-override manual persistido en `localStorage.mb_perfiles`, seleccionable en la pestaña Detalle, que
-levanta la advertencia B-06 cuando se usa.
+**Perfil laboral (ROTATIVO vs ADMINISTRATIVO, B-06).** Se infiere por el prefijo del código de turno
+(`cfg.adminPref`, default `T_ADM`): si todos los turnos de un empleado en el ciclo empiezan con ese
+prefijo, es ADMINISTRATIVO (D-23, cálculo diario contra jornada programada); si no, es ROTATIVO
+(D-17/D-18, umbral semanal). Es una heurística, no un dato del maestro — por eso existe el override
+manual por empleado (`localStorage.mb_perfiles`, en la pestaña Detalle), que levanta la advertencia
+B-06 cuando se usa. **Decisión del usuario (sept-2026): se queda con el prefijo.**
+
+*Alternativas evaluadas contra datos reales y descartadas — no volver a proponerlas sin datos nuevos:*
+
+- **"Los administrativos no rotan de turno durante el mes."** Dirección correcta pero el converso es
+  falso, y ahí está la trampa: de 1.036 empleados con turno en agosto, 142 no rotan, pero solo 80 son
+  T_ADM1. Los otros **62 son de planta** con un único turno ese mes (22 en T_NORMAL1, 18 en
+  T_NORMAL3, 11 en T_NORMAL2, y sueltos en T1/T2/T3_AGO, TP, T_FESTIVO1/2). Clasificarlos como
+  administrativos les quitaría el umbral semanal — y los 18 de T_NORMAL3 están en el turno de 50 h,
+  así que **perderían 8 h extra por semana cada uno.**
+- **Por cargo (lo que pide B-06).** Es la señal más limpia de las tres: 78 cargos distintos con turno
+  en agosto, de los cuales solo 11 son ambiguos, y casi toda la ambigüedad son casos sueltos contra
+  decenas (`OPERARIA AREA FARMACEUTICA`: 442 en planta contra 1 en T_ADM). Queda como el camino
+  natural si algún día se quiere resolver B-06 de verdad, pero requiere que RRHH clasifique los 78
+  cargos una vez. El nombre del cargo ya se lee bien desde el fix de columnas duplicadas.
 
 ---
 
