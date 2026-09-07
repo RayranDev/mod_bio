@@ -147,17 +147,27 @@ git — ver `.gitignore`). Nombres típicos (el prefijo/timestamp varía en cada
   exclusión por departamento en la pestaña KPI (`#fExclDeptos`, persistido en
   `localStorage.mb_kpi_excl`), no filtrando estos ids a nivel de motor — si aparecen más cuentas de
   prueba en el futuro, agregar su departamento ahí, no hardcodear el id en el código.
-- **Solo 3 de los 13 turnos suman 42 h semanales.** Se validó turno por turno sumando los segmentos de
-  cada día de la semana, netos de almuerzo. Cumplen exactamente: `T_NORMAL1` (8+7+7+7+7+6),
-  `T_NORMAL2` (8+8,5×4) y `T_ADM1` (47 brutas − 5 de almuerzo). **No cumplen:** `T_NORMAL3` = 50 h
-  (trabaja domingo, +8 h), `TP` = 60 h netas (turnos de 13 h brutas, +18 h — es el turno de 12 h del
-  B-13, con sustento legal pendiente), y `T3_AGO`, `T2_AGO`, `T1_AGO`, `T_FESTIVO1/2/3` y
-  `T_12H_NOCHE` todos en 40 h (−2 h). `T_MANT_PREVENT` solo tiene sábado, 8 h. Esto importa porque
-  el umbral semanal de 42 h **sí se activa** para T_NORMAL3 y TP, no es decorativo.
-- **`T_12H_NOCHE` se llama "6PM A 6AM" pero está configurado 18:00–03:00.** Son 9 h brutas, no 12.
-  O el nombre está desactualizado o a esa gente le faltan 3 h por noche en el cálculo. Es un dato de
-  origen: se reportó al usuario y **no se tocó desde el código**. Si algún día se corrige en BioTime,
-  el motor lo toma solo.
+- **El catálogo de turnos es dinámico: hoy son estos 13, mañana serán otros.** Nada en el motor debe
+  depender de un código de turno concreto. Todo sale del Excel de Turno (horas, días de la semana,
+  descanso) o de parámetros del formulario. El único texto con nombre de turno en el código es
+  `cfg.adminPref` (default `T_ADM`), y es un parámetro editable, no una constante.
+- **Solo 3 de los 13 turnos suman 42 h semanales, y eso NO es necesariamente un error.** Al validar
+  turno por turno (segmentos por día, netos de almuerzo): cumplen exacto `T_NORMAL1` (8+7+7+7+7+6),
+  `T_NORMAL2` (8+8,5×4) y `T_ADM1` (47 brutas − 5 de almuerzo). Quedan por encima `T_NORMAL3` = 50 h
+  (trabaja domingo) y `TP` = 60 h netas (turnos de 13 h brutas — es el turno de 12 h del B-13). Quedan
+  en 40 h `T3_AGO`, `T2_AGO`, `T1_AGO`, `T_FESTIVO1/2/3` y `T_12H_NOCHE`. Importa porque el umbral
+  semanal **sí se activa** para T_NORMAL3 y TP: no es decorativo. Verificar estos números en cada
+  ciclo nuevo, no darlos por fijos.
+- **Turnos que declaran su fin más temprano a propósito: `T_12H_NOCHE` es el ejemplo.** Se llama
+  "6PM A 6AM" y la gente efectivamente trabaja 18:00→06:00, pero está configurado 18:00→**03:00**.
+  **No es un error de datos** (se confirmó con el usuario): al declarar el fin a las 03:00, las
+  últimas 3 horas quedan fuera de la ventana del turno y el motor las calcula como **extra del mismo
+  día**, en vez de entrar como ordinarias a la bolsa semanal y esperar a cruzar las 42 h. Es la
+  palanca que tiene RRHH para elegir, turno por turno, entre "extras el mismo día" y "extras por
+  bolsa semanal". El modelo de jornada fija + escalera **respeta este mecanismo**: verificado con un
+  caso sintético de 5 noches, da 8 h fijas + 3 h de extra diaria por noche (40 h ordinarias + 15 h
+  extra en la semana, sin tocar nunca el umbral). Si alguien "corrige" ese turno a 06:00 en BioTime,
+  las extras se mueven solas a la bolsa semanal — que es justamente lo que se quería evitar.
 - **Ventana de validación real acordada con el usuario: agosto 2026 en adelante.** El uso cuidadoso de
   BioTime empezó junio–julio 2026; los datos de marzo a mayo son ruido esperado de una implementación
   que recién arrancaba (turnos no cargados, marcaciones erráticas). No tratar esos meses como bugs a
