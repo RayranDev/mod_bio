@@ -11,6 +11,10 @@
     --accent:#1f6feb; --accent-soft:#e8f0fe; --warn:#b45309; --warn-soft:#fef3c7;
     --err:#b42318; --err-soft:#fee4e2; --ok:#067647; --ok-soft:#dcfae6;
     --mono:ui-monospace,"Cascadia Mono",Consolas,monospace;
+    /* paleta categorica del grafico de KPI — separada de los colores de severidad de arriba,
+       validada con scripts/validate_palette.js (dataviz skill): 3 series, todos los chequeos pasan */
+    --cat-1:#2a78d6; --cat-2:#eb6834; --cat-3:#1baf7a;
+    --chart-grid:#e1e0d9; --chart-axis:#c3c2b7;
   }
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--ink);
@@ -84,6 +88,9 @@
   .cal .d .s{font-family:var(--mono);font-size:10px;color:var(--accent);font-weight:700}
   .cal .d .h{font-size:10px;color:var(--muted)}
   .cal .d.ovr{outline:2px solid var(--warn)}
+  .cal .d.marcosin{background:var(--err-soft);border-color:#fca5a5}
+  .cal .d.fv{opacity:.55;background:#f7f8fa}
+  .cal .d .m{font-size:9px;color:var(--err);font-weight:700;margin-top:1px}
   .kpi{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px}
   .kpi div{background:#fff;border:1px solid var(--line);border-radius:5px;padding:7px 12px;min-width:110px}
   .kpi .k{font-size:10px;color:var(--muted);text-transform:uppercase;font-weight:700;letter-spacing:.4px}
@@ -118,6 +125,34 @@
   .glos h3{font-size:12px;margin:0 0 10px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted)}
   .glos td:first-child{white-space:nowrap;vertical-align:top}
   .glos td{white-space:normal}
+  #tAsis th.stick1,#tAsis td.stick1{position:sticky;left:0;min-width:56px;max-width:56px;background:#fff}
+  #tAsis th.stick2,#tAsis td.stick2{position:sticky;left:56px;min-width:190px;max-width:190px;
+    background:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #tAsis td.stick1,#tAsis td.stick2{z-index:1}
+  #tAsis th.stick1,#tAsis th.stick2{z-index:3}
+  #tAsis th.asisday{min-width:30px;max-width:30px;text-align:center;padding:4px 2px;line-height:1.15}
+  #tAsis th.asisday b{display:block;font-size:11px}
+  #tAsis th.asisday i{display:block;font-style:normal;font-size:8px;color:var(--muted);font-weight:600}
+  #tAsis th.asisday.fes{background:#fff7ed}
+  #tAsis th.asisday.dom{background:#eff6ff}
+  #tAsis td.asiscell{text-align:center;font-weight:700;font-size:11px;cursor:help;
+    min-width:30px;max-width:30px;padding:4px 2px}
+  #tAsis td.est-A{background:var(--ok-soft);color:var(--ok)}
+  #tAsis td.est-S{background:var(--accent-soft);color:var(--accent)}
+  #tAsis td.est-F{background:var(--err-soft);color:var(--err)}
+  #tAsis td.est-na{color:var(--line)}
+  #kpiChartWrap{overflow-y:auto;overflow-x:hidden;border:1px solid var(--line);border-radius:6px;
+    background:#fff;padding:8px 4px}
+  #kpiChart{display:block;width:100%;height:auto}
+  #kpiChart text{font-family:-apple-system,"Segoe UI",Roboto,sans-serif}
+  #kpiChart .dep-label{font-size:10.5px;fill:var(--muted)}
+  #kpiChart .axis-label{font-size:9.5px;fill:var(--muted)}
+  #kpiChart .val-label{font-size:9.5px;fill:var(--ink);font-weight:600}
+  #kpiChart .legend-label{font-size:11px;fill:var(--ink)}
+  #kpiChart rect.bar{cursor:help}
+  #kpiChart rect.bar:hover{filter:brightness(1.12)}
+  #kpiChart .nodata{stroke:var(--muted);stroke-width:2;stroke-linecap:round;cursor:help}
+  #tAsis td.incompleto{box-shadow:inset 0 0 0 2px var(--warn)}
   #toast{position:fixed;right:16px;bottom:16px;background:#16202c;color:#fff;padding:9px 14px;
          border-radius:5px;font-size:12px;opacity:0;transition:.25s;pointer-events:none;z-index:99}
   #toast.on{opacity:1}
@@ -189,6 +224,8 @@
       <select id="cInfer"><option value="0">No (excepción, 0 h)</option><option value="1">Sí, marcar INFERIDO</option></select></div>
     <div><label class="f">Tolerancia de puntualidad (min)</label>
       <input type="number" id="cTolPunt" value="5" min="0"></div>
+    <div><label class="f">Fecha de ingreso masiva si la comparten más de (empleados)</label>
+      <input type="number" id="cIngMasivo" value="15" min="0"></div>
     <div><label class="f">Extras sin autorizacion registrada <span class="muted">(F-09)</span></label>
       <select id="cAutor">
         <option value="marcar">Calcular y marcar (requiere decision)</option>
@@ -222,6 +259,8 @@
   <button data-tab="det">Detalle por empleado</button>
   <button data-tab="cal">Calendario de turnos</button>
   <button data-tab="exc">Excepciones</button>
+  <button data-tab="asis">Asistencia</button>
+  <button data-tab="kpi">KPI Cumplimiento</button>
   <button data-tab="glo">Glosario</button>
 </div>
 
@@ -232,6 +271,8 @@
     <select id="fDepto" style="max-width:250px"><option value="">Todos los departamentos</option></select>
     <select id="fPerfil" style="max-width:150px"><option value="">Todos los perfiles</option>
       <option value="ROTATIVO">Rotativo</option><option value="ADMINISTRATIVO">Administrativo</option></select>
+    <label style="display:flex;align-items:center;gap:5px;font-size:12px;white-space:nowrap;color:var(--muted)">
+      <input type="checkbox" id="fSinConc" style="width:auto">Ver sin conceptos</label>
     <input type="text" id="qCons" placeholder="Código o nombre…" style="max-width:190px">
     <button id="fClear">Limpiar</button>
     <span id="fInfo" class="muted"></span>
@@ -246,7 +287,8 @@
 
 <section id="tab-det" class="tabwrap">
   <div class="bar">
-    <select id="selEmp" style="max-width:380px"></select>
+    <input type="text" id="qEmpDet" placeholder="Buscar por código o nombre…" list="dlEmpCal" style="max-width:220px">
+    <select id="selEmp" style="max-width:340px"></select>
     <label class="f" style="margin:0 0 0 8px">Perfil</label>
     <select id="selPerfil" style="max-width:220px">
       <option value="">Automático</option>
@@ -280,7 +322,9 @@
 
 <section id="tab-cal" class="tabwrap">
   <div class="bar">
-    <select id="selEmpCal" style="max-width:380px"></select>
+    <input type="text" id="qEmpCal" placeholder="Buscar por código o nombre…" list="dlEmpCal" style="max-width:220px">
+    <datalist id="dlEmpCal"></datalist>
+    <select id="selEmpCal" style="max-width:340px"></select>
     <select id="selMes" style="max-width:170px"></select>
     <span class="sp"></span>
     <button id="expCal">Exportar calendario (Excel)</button>
@@ -292,7 +336,9 @@
     <p class="muted" style="font-size:11px;margin:10px 0 0">
       Clic en un día para asignar o quitar turno (cambio puntual, B-04). Los cambios se guardan en este
       navegador y prevalecen sobre la programación regular. Naranja = festivo &middot; azul = domingo &middot;
-      gris = sin turno &middot; borde ámbar = cambio puntual.
+      gris = sin turno &middot; rojo = sin turno pero SÍ marcó (revisar por qué falta asignar el turno) &middot;
+      borde ámbar = cambio puntual &middot; atenuado = fuera del período de vigencia (antes del ingreso o después
+      del retiro; no aplica a fechas de ingreso masivas, ver ING-MASIVO en el glosario).
     </p>
   </div>
 </section>
@@ -308,6 +354,82 @@
     <button id="expExc">Exportar excepciones (Excel)</button>
   </div>
   <div class="scroll"><table id="tExc"><thead></thead><tbody></tbody></table></div>
+</section>
+
+<section id="tab-asis" class="tabwrap">
+  <div class="bar">
+    <select id="fCiaAs" style="max-width:170px"><option value="">Todas las compañías</option></select>
+    <select id="fDeptoAs" style="max-width:250px"><option value="">Todos los departamentos</option></select>
+    <input type="text" id="qAs" placeholder="Código o nombre…" style="max-width:190px">
+    <button id="fClearAs">Limpiar</button>
+    <span id="fInfoAs" class="muted"></span>
+    <span class="sp"></span>
+    <button id="expAsis">Exportar asistencia (Excel)</button>
+  </div>
+  <div class="kpi" id="kpiAsis"></div>
+  <div class="scroll" style="max-height:75vh"><table id="tAsis"><thead></thead><tbody></tbody></table></div>
+  <p class="muted" style="font-size:11px;margin-top:8px">
+    <span class="tag t-ok">A</span> asistió con turno &middot;
+    <span class="tag t-info">S</span> asistió sin turno programado &middot;
+    <span class="tag t-err">F</span> no asistió (turno programado, sin marcaciones) &middot;
+    celda vacía = sin turno y sin marcaciones &middot; borde ámbar = turno con número impar de marcaciones (incompleto).
+    Pase el cursor sobre una celda para ver el detalle.
+    Una jornada nocturna sin turno asignado (entrada de noche, salida de madrugada) cuenta como un solo día:
+    el día en que empezó.
+  </p>
+</section>
+
+<section id="tab-kpi" class="tabwrap">
+  <div class="note">
+    Estos tres indicadores existen para el seguimiento del proceso de implementación: encontrar a quién
+    hay que asignarle turno, a quién hay que recordarle marcar completo, y a quién hay que preguntarle
+    por qué no está viniendo. Ninguno de los tres implica automáticamente una sanción — cada fila se
+    valida antes de actuar.
+  </div>
+  <div class="bar">
+    <select id="fCiaKpi" style="max-width:170px"><option value="">Todas las compañías</option></select>
+    <select id="fDeptoKpi" style="max-width:250px"><option value="">Todos los departamentos</option></select>
+    <select id="fTipoKpi" style="max-width:230px">
+      <option value="">Los tres indicadores</option>
+      <option value="sinMarca">Turno sin marcaciones</option>
+      <option value="incompleto">Turno incompleto</option>
+      <option value="sinTurno">Marcó sin turno</option>
+    </select>
+    <input type="number" id="fMinKpi" value="1" min="1" style="max-width:70px" title="Mínimo de incidencias">
+    <label class="f" style="margin:0">mín. incidencias</label>
+    <input type="text" id="qKpi" placeholder="Código o nombre…" style="max-width:180px">
+    <button id="fClearKpi">Limpiar</button>
+    <span class="sp"></span>
+    <button id="expKpi">Exportar KPI (Excel)</button>
+  </div>
+  <div class="bar">
+    <label class="f" style="margin:0">Excluir de este reporte (cuentas de prueba, tarjetas manuales, etc.)</label>
+    <input type="text" id="fExclDeptos" placeholder="Departamentos separados por coma, ej: TARJETA, SNAPIT" style="max-width:340px">
+    <span id="fInfoExclKpi" class="muted" style="font-size:11px"></span>
+    <span class="muted" style="font-size:11px" data-tip="Estas personas no son evaluables como empleados de planta: no tienen un turno individual que cumplir. Se excluyen SOLO de este reporte de cumplimiento — siguen visibles en Consolidado, Detalle, Calendario y Asistencia.">
+      ¿por qué excluir por departamento?</span>
+  </div>
+
+  <div class="note" id="kpiCobertura" hidden></div>
+  <div class="kpi" id="kpiTot"></div>
+
+  <h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin:14px 0 8px">
+    General &middot; por departamento
+  </h3>
+  <div id="kpiChartWrap" style="max-height:60vh;margin-bottom:10px"><div id="kpiChart"></div></div>
+  <p class="muted" style="font-size:11px;margin:0 0 10px">
+    Barra corta y gris = sin datos suficientes para calcular ese porcentaje en ese departamento
+    (ver «Con marca» / «Con turno»), no 0% de incidencia. Pase el cursor sobre una barra para el detalle.
+  </p>
+  <div class="scroll" style="max-height:32vh"><table id="tKpiDep"><thead></thead><tbody></tbody></table></div>
+
+  <h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin:16px 0 8px">
+    Detalle &middot; por empleado
+  </h3>
+  <div class="scroll"><table id="tKpiEmp"><thead></thead><tbody></tbody></table></div>
+  <p class="muted" style="font-size:11px;margin-top:8px">
+    Clic en un departamento filtra el detalle a esa área. Clic en un empleado abre su detalle día por día.
+  </p>
 </section>
 
 <section id="tab-glo" class="tabwrap">
@@ -381,8 +503,12 @@ const NOV = {
    a:'Reconcilie los maestros. La marcacion se conserva pero no se calcula.'},
  'A-15':{s:'BLOQ',t:'Marcacion anterior al ingreso',
    q:'Hay marcaciones con fecha anterior a la fecha de contratacion.',
-   p:'Error de reconciliacion de maestros o fecha de ingreso mal registrada.',
+   p:'Error de reconciliacion de maestros o fecha de ingreso mal registrada. Solo se dispara para fechas de ingreso individuales — si muchos empleados comparten la misma fecha, ver ING-MASIVO.',
    a:'Verifique la fecha de contratacion en el maestro de empleados.'},
+ 'ING-MASIVO':{s:'INFO',t:'Fecha de ingreso masiva (migración)',
+   q:'Muchos empleados distintos comparten exactamente la misma fecha de ingreso.',
+   p:'No es gente contratada el mismo día: es la fecha en que se migró o se empezó a usar este sistema. Tratarla como límite duro descartaría trabajo real de la mayoría de la nómina en los días anteriores.',
+   a:'No requiere acción. El sistema deja de usar esa fecha como límite para asistencia y horas, solo para ese grupo de empleados. Ajuste el umbral en «Fecha de ingreso masiva si la comparten más de…» si el corte no es el correcto.'},
  'A-16':{s:'BLOQ',t:'Marcacion posterior al retiro',
    q:'Hay marcaciones con fecha posterior a la fecha de retiro.',
    p:'Error de reconciliacion o retiro mal registrado.',
@@ -559,10 +685,11 @@ const isHoliday = iso => holidaysCO(+iso.slice(0,4))[iso] || null;
    PARSEO DE LOS XLSX
    ══════════════════════════════════════════════════════════════════ */
 const DATA = { emp:null, tur:null, hor:null, mar:null };
-let MODEL = null, RESULT = null, CUR_EMP = null;
+let MODEL = null, RESULT = null, CUR_EMP = null, ASISTENCIA = null;
 const OVERRIDES = JSON.parse(localStorage.getItem('mb_overrides')||'{}'); // "id|fecha" -> shiftCode|""
 const PERFILES  = JSON.parse(localStorage.getItem('mb_perfiles')||'{}');
 const AUTOR     = JSON.parse(localStorage.getItem('mb_autor')||'{}');  // id -> [{ini,fin,estado,motivo}]
+let KPI_EXCL = new Set(JSON.parse(localStorage.getItem('mb_kpi_excl')||'[]'));  // departamentos (mayúsculas) fuera del KPI
 
 /** Estado de autorizacion de extras de un empleado en una fecha. F-09 / F-02 / F-03. */
 function autorFor(id, iso){
@@ -685,6 +812,16 @@ function buildModel(){
   return { employees, shifts, sched, punches, orphan };
 }
 
+/** Detecta fechas de ingreso compartidas por muchísima gente: eso no es gente contratada el
+ *  mismo día, es la fecha de migración del sistema. Para esas fechas NO se bloquea asistencia
+ *  ni horas de días anteriores — solo se sigue bloqueando cuando la fecha de ingreso es propia
+ *  de un individuo (ahí sí puede ser un error real de dato, A-15). */
+function marcarIngresosMasivos(M, cfg){
+  const cnt = new Map();
+  M.employees.forEach(emp=>{ if(emp.ingreso) cnt.set(emp.ingreso, (cnt.get(emp.ingreso)||0)+1); });
+  M.ingresoMasivo = new Map([...cnt.entries()].filter(([,n])=>n>cfg.ingMasivo));
+}
+
 /* ══════════════════════════════════════════════════════════════════
    MOTOR DE CÁLCULO
    ══════════════════════════════════════════════════════════════════ */
@@ -765,10 +902,25 @@ function readConfig(){
     descMin: (parseFloat(v('cDesc'))||1)*60,
     domRecargo: v('cDom')==='1', descRecargo: v('cDescRec')==='1',
     inferir: v('cInfer')==='1', redondeo: v('cRedon'),
-    tolPunt: +v('cTolPunt')||0, autor: v('cAutor')
+    tolPunt: +v('cTolPunt')||0, autor: v('cAutor'),
+    ingMasivo: +v('cIngMasivo')||0
   };
   cfg.corteOn = cfg.corte && cfg.fin >= cfg.corte;      // H-06
   return cfg;
+}
+
+/** Depura marcaciones crudas: quita duplicadas exactas (A-06) y agrupa doble-toque (A-07).
+ *  No decide nada de horario: eso es responsabilidad de quien la use. */
+function limpiarMarcaciones(punches, cfg){
+  const clean = [], removidas = [], seen = new Set();
+  punches.forEach(p=>{
+    const k = p.iso+'|'+p.min;
+    if(seen.has(k)){ removidas.push({p, motivo:'A-06', ref:null}); return; }
+    const last = clean[clean.length-1];
+    if(last && (p.ts-last.ts) <= cfg.clusterMin){ removidas.push({p, motivo:'A-07', ref:last}); return; }
+    seen.add(k); clean.push(p);
+  });
+  return {clean, removidas};
 }
 
 function compute(M, cfg){
@@ -784,23 +936,23 @@ function compute(M, cfg){
   M.orphan.forEach(p=>add('BLOQ','A-10',p.id,'(no está en Empleados)',p.iso,
     'Marcación de un empleado que existe en BioTime pero no en el maestro de empleados.'));
 
+  M.ingresoMasivo.forEach((n,fecha)=>add('INFO','ING-MASIVO','—','(fecha compartida por varios empleados)',fecha,
+    `${n} empleados comparten esta fecha de ingreso. Se interpreta como fecha de migración del sistema, `+
+    `no como contratación individual: no bloquea asistencia ni horas de días anteriores para ese grupo.`));
+
   for(const [id,emp] of M.employees){
     const punches = (M.punches.get(id)||[]);
     if(!punches.length && !M.sched.has(id)) continue;
 
     /* ── A-05/A-06/A-07: depurar marcaciones ── */
-    const clean = []; const seen = new Set();
-    punches.forEach(p=>{
-      const k = p.iso+'|'+p.min;
-      if(seen.has(k)){ p.dup=true;
+    const {clean, removidas} = limpiarMarcaciones(punches, cfg);
+    removidas.forEach(({p,motivo,ref})=>{
+      p.dup = true;
+      if(motivo==='A-06')
         add('INFO','A-06',id,emp.nombre,p.iso,`Marcación duplicada a las ${hhmm(p.min)} (se conserva la primera).`);
-        return; }
-      const last = clean[clean.length-1];
-      if(last && (p.ts-last.ts) <= cfg.clusterMin){ p.dup=true;
+      else
         add('INFO','A-07',id,emp.nombre,p.iso,
-          `Marcacion a las ${hhmm(p.min)} agrupada con ${hhmm(last.min)} (ventana ${cfg.clusterMin} min).`);
-        return; }
-      seen.add(k); clean.push(p);
+          `Marcación a las ${hhmm(p.min)} agrupada con ${hhmm(ref.min)} (ventana ${cfg.clusterMin} min).`);
     });
 
     /* ── construir ventanas de turno de todo el rango extendido ── */
@@ -858,8 +1010,9 @@ function compute(M, cfg){
                     pares:[], workMin:0, tramos:[], flags:[], inferido:false,
                     conc:Object.fromEntries(CKEYS.map(k=>[k,0])) };
 
-      /* vigencia laboral: E-01/E-02/A-15/A-16 */
-      if(emp.ingreso && iso < emp.ingreso){
+      /* vigencia laboral: E-01/E-02/A-15/A-16. Las fechas de ingreso masivas (migración del
+         sistema, no contratación real) no bloquean — ver marcarIngresosMasivos(). */
+      if(emp.ingreso && iso < emp.ingreso && !M.ingresoMasivo.has(emp.ingreso)){
         if(ps.length) add('BLOQ','A-15',id,emp.nombre,iso,'Marcación anterior a la fecha de ingreso.');
         row.flags.push('A-15'); rows.push(row); return;
       }
@@ -1138,11 +1291,144 @@ function compute(M, cfg){
     days.push(...ciclo);
   }
 
-  const cons = [...byEmp.values()]
-    .filter(e=>e.tieneConceptos)                                     // H-02
+  const todos = [...byEmp.values()]
     .sort((a,b)=>a.emp.nombre.localeCompare(b.emp.nombre,'es'));
+  const cons = todos.filter(e=>e.tieneConceptos);                    // H-02: archivo de nómina
 
-  return { byEmp, cons, exc, cfg, days };
+  return { byEmp, cons, todos, exc, cfg, days };
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   ASISTENCIA GENERAL
+   Reporte independiente del motor de horas: solo responde "vino o no".
+   No usa los buckets por turno del compute() de arriba porque ese agrupa
+   las marcaciones sueltas por FECHA CALENDARIO de cada marcación
+   individual, y eso separa en dos días una sola jornada nocturna sin
+   turno asignado (entra 22:00 del día A, sale 05:00 del día B). Aquí,
+   una marcación de madrugada solo se atribuye al día anterior cuando ese
+   día anterior queda con un número IMPAR de marcaciones sueltas (una
+   entrada sin su salida) y esa última marca cae en la franja nocturna:
+   esa es la firma de una jornada que cruzó la medianoche, igual que B-02
+   hace con los turnos nocturnos programados. Un cierre normal a las
+   22:00 con jornada completa (par) no se confunde con esto.
+   ══════════════════════════════════════════════════════════════════ */
+
+const AS_LABEL = { A:'Asistió', S:'Asistió sin turno', F:'No asistió' };
+
+function computeAsistencia(M, cfg){
+  const dates  = rangeDays(cfg.ini, cfg.fin);
+  const extIni = addDays(cfg.ini, -1);          // un día antes: por si la sesión empezó ahí
+  const extDates = rangeDays(extIni, cfg.fin);
+  const out = new Map();
+
+  M.employees.forEach((emp, id)=>{
+    const rawPunches = (M.punches.get(id)||[]).filter(p=>p.iso>=extIni && p.iso<=cfg.fin);
+    if(!rawPunches.length && !M.sched.has(id)) return;
+
+    const {clean} = limpiarMarcaciones(rawPunches, cfg);
+
+    /* ventanas programadas del rango extendido (respeta OVERRIDES vía shiftFor) */
+    const windows = [];
+    extDates.forEach(iso=>{
+      const sf  = shiftFor(M, id, iso);
+      const seg = sf.code ? segmentFor(M, sf.code, iso) : null;
+      if(!seg) return;
+      const base = dnum(iso)*1440;
+      windows.push({ iso, code:sf.code, ent:seg.ent, sal:seg.sal,
+                     ini: base+seg.ent, fin: base+seg.sal + (seg.cross?1440:0) });
+    });
+
+    /* asignar cada marcación a la ventana más cercana dentro de tolerancia */
+    const usadas = new Set();
+    const porVentana = new Map(windows.map(w=>[w.iso,[]]));
+    clean.forEach(p=>{
+      let best=null, bd=Infinity;
+      windows.forEach(w=>{
+        const lo=w.ini-cfg.tolIni, hi=w.fin+cfg.tolFin;
+        if(p.ts>=lo && p.ts<=hi){
+          const d = p.ts<w.ini ? w.ini-p.ts : p.ts>w.fin ? p.ts-w.fin : 0;
+          if(d<bd){ bd=d; best=w; }
+        }
+      });
+      if(best){ porVentana.get(best.iso).push(p); usadas.add(p); }
+    });
+    const sueltas = clean.filter(p=>!usadas.has(p));
+
+    /* agrupar las sueltas por día calendario */
+    const porDia = new Map();
+    sueltas.forEach(p=>{ if(!porDia.has(p.iso)) porDia.set(p.iso,[]); porDia.get(p.iso).push(p); });
+    porDia.forEach(arr=>arr.sort((a,b)=>a.ts-b.ts));
+
+    /* detectar cruces de medianoche SIN turno: el día D queda con una marcación de
+       entrada sin su salida (número impar) y esa última marca cae en la franja
+       nocturna, y el día D+1 abre con una marca de madrugada. Solo esa marca de
+       apertura de D+1 se "adopta" como cierre de la sesión de D — no todo el día D+1,
+       para no fundir jornadas normales de dos días consecutivos (p. ej. alguien que
+       sale a las 22:00 de un turno de tarde, con jornada completa y pareja ese día). */
+    const morningLimit = (cfg.nocFin + 240) % 1440;         // hasta ~4h después del fin de la franja nocturna
+    const colaDe = new Map();          // marcación del día D+1 -> iso del día D que la origina
+    const marcasSesion = new Map();    // iso de inicio -> marcas a mostrar en el tooltip (incluye la cola)
+    porDia.forEach((hoy, iso)=>{
+      const impar = hoy.length % 2 === 1;
+      const ultima = hoy[hoy.length-1];
+      if(!impar || ultima.min < cfg.nocIni) return;
+      const manana = addDays(iso,1);
+      const sig = porDia.get(manana);
+      if(!sig || !sig.length) return;
+      const primera = sig[0];
+      if(primera.min >= morningLimit) return;
+      colaDe.set(primera, iso);
+      marcasSesion.set(iso, [...hoy, primera]);
+    });
+
+    const dias = new Map();
+    const resumen = { A:0, S:0, F:0, incompleto:0 };
+    dates.forEach(iso=>{
+      const sf  = shiftFor(M, id, iso);
+      const seg = sf.code ? segmentFor(M, sf.code, iso) : null;
+      const enVentana = porVentana.get(iso) || [];
+      const propiasHoy = porDia.get(iso) || [];
+      const restantes = propiasHoy.filter(p=>!colaDe.has(p));
+      const fueraVigencia = (emp.ingreso && iso<emp.ingreso && !M.ingresoMasivo.has(emp.ingreso))
+                          || (emp.retiro && iso>emp.retiro);
+
+      let estado='', tip='', marcasTxt='', incompleto=false;
+      if(fueraVigencia){
+        tip = 'Fuera del período de vigencia del empleado (antes del ingreso o después del retiro).';
+      } else if(seg && enVentana.length){
+        estado='A';
+        incompleto = enVentana.length%2===1;
+        marcasTxt = enVentana.map(p=>hhmm(p.min)).join(' ');
+        tip = `Turno ${sf.code} (${hhmm(seg.ent)}–${hhmm(seg.sal)}). Marcó: ${marcasTxt}.`;
+        if(incompleto) tip += ' Número impar de marcaciones — el turno no quedó completo (A-04).';
+      } else if(restantes.length){
+        estado='S';
+        const marcas = marcasSesion.get(iso) || restantes;
+        marcasTxt = marcas.map(p=>hhmm(p.min)).join(' ');
+        const cruza = marcas.some(p=>p.iso!==iso);
+        tip = `Sin turno programado. Marcó: ${marcasTxt}` + (cruza ? ' (incluye la salida al día siguiente).' : '.');
+      } else if(propiasHoy.length){
+        /* toda la marcación de hoy fue adoptada como cierre de la sesión de ayer */
+        const inicioDe = colaDe.get(propiasHoy[0]);
+        estado = seg ? 'F' : '';
+        tip = (seg ? `Turno ${sf.code} (${hhmm(seg.ent)}–${hhmm(seg.sal)}) programado, sin marcaciones propias dentro de tolerancia. `
+                    : 'Sin turno programado. ') +
+              `La marcación de las ${hhmm(propiasHoy[0].min)} es la salida de la jornada sin turno iniciada el ${inicioDe}.`;
+      } else if(seg){
+        estado='F';
+        tip = `Turno ${sf.code} (${hhmm(seg.ent)}–${hhmm(seg.sal)}) programado, sin ninguna marcación.`;
+      } else {
+        tip = 'Sin turno programado y sin marcaciones.';
+      }
+      if(estado) resumen[estado]++;
+      if(incompleto) resumen.incompleto++;
+      dias.set(iso, {estado, tip, turno: sf.code||null, incompleto});
+    });
+
+    out.set(id, { emp, dias, resumen });
+  });
+
+  return out;
 }
 
 /* ══════════════════════════════════════════════════════════════════
@@ -1194,6 +1480,306 @@ function initPop(){
     showTab('exc'); renderExc(); pop.style.display='none';
   });
 }
+function asisFiltrado(){
+  const cia = $('#fCiaAs').value, dep = $('#fDeptoAs').value, q = $('#qAs').value.trim().toLowerCase();
+  return [...ASISTENCIA.values()]
+    .filter(e=> (!cia||e.emp.empresa===cia) && (!dep||e.emp.depto===dep)
+             && (!q || e.emp.id.includes(q) || e.emp.nombre.toLowerCase().includes(q)))
+    .sort((a,b)=>a.emp.nombre.localeCompare(b.emp.nombre,'es'));
+}
+function renderAsistencia(){
+  if(!RESULT || !ASISTENCIA) return;
+  const dates = rangeDays(RESULT.cfg.ini, RESULT.cfg.fin);
+  const list  = asisFiltrado();
+  const activo = $('#fCiaAs').value || $('#fDeptoAs').value || $('#qAs').value.trim();
+  $('#fInfoAs').textContent = activo ? `${list.length} de ${ASISTENCIA.size}` : '';
+
+  $('#tAsis thead').innerHTML = `<tr><th class="stick1">Código</th><th class="stick2">Nombre</th>` +
+    dates.map(iso=>{
+      const fes = isHoliday(iso), dw = dow(iso);
+      const cls = fes ? 'fes' : dw===0 ? 'dom' : '';
+      const tip = iso + (fes ? ' — '+fes : '');
+      return `<th class="asisday ${cls}" data-tip="${esc(tip)}"><b>${+iso.slice(-2)}</b><i>${DOW_ES[dw][0]}</i></th>`;
+    }).join('') + `</tr>`;
+
+  $('#tAsis tbody').innerHTML = list.map(e=>
+    `<tr><td class="mono stick1">${esc(e.emp.id)}</td><td class="stick2">${esc(e.emp.nombre)}</td>` +
+    dates.map(iso=>{
+      const d = e.dias.get(iso) || {estado:'',tip:'Sin datos.'};
+      return `<td class="asiscell est-${d.estado||'na'}${d.incompleto?' incompleto':''}" data-tip="${esc(d.tip)}">${d.estado||'·'}</td>`;
+    }).join('') + `</tr>`
+  ).join('') || `<tr><td colspan="${2+dates.length}" class="muted" style="padding:18px">Sin empleados que coincidan con el filtro.</td></tr>`;
+
+  const tot = list.reduce((s,e)=>({A:s.A+e.resumen.A, S:s.S+e.resumen.S, F:s.F+e.resumen.F}), {A:0,S:0,F:0});
+  $('#kpiAsis').innerHTML =
+    `<div><div class="k">Empleados</div><div class="v">${list.length}</div></div>
+     <div data-tip="Suma de días-persona con turno programado y marcaciones que lo completan."><div class="k">Asistió (A)</div><div class="v">${tot.A}</div></div>
+     <div data-tip="Suma de días-persona sin turno programado pero con marcaciones."><div class="k">Sin turno (S)</div><div class="v">${tot.S}</div></div>
+     <div data-tip="Suma de días-persona con turno programado y CERO marcaciones."><div class="k">No asistió (F)</div><div class="v">${tot.F}</div></div>`;
+}
+function aoaAsistencia(){
+  const dates = rangeDays(RESULT.cfg.ini, RESULT.cfg.fin);
+  const head = ['COD_EMPLEADO','NOMBRE','DEPARTAMENTO','COMPAÑÍA','DÍAS ASISTIÓ','DÍAS SIN TURNO','DÍAS NO ASISTIÓ',
+                ...dates];
+  const body = asisFiltrado().map(e=>[
+    e.emp.id, e.emp.nombre, e.emp.depto||'', e.emp.empresa||'',
+    e.resumen.A, e.resumen.S, e.resumen.F,
+    ...dates.map(iso=>(e.dias.get(iso)||{}).estado||'') ]);
+  return [head, ...body];
+}
+/** Une los tres indicadores de cumplimiento por empleado, a partir de lo que ya calculó Asistencia. */
+let KPI_EXCLUIDOS_ULTIMO = 0;
+function kpiCalcular(){
+  const cia = $('#fCiaKpi').value, dep = $('#fDeptoKpi').value, q = $('#qKpi').value.trim().toLowerCase();
+  const rows = [];
+  KPI_EXCLUIDOS_ULTIMO = 0;
+  ASISTENCIA.forEach(e=>{
+    if(cia && e.emp.empresa!==cia) return;
+    if(dep && e.emp.depto!==dep) return;
+    if(KPI_EXCL.has((e.emp.depto||'').toUpperCase())){ KPI_EXCLUIDOS_ULTIMO++; return; }
+    if(q && !e.emp.id.includes(q) && !e.emp.nombre.toLowerCase().includes(q)) return;
+    const sinMarca = e.resumen.F, incompleto = e.resumen.incompleto, sinTurno = e.resumen.S, asistio = e.resumen.A;
+    const conMarca = (MODEL.punches.get(e.emp.id)||[]).length>0;
+    const conTurno = (MODEL.sched.get(e.emp.id)||[]).some(s=>s.ini<=RESULT.cfg.fin && s.fin>=RESULT.cfg.ini);
+    /* diasProgramados: universo de días con turno asignado (asistió + no asistió).
+       diasEvaluables: eso más los días trabajados sin turno — el universo para "marcó sin turno". */
+    const diasProgramados = asistio + sinMarca;
+    const diasEvaluables  = diasProgramados + sinTurno;
+    rows.push({ emp:e.emp, sinMarca, incompleto, sinTurno, asistio, conMarca, conTurno,
+                diasProgramados, diasEvaluables, total: sinMarca+incompleto+sinTurno,
+                pctSinMarca:pct(sinMarca,diasProgramados), pctIncompleto:pct(incompleto,diasProgramados),
+                pctSinTurno:pct(sinTurno,diasEvaluables) });
+  });
+  return rows;
+}
+/** Porcentaje o null si el denominador es cero (sin datos para calcularlo, no "0% de incidencia"). */
+function pct(n, d){ return d>0 ? n/d*100 : null; }
+
+function kpiPorDepto(rows){
+  const g = new Map();
+  rows.forEach(r=>{
+    const k = r.emp.depto || '(sin departamento)';
+    if(!g.has(k)) g.set(k, {depto:k, sinMarca:0, incompleto:0, sinTurno:0, asistio:0,
+      diasProgramados:0, diasEvaluables:0, empleados:0, afectados:0, conMarca:0, conTurno:0});
+    const o = g.get(k);
+    o.sinMarca+=r.sinMarca; o.incompleto+=r.incompleto; o.sinTurno+=r.sinTurno; o.asistio+=r.asistio;
+    o.diasProgramados+=r.diasProgramados; o.diasEvaluables+=r.diasEvaluables;
+    o.empleados++; if(r.total>0) o.afectados++; if(r.conMarca) o.conMarca++; if(r.conTurno) o.conTurno++;
+  });
+  const deps = [...g.values()];
+  deps.forEach(o=>{
+    o.pctSinMarca    = pct(o.sinMarca,    o.diasProgramados);
+    o.pctIncompleto  = pct(o.incompleto,  o.diasProgramados);
+    o.pctSinTurno    = pct(o.sinTurno,    o.diasEvaluables);
+  });
+  return deps.sort((a,b)=>(b.sinMarca+b.incompleto+b.sinTurno)-(a.sinMarca+a.incompleto+a.sinTurno));
+}
+function kpiFiltrarEmpleados(rows){
+  const tipo = $('#fTipoKpi').value;
+  const min = Math.max(1, +$('#fMinKpi').value || 1);
+  return rows.filter(r=> tipo ? r[tipo]>=min : r.total>=min)
+             .sort((a,b)=> tipo ? b[tipo]-a[tipo] : b.total-a.total);
+}
+const fmtPct = p => p==null ? '—' : p.toFixed(1)+'%';
+const fmtN   = n => n.toLocaleString('es-CO');
+
+/** Barra horizontal redondeada solo del lado del dato (cuadrada en la base), como pide
+ *  la guía de marcas: nunca un rect con las 4 esquinas iguales para una barra que crece
+ *  desde una base fija. */
+function barPath(x0, y, w, h, r){
+  if(w<=0) return '';
+  const rr = Math.min(r, w/2, h/2);
+  return `M${x0},${y} H${x0+w-rr} Q${x0+w},${y} ${x0+w},${y+rr} V${y+h-rr} `+
+         `Q${x0+w},${y+h} ${x0+w-rr},${y+h} H${x0} Z`;
+}
+
+/** Gráfico de barras horizontales agrupadas: 3 series (categórico, no severidad) por
+ *  departamento, valor = porcentaje sobre el denominador correcto de cada indicador.
+ *  Paleta y specs de marca según la skill dataviz (references/palette.md,
+ *  marks-and-anatomy.md): 3 slots categóricos validados, barras <=24px, extremo
+ *  redondeado 4px / base cuadrada, gap de 2px, tooltip por barra vía el mismo sistema
+ *  data-tip que usa el resto del reporte. */
+function svgKpiChart(deps){
+  const SERIES = [
+    { key:'pctSinMarca',   color:'var(--cat-1)', label:'Turno sin marca',
+      den:'diasProgramados', num:'sinMarca',  denLabel:'días programados' },
+    { key:'pctIncompleto', color:'var(--cat-2)', label:'Turno incompleto',
+      den:'diasProgramados', num:'incompleto',denLabel:'días programados' },
+    { key:'pctSinTurno',   color:'var(--cat-3)', label:'Marcó sin turno',
+      den:'diasEvaluables', num:'sinTurno',  denLabel:'días evaluables' },
+  ];
+  const W = 900, labelW = 210, padR = 46, padTop = 34, padBottom = 22;
+  const plotW = W - labelW - padR;
+  const barH = 12, gapIn = 3, groupGap = 11;
+  const rowH = SERIES.length*barH + (SERIES.length-1)*gapIn + groupGap;
+  const H = padTop + deps.length*rowH + padBottom;
+  const x0 = labelW;
+  const xAt = p => x0 + (p/100)*plotW;
+  const trunc = s => s.length>30 ? s.slice(0,29)+'…' : s;
+
+  let svg = `<svg viewBox="0 0 ${W} ${Math.max(H,padTop+padBottom+rowH)}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Porcentaje de incidencias por departamento">`;
+
+  // grilla y eje 0/25/50/75/100%
+  [0,25,50,75,100].forEach(g=>{
+    const gx = xAt(g);
+    svg += `<line x1="${gx}" y1="${padTop-6}" x2="${gx}" y2="${H-padBottom}" stroke="var(--chart-grid)" stroke-width="1"/>`;
+    svg += `<text class="axis-label" x="${gx}" y="${padTop-10}" text-anchor="middle">${g}%</text>`;
+  });
+  svg += `<line x1="${x0}" y1="${padTop-6}" x2="${x0}" y2="${H-padBottom}" stroke="var(--chart-axis)" stroke-width="1"/>`;
+
+  // leyenda
+  let lx = labelW;
+  SERIES.forEach(s=>{
+    svg += `<rect x="${lx}" y="6" width="10" height="10" rx="2" fill="${s.color}"/>`;
+    svg += `<text class="legend-label" x="${lx+14}" y="15">${esc(s.label)}</text>`;
+    lx += 16 + s.label.length*5.6 + 18;
+  });
+
+  deps.forEach((d,i)=>{
+    const yTop = padTop + i*rowH;
+    const yMid = yTop + (SERIES.length*barH+(SERIES.length-1)*gapIn)/2;
+    svg += `<text class="dep-label" x="${labelW-8}" y="${yMid+3}" text-anchor="end">`+
+           `<title>${esc(d.depto)}</title>${esc(trunc(d.depto))}</text>`;
+    SERIES.forEach((s,si)=>{
+      const y = yTop + si*(barH+gapIn);
+      const val = d[s.key];
+      const num = d[s.num], den = d[s.den];
+      if(val==null){
+        svg += `<line class="nodata" x1="${x0}" y1="${y+barH/2}" x2="${x0+14}" y2="${y+barH/2}" `+
+               `data-tip="${esc(s.label)} — ${esc(d.depto)}: sin datos suficientes (0 ${s.denLabel}).">`+
+               `<title>sin datos</title></line>`;
+        return;
+      }
+      const w = Math.max((val/100)*plotW, val>0?2:0);
+      const tip = `${esc(s.label)} — ${esc(d.depto)}: ${fmtPct(val)} (${fmtN(num)} de ${fmtN(den)} ${s.denLabel}).`;
+      svg += `<path class="bar" d="${barPath(x0,y,w,barH,4)}" fill="${s.color}" data-tip="${tip}"><title>${tip}</title></path>`;
+      if(w>=30) svg += `<text class="val-label" x="${x0+w+4}" y="${y+barH-2.5}">${fmtPct(val)}</text>`;
+    });
+  });
+
+  svg += `</svg>`;
+  return svg;
+}
+
+function renderKpi(){
+  if(!RESULT || !ASISTENCIA) return;
+  const rows = kpiCalcular();
+  $('#fInfoExclKpi').textContent = KPI_EXCLUIDOS_ULTIMO
+    ? `${KPI_EXCLUIDOS_ULTIMO} excluidos` : '';
+  const tot = rows.reduce((s,r)=>({sinMarca:s.sinMarca+r.sinMarca, incompleto:s.incompleto+r.incompleto,
+    sinTurno:s.sinTurno+r.sinTurno, diasProgramados:s.diasProgramados+r.diasProgramados,
+    diasEvaluables:s.diasEvaluables+r.diasEvaluables}),
+    {sinMarca:0,incompleto:0,sinTurno:0,diasProgramados:0,diasEvaluables:0});
+  const pctSinMarcaTot   = pct(tot.sinMarca,   tot.diasProgramados);
+  const pctIncompletoTot = pct(tot.incompleto, tot.diasProgramados);
+  const pctSinTurnoTot   = pct(tot.sinTurno,   tot.diasEvaluables);
+  const afectados = rows.filter(r=>r.total>0).length;
+  const conMarca = rows.filter(r=>r.conMarca).length;
+  const conTurno = rows.filter(r=>r.conTurno).length;
+
+  const avisos = [];
+  if(rows.length && conMarca < rows.length)
+    avisos.push(`solo <b>${conMarca} de ${rows.length}</b> empleados tienen alguna marcación cargada en este
+      ciclo — los que no tienen ninguna aparecen con 100% de «turno sin marcaciones» porque su archivo de
+      marcaciones no fue importado, no porque hayan faltado`);
+  if(rows.length && conTurno < rows.length)
+    avisos.push(`solo <b>${conTurno} de ${rows.length}</b> empleados tienen alguna programación de turno
+      cargada que cubra este ciclo — los que no tienen ninguna aparecen con 100% de «marcó sin turno»
+      porque el archivo de Horario no cubre estas fechas para ellos, no porque nunca les asignen turno`);
+  $('#kpiCobertura').hidden = !avisos.length;
+  if(avisos.length) $('#kpiCobertura').innerHTML =
+    `<b>Cobertura de datos:</b> ${avisos.join('; además, ')}. Revise las columnas «Con marca» y
+     «Con turno» antes de actuar sobre alguien.`;
+
+  $('#kpiTot').innerHTML =
+    `<div data-tip="Del total de días con turno programado en el filtro activo, qué porcentaje quedó sin ninguna marcación. El primer sospechoso: probablemente no vino, o falta confirmar.">
+       <div class="k">Turno sin marca</div><div class="v">${fmtPct(pctSinMarcaTot)}</div>
+       <div class="muted" style="font-size:10px">${fmtN(tot.sinMarca)} de ${fmtN(tot.diasProgramados)} días programados</div></div>
+     <div data-tip="Del total de días con turno programado, qué porcentaje se marcó con número impar de marcaciones: entró o salió sin registrar el otro lado.">
+       <div class="k">Turno incompleto</div><div class="v">${fmtPct(pctIncompletoTot)}</div>
+       <div class="muted" style="font-size:10px">${fmtN(tot.incompleto)} de ${fmtN(tot.diasProgramados)} días programados</div></div>
+     <div data-tip="Del total de días con marcación o turno (evaluables), qué porcentaje se trabajó sin ningún turno asignado. A esta gente hay que cargarle turno.">
+       <div class="k">Marcó sin turno</div><div class="v">${fmtPct(pctSinTurnoTot)}</div>
+       <div class="muted" style="font-size:10px">${fmtN(tot.sinTurno)} de ${fmtN(tot.diasEvaluables)} días evaluables</div></div>
+     <div data-tip="Empleados con al menos una de las tres incidencias, dentro del filtro activo.">
+       <div class="k">Empleados afectados</div><div class="v">${fmtPct(pct(afectados,rows.length))}</div>
+       <div class="muted" style="font-size:10px">${fmtN(afectados)} de ${fmtN(rows.length)} empleados</div></div>`;
+
+  const deps = kpiPorDepto(rows);
+  $('#kpiChart').innerHTML = deps.length ? svgKpiChart(deps) : '';
+
+  $('#tKpiDep thead').innerHTML = `<tr><th>Departamento</th><th class="num">Empleados</th>
+    <th class="num" data-tip="Empleados con al menos una marcación cargada en este ciclo. Si es bajo, «Turno sin marca» de esta fila no es confiable.">Con marca</th>
+    <th class="num" data-tip="Empleados con alguna programación de turno cargada que cubra este ciclo. Si es bajo, «Marcó sin turno» de esta fila no es confiable.">Con turno</th>
+    <th class="num" data-tip="Empleados con al menos una incidencia.">Afectados</th>
+    <th class="num" data-tip="Cuenta cruda y % sobre los días con turno programado (asistió + no asistió).">Turno sin marca</th>
+    <th class="num" data-tip="Cuenta cruda y % sobre los días con turno programado.">Turno incompleto</th>
+    <th class="num" data-tip="Cuenta cruda y % sobre los días evaluables (con turno o con marca).">Marcó sin turno</th>
+    <th class="num">Total incidencias</th></tr>`;
+  $('#tKpiDep tbody').innerHTML = deps.map(d=>{
+    const totd = d.sinMarca+d.incompleto+d.sinTurno;
+    const bajaMarca = d.conMarca < d.empleados, bajaTurno = d.conTurno < d.empleados;
+    const celda = (n,p) => n ? `${fmtN(n)} <span class="muted">(${fmtPct(p)})</span>` : '';
+    return `<tr class="clickable" data-dep="${esc(d.depto)}">
+      <td>${esc(d.depto)}</td><td class="num">${d.empleados}</td>
+      <td class="num ${bajaMarca?'dev':''}" data-tip="${bajaMarca?'Cobertura de marcaciones incompleta en este departamento.':''}">${d.conMarca}</td>
+      <td class="num ${bajaTurno?'dev':''}" data-tip="${bajaTurno?'Cobertura de programación de turnos incompleta en este departamento.':''}">${d.conTurno}</td>
+      <td class="num">${d.afectados}</td>
+      <td class="num">${celda(d.sinMarca,d.pctSinMarca)}</td>
+      <td class="num">${celda(d.incompleto,d.pctIncompleto)}</td>
+      <td class="num">${celda(d.sinTurno,d.pctSinTurno)}</td>
+      <td class="num"><b>${totd||''}</b></td></tr>`;
+  }).join('') || `<tr><td colspan="9" class="muted" style="padding:18px">Sin datos.</td></tr>`;
+  $$('#tKpiDep tbody tr[data-dep]').forEach(tr=>tr.onclick=()=>{
+    $('#fDeptoKpi').value = tr.dataset.dep==='(sin departamento)' ? '' : tr.dataset.dep;
+    renderKpi();
+  });
+
+  const empRows = kpiFiltrarEmpleados(rows);
+  $('#tKpiEmp thead').innerHTML = `<tr><th>Código</th><th>Nombre</th><th>Departamento</th>
+    <th data-tip="¿Tiene alguna marcación cargada en este ciclo? Si dice NO, «Turno sin marca» no es evidencia de incumplimiento — es falta de datos.">Con marca</th>
+    <th data-tip="¿Tiene alguna programación de turno cargada que cubra este ciclo? Si dice NO, «Marcó sin turno» no es evidencia — es que el Horario no llega hasta aquí.">Con turno</th>
+    <th class="num" data-tip="Cuenta cruda y % sobre sus días con turno programado.">Turno sin marca</th>
+    <th class="num" data-tip="Cuenta cruda y % sobre sus días con turno programado.">Turno incompleto</th>
+    <th class="num" data-tip="Cuenta cruda y % sobre sus días evaluables (con turno o con marca).">Marcó sin turno</th>
+    <th class="num">Total</th></tr>`;
+  $('#tKpiEmp tbody').innerHTML = empRows.map(r=>{
+    const celda = (n,p) => n ? `${fmtN(n)} <span class="muted">(${fmtPct(p)})</span>` : '';
+    return `<tr class="clickable" data-id="${esc(r.emp.id)}">
+      <td class="mono">${esc(r.emp.id)}</td><td>${esc(r.emp.nombre)}</td><td>${esc(r.emp.depto||'—')}</td>
+      <td>${r.conMarca?'<span class="tag t-ok">Sí</span>':'<span class="tag t-mut">No</span>'}</td>
+      <td>${r.conTurno?'<span class="tag t-ok">Sí</span>':'<span class="tag t-mut">No</span>'}</td>
+      <td class="num">${celda(r.sinMarca,r.pctSinMarca)}</td>
+      <td class="num">${celda(r.incompleto,r.pctIncompleto)}</td>
+      <td class="num">${celda(r.sinTurno,r.pctSinTurno)}</td>
+      <td class="num"><b>${r.total}</b></td></tr>`;
+  }).join('')
+    || `<tr><td colspan="9" class="muted" style="padding:18px">Nadie coincide con el filtro, o nadie llega al mínimo de incidencias.</td></tr>`;
+  $$('#tKpiEmp tbody tr[data-id]').forEach(tr=>tr.onclick=()=>{
+    CUR_EMP = tr.dataset.id; $('#selEmp').value = CUR_EMP;
+    $('#selPerfil').value = PERFILES[CUR_EMP]||'';
+    showTab('det'); renderDet();
+  });
+}
+function aoaKpiDep(deps){
+  const p = v => v==null?'':+v.toFixed(1);
+  return [['DEPARTAMENTO','EMPLEADOS','CON MARCA CARGADA','CON TURNO CARGADO','EMPLEADOS AFECTADOS',
+           'DÍAS PROGRAMADOS','DÍAS EVALUABLES',
+           'TURNO SIN MARCA','% SIN MARCA','TURNO INCOMPLETO','% INCOMPLETO','MARCÓ SIN TURNO','% SIN TURNO',
+           'TOTAL INCIDENCIAS'],
+    ...deps.map(d=>[d.depto,d.empleados,d.conMarca,d.conTurno,d.afectados,d.diasProgramados,d.diasEvaluables,
+      d.sinMarca,p(d.pctSinMarca),d.incompleto,p(d.pctIncompleto),d.sinTurno,p(d.pctSinTurno),
+      d.sinMarca+d.incompleto+d.sinTurno])];
+}
+function aoaKpiEmp(rows){
+  const p = v => v==null?'':+v.toFixed(1);
+  return [['COD_EMPLEADO','NOMBRE','DEPARTAMENTO','COMPAÑÍA','CON MARCA CARGADA','CON TURNO CARGADO',
+           'DÍAS PROGRAMADOS','DÍAS EVALUABLES',
+           'TURNO SIN MARCA','% SIN MARCA','TURNO INCOMPLETO','% INCOMPLETO','MARCÓ SIN TURNO','% SIN TURNO','TOTAL'],
+    ...rows.map(r=>[r.emp.id,r.emp.nombre,r.emp.depto||'',r.emp.empresa||'',r.conMarca?'SI':'NO',r.conTurno?'SI':'NO',
+      r.diasProgramados,r.diasEvaluables,
+      r.sinMarca,p(r.pctSinMarca),r.incompleto,p(r.pctIncompleto),r.sinTurno,p(r.pctSinTurno),r.total])];
+}
 function renderGlosario(){
   const cfg = RESULT ? RESULT.cfg : {corteOn:false};
   $('#gConc tbody').innerHTML = CONCEPTS.map(c=>
@@ -1226,7 +1812,8 @@ function filtroActivo(){
            perfil: $('#fPerfil').value,
            q:      $('#qCons').value.trim().toLowerCase() };
 }
-function filtroHay(){ const f=filtroActivo(); return !!(f.cia||f.depto||f.perfil||f.q); }
+function filtroHay(){ const f=filtroActivo();
+  return !!(f.cia||f.depto||f.perfil||f.q||$('#fSinConc').checked); }
 function filtroSlug(){
   const f = filtroActivo();
   const t = [f.cia, f.depto, f.perfil].filter(Boolean).join('_');
@@ -1234,7 +1821,8 @@ function filtroSlug(){
 }
 function consFiltrado(){
   const f = filtroActivo();
-  return RESULT.cons.filter(e=>
+  const base = $('#fSinConc').checked ? RESULT.todos : RESULT.cons;
+  return base.filter(e=>
        (!f.cia    || e.emp.empresa===f.cia)
     && (!f.depto  || e.emp.depto===f.depto)
     && (!f.perfil || e.perfil===f.perfil)
@@ -1254,6 +1842,10 @@ function fillFiltros(){
   keep($('#fCia'),   cias, 'Todas las compañías');
   keep($('#fDepto'), deps, 'Todos los departamentos');
   keep($('#fExcDep'),deps, 'Todos los departamentos');
+  keep($('#fCiaAs'), cias, 'Todas las compañías');
+  keep($('#fDeptoAs'),deps,'Todos los departamentos');
+  keep($('#fCiaKpi'), cias, 'Todas las compañías');
+  keep($('#fDeptoKpi'),deps,'Todos los departamentos');
 }
 
 function renderCons(){
@@ -1269,6 +1861,16 @@ function renderCons(){
      <th>Perfil</th><th data-nov="F-09">Autoriz.</th><th>Estado</th></tr>`;
 
   $('#tCons tbody').innerHTML = list.map(e=>{
+    if(!e.tieneConceptos) return `<tr class="clickable" data-id="${esc(e.emp.id)}" style="opacity:.6">
+      <td class="mono">${esc(e.emp.id)}</td><td>${esc(e.emp.nombre)}</td>
+      <td>${esc(e.emp.depto||'—')}</td><td>${esc(e.emp.empresa||'—')}</td>` +
+      cols.map(()=>`<td class="num cw muted">—</td>`).join('') +
+      `<td class="num cw">${e.horas.toFixed(2)}</td>
+       <td class="num cw">${fmt(e.ordH)}</td>
+       <td class="num cw">${fmt(e.extraH)}</td>
+       <td><span class="tag ${e.perfil==='ADMINISTRATIVO'?'t-info':'t-mut'}">${e.perfil[0]}${e.perfil.slice(1).toLowerCase()}</span></td>
+       <td class="muted">—</td>
+       <td><span class="tag t-mut" data-tip="No genera ningún concepto de nómina en el ciclo. No sale en el archivo de Sinergy (H-02).">Sin conceptos</span></td></tr>`;
     const alerts = R.exc.filter(x=>x.id===e.emp.id);
     const bloq = alerts.filter(x=>x.sev==='BLOQ').length;
     const adv  = alerts.filter(x=>x.sev==='ADV').length;
@@ -1291,6 +1893,7 @@ function renderCons(){
   }).join('') || `<tr><td colspan="16" class="muted" style="padding:18px">${
     filtroHay() ? 'Ningún empleado coincide con el filtro activo.'
                 : 'Sin empleados con conceptos en el ciclo.'}</td></tr>`;
+  $('#kpis').dataset.modo = $('#fSinConc').checked ? 'todos' : 'h02';
 
   $$('#tCons tbody tr.clickable').forEach(tr=>tr.onclick=()=>{
     CUR_EMP = tr.dataset.id; $('#selEmp').value = CUR_EMP;
@@ -1300,8 +1903,12 @@ function renderCons(){
   const ids  = new Set(list.map(e=>e.emp.id));
   const totH = list.reduce((s,e)=>s+e.horas,0);
   const tots = Object.fromEntries(CKEYS.map(k=>[k, list.reduce((s,e)=>s+e.tot[k],0)]));
+  const modoTodos = $('#fSinConc').checked;
   $('#kpis').innerHTML =
-    `<div><div class="k">Empleados con conceptos</div><div class="v">${list.length}</div></div>
+    `<div data-tip="${modoTodos
+        ?'Incluye empleados sin ningún concepto de nómina en el ciclo (H-02). Estos NO salen en el archivo de Sinergy: se muestran solo para revisión de horas y ausencias.'
+        :'Solo empleados con al menos un concepto de nómina distinto de cero (H-02). Es exactamente lo que sale en el archivo de Sinergy.'}">
+      <div class="k">${modoTodos?'Empleados mostrados':'Empleados con conceptos'}</div><div class="v">${list.length}</div></div>
      <div><div class="k">Horas trabajadas</div><div class="v">${totH.toFixed(1)}</div></div>
      <div><div class="k">Ordinarias</div><div class="v">${fmt(list.reduce((s,e)=>s+e.ordH,0))||0}</div></div>
      <div><div class="k">Extras</div><div class="v">${fmt(list.reduce((s,e)=>s+e.extraH,0))||0}</div></div>` +
@@ -1447,6 +2054,8 @@ function renderExc(){
   }).join('') || `<tr><td colspan="6" class="muted" style="padding:18px">Sin excepciones.</td></tr>`;
 }
 
+const DOW_CAL = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];   // semana laboral: lunes primero
+
 function renderCal(){
   const id = $('#selEmpCal').value, mes = $('#selMes').value;
   if(!id||!mes) return;
@@ -1454,27 +2063,43 @@ function renderCal(){
   const [y,m] = mes.split('-').map(Number);
   const first = `${y}-${pad(m)}-01`;
   const last  = numd(dnum(`${m===12?y+1:y}-${pad(m===12?1:m+1)}-01`)-1);
-  const lead  = dow(first);
+  const lead  = (dow(first)+6)%7;                              // 0=Lun ... 6=Dom
   const byDate = new Map((e?.rows||[]).map(r=>[r.iso,r]));
+  const emp = e?.emp;
+  const fueraVigencia = iso =>
+    (emp?.ingreso && iso<emp.ingreso && !MODEL.ingresoMasivo.has(emp.ingreso)) ||
+    (emp?.retiro  && iso>emp.retiro);
 
-  $('#calHd').innerHTML = DOW_ES.map(d=>`<div class="hd">${d}</div>`).join('');
+  $('#calHd').innerHTML = DOW_CAL.map(d=>`<div class="hd">${d}</div>`).join('');
   let html = '';
   for(let i=0;i<lead;i++) html += `<div class="d out"></div>`;
   rangeDays(first,last).forEach(iso=>{
     const r   = byDate.get(iso);
     const fes = isHoliday(iso);
-    const sf  = shiftFor(MODEL,id,iso);
+    const fv  = fueraVigencia(iso);
+    const sf  = fv ? {code:null} : shiftFor(MODEL,id,iso);
     const seg = sf.code ? segmentFor(MODEL,sf.code,iso) : null;
+    const marcoSinTurno = !seg && !fv && r && r.marcas;
     const cls = ['d'];
-    if(fes) cls.push('fes'); else if(dow(iso)===0) cls.push('dom');
-    if(!seg) cls.push('desc');
+    if(fv) cls.push('fv');
+    else if(fes) cls.push('fes'); else if(dow(iso)===0) cls.push('dom');
+    if(!seg && !fv) cls.push('desc');
+    if(marcoSinTurno) cls.push('marcosin');
     if(OVERRIDES[id+'|'+iso]!==undefined) cls.push('ovr');
-    html += `<div class="${cls.join(' ')}" data-iso="${iso}">
+    const tip = fv
+      ? `Fuera del período de vigencia (${iso<(emp?.ingreso||'') ? 'antes del ingreso '+emp.ingreso : 'después del retiro '+emp.retiro}).` +
+        (r&&r.marcas ? ` Aun así hay marcaciones ese día: ${r.marcas} — revisar (A-15/A-16).` : '')
+      : marcoSinTurno
+      ? `Sin turno programado, pero marcó: ${r.marcas}. Por eso no se le ha cargado turno, o el turno falta por asignar (A-19).`
+      : '';
+    html += `<div class="${cls.join(' ')}" data-iso="${iso}"${tip?` data-tip="${esc(tip)}"`:''}>
       <div class="n">${+iso.slice(-2)}</div>
-      ${seg?`<div class="s">${esc(sf.code)}</div><div class="h">${hhmm(seg.ent)}–${hhmm(seg.sal)}</div>`
+      ${fv ? `<div class="h muted">${r&&r.marcas?'⚠ marcó':'fuera de vigencia'}</div>`
+       : seg?`<div class="s">${esc(sf.code)}</div><div class="h">${hhmm(seg.ent)}–${hhmm(seg.sal)}</div>`
            :`<div class="h muted">sin turno</div>`}
-      ${fes?`<div class="h" style="color:#c2410c">${esc(fes)}</div>`:''}
-      ${r&&r.workMin?`<div class="h"><b>${(r.workMin/60).toFixed(1)} h</b></div>`:''}
+      ${marcoSinTurno?`<div class="m">marcó ${esc(r.marcas)}</div>`:''}
+      ${fes && !fv?`<div class="h" style="color:#c2410c">${esc(fes)}</div>`:''}
+      ${!fv && r&&r.workMin?`<div class="h"><b>${(r.workMin/60).toFixed(1)} h</b></div>`:''}
     </div>`;
   });
   $('#calGrid').innerHTML = html;
@@ -1507,9 +2132,34 @@ function fillSelects(){
   if(CUR_EMP){ $('#selEmp').value=CUR_EMP; $('#selEmpCal').value=CUR_EMP;
                $('#selPerfil').value = PERFILES[CUR_EMP]||''; }
 
+  $('#dlEmpCal').innerHTML = [...RESULT.byEmp.values()]
+    .sort((a,b)=>a.emp.id.localeCompare(b.emp.id,'es',{numeric:true}))
+    .map(e=>`<option value="${esc(e.emp.id)} — ${esc(e.emp.nombre)}">`).join('');
+
   const ms = new Set();
   rangeDays(RESULT.cfg.ini, RESULT.cfg.fin).forEach(d=>ms.add(d.slice(0,7)));
   $('#selMes').innerHTML = [...ms].map(m=>`<option value="${m}">${m}</option>`).join('');
+}
+
+/** Busca un empleado por código exacto o por nombre y salta al calendario. */
+/** Busca un empleado por código exacto o por nombre y salta a la vista indicada.
+ *  destino: {inputSel, selectSel, onJump} — onJump(id) hace lo propio de cada pestaña. */
+function buscarEmp(texto, destino){
+  const q = texto.trim();
+  if(!q) return;
+  const saltar = (id, nombre)=>{
+    CUR_EMP = id; $(destino.selectSel).value = id; $(destino.inputSel).value = '';
+    destino.onJump(id); toast(`${id} — ${nombre}`);
+  };
+  let idExacto = q.match(/^(\S+)/)[1];
+  if(!RESULT.byEmp.has(idExacto) && /^\d+$/.test(idExacto))
+    idExacto = idExacto.replace(/^0+(?=\d)/,'') || idExacto;         // H-04: sin ceros a la izquierda
+  if(RESULT.byEmp.has(idExacto)){ saltar(idExacto, RESULT.byEmp.get(idExacto).emp.nombre); return; }
+  const ql = q.toLowerCase();
+  const hits = [...RESULT.byEmp.values()].filter(e=>e.emp.nombre.toLowerCase().includes(ql));
+  if(hits.length===1) saltar(hits[0].emp.id, hits[0].emp.nombre);
+  else if(hits.length>1) toast(`${hits.length} empleados coinciden con «${q}». Sea más específico o use el código.`);
+  else toast(`Ningún empleado con código o nombre «${q}».`);
 }
 
 function showTab(t){
@@ -1538,13 +2188,13 @@ function aoaCons(){
   const head = ['COD_EMPLEADO','NOMBRE', ...cols.map(c=>c.head),
                 'HORAS TRABAJADAS','HORAS ORDINARIAS','HORAS EXTRA',
                 'DIAS SIN AUTORIZAR','DIAS RECHAZADOS','DIAS CON DESVIO',
-                'PERFIL','CARGO','DEPARTAMENTO'];
+                'PERFIL','CARGO','DEPARTAMENTO','EN ARCHIVO SINERGY'];
   const body = consFiltrado().map(e=>[
     e.emp.id, e.emp.nombre,
     ...cols.map(c=>e.tot[c.key]||''),
     +e.horas.toFixed(2), e.ordH||'', e.extraH||'',
     e.sinAut||'', e.noAut||'', e.tardes||'',
-    e.perfil, e.emp.cargo, e.emp.depto ]);
+    e.perfil, e.emp.cargo, e.emp.depto, e.tieneConceptos?'SI':'NO' ]);
   return [head, ...body];
 }
 function aoaDet(e){
@@ -1585,14 +2235,15 @@ function aoaCal(id, mes){
   const last  = numd(dnum(`${m===12?y+1:y}-${pad(m===12?1:m+1)}-01`)-1);
   const byDate = new Map((e?.rows||[]).map(r=>[r.iso,r]));
   const head = ['COD_EMPLEADO','NOMBRE','FECHA','DIA','TURNO','HORA ENTRADA','HORA SALIDA',
-                'TIPO DE DIA','FESTIVO','ORIGEN','HORAS TRABAJADAS'];
+                'TIPO DE DIA','FESTIVO','ORIGEN','MARCACIONES','MARCÓ SIN TURNO','HORAS TRABAJADAS'];
   const body = rangeDays(first,last).map(iso=>{
     const sf = shiftFor(MODEL,id,iso), seg = sf.code?segmentFor(MODEL,sf.code,iso):null;
     const r = byDate.get(iso), fes = isHoliday(iso);
     return [id, e?.emp.nombre||'', iso, DOW_ES[dow(iso)], sf.code||'SIN TURNO',
       seg?hhmm(seg.ent):'', seg?hhmm(seg.sal):'',
       fes?'FESTIVO':dow(iso)===0?'DOMINGO':seg?'ORDINARIO':'DESCANSO',
-      fes||'', sf.source, r&&r.workMin?+(r.workMin/60).toFixed(2):''];
+      fes||'', sf.source, r?.marcas||'', (!seg && r?.marcas)?'SI':'',
+      r&&r.workMin?+(r.workMin/60).toFixed(2):''];
   });
   return [head, ...body];
 }
@@ -1647,8 +2298,12 @@ function hook(inputId, key){
 function runCalc(){
   try{
     MODEL  = buildModel();
-    RESULT = compute(MODEL, readConfig());
-    fillSelects(); fillFiltros(); renderCons(); renderDet(); renderExc(); renderCal(); renderGlosario();
+    const cfg = readConfig();
+    marcarIngresosMasivos(MODEL, cfg);
+    RESULT = compute(MODEL, cfg);
+    ASISTENCIA = computeAsistencia(MODEL, cfg);
+    fillSelects(); fillFiltros(); renderCons(); renderDet(); renderExc(); renderCal();
+    renderGlosario(); renderAsistencia(); renderKpi();
     const b = RESULT.exc.filter(x=>x.sev==='BLOQ').length;
     $('#status').innerHTML = `${RESULT.cons.length} empleados con conceptos · ` +
       (b?`<b style="color:#fca5a5">${b} bloqueantes</b>`:'sin bloqueantes');
@@ -1663,10 +2318,11 @@ document.addEventListener('DOMContentLoaded',()=>{
   $('#qCons').oninput   = ()=>RESULT&&renderCons();
   $('#fCia').onchange    = ()=>RESULT&&renderCons();
   $('#fDepto').onchange  = ()=>RESULT&&renderCons();
-  $('#fPerfil').onchange = ()=>RESULT&&renderCons();
+  $('#fPerfil').onchange  = ()=>RESULT&&renderCons();
+  $('#fSinConc').onchange = ()=>RESULT&&renderCons();
   $('#fExcDep').onchange = ()=>RESULT&&renderExc();
   $('#fClear').onclick   = ()=>{ $('#fCia').value=''; $('#fDepto').value='';
-    $('#fPerfil').value=''; $('#qCons').value=''; RESULT&&renderCons(); };
+    $('#fPerfil').value=''; $('#qCons').value=''; $('#fSinConc').checked=false; RESULT&&renderCons(); };
   $('#fExc').onchange = ()=>RESULT&&renderExc();
   $('#qExc').oninput   = ()=>RESULT&&renderExc();
   $('#selEmp').onchange = e=>{ CUR_EMP=e.target.value;
@@ -1681,6 +2337,14 @@ document.addEventListener('DOMContentLoaded',()=>{
     runCalc(); showTab('det'); };
   $('#selEmpCal').onchange = ()=>renderCal();
   $('#selMes').onchange = ()=>renderCal();
+  const destCal = { inputSel:'#qEmpCal', selectSel:'#selEmpCal', onJump:()=>renderCal() };
+  $('#qEmpCal').addEventListener('change', e=>RESULT&&buscarEmp(e.target.value, destCal));
+  $('#qEmpCal').addEventListener('keydown', e=>{ if(e.key==='Enter' && RESULT) buscarEmp(e.target.value, destCal); });
+
+  const destDet = { inputSel:'#qEmpDet', selectSel:'#selEmp', onJump:id=>{
+    $('#selPerfil').value = PERFILES[id]||''; renderDet(); } };
+  $('#qEmpDet').addEventListener('change', e=>RESULT&&buscarEmp(e.target.value, destDet));
+  $('#qEmpDet').addEventListener('keydown', e=>{ if(e.key==='Enter' && RESULT) buscarEmp(e.target.value, destDet); });
   $('#expCons').onclick = ()=>RESULT&&save({Consolidado:aoaCons()},`Consolidado_${stamp()}.xlsx`);
   $('#expDet').onclick  = ()=>{ const e=RESULT?.byEmp.get(CUR_EMP); if(e)
     save({Detalle:aoaDet(e)},`Detalle_${e.emp.id}_${stamp()}.xlsx`); };
@@ -1694,6 +2358,32 @@ document.addEventListener('DOMContentLoaded',()=>{
           Excepciones:aoaExc(filtroHay()?ids:null)},
          `Reporte_Horas_${stamp()}.xlsx`); };
   $('#expExc').onclick  = ()=>RESULT&&save({Excepciones:aoaExc()},`Excepciones_${stamp()}.xlsx`);
+  $('#fCiaAs').onchange   = ()=>ASISTENCIA&&renderAsistencia();
+  $('#fDeptoAs').onchange = ()=>ASISTENCIA&&renderAsistencia();
+  $('#qAs').oninput       = ()=>ASISTENCIA&&renderAsistencia();
+  $('#fClearAs').onclick  = ()=>{ $('#fCiaAs').value=''; $('#fDeptoAs').value=''; $('#qAs').value='';
+    ASISTENCIA&&renderAsistencia(); };
+  $('#expAsis').onclick   = ()=>ASISTENCIA&&save({Asistencia:aoaAsistencia()},`Asistencia_${stamp()}.xlsx`);
+
+  ['fCiaKpi','fDeptoKpi','fTipoKpi','fMinKpi'].forEach(id=>
+    $('#'+id).addEventListener('change', ()=>ASISTENCIA&&renderKpi()));
+  $('#qKpi').oninput = ()=>ASISTENCIA&&renderKpi();
+  $('#fExclDeptos').value = [...KPI_EXCL].join(', ');
+  $('#fExclDeptos').addEventListener('change', e=>{
+    KPI_EXCL = new Set(e.target.value.split(',').map(s=>s.trim().toUpperCase()).filter(Boolean));
+    localStorage.setItem('mb_kpi_excl', JSON.stringify([...KPI_EXCL]));
+    ASISTENCIA && renderKpi();
+  });
+  $('#fClearKpi').onclick = ()=>{
+    $('#fCiaKpi').value=''; $('#fDeptoKpi').value=''; $('#fTipoKpi').value='';
+    $('#fMinKpi').value='1'; $('#qKpi').value=''; ASISTENCIA&&renderKpi();
+  };
+  $('#expKpi').onclick = ()=>{
+    if(!ASISTENCIA) return;
+    const rows = kpiCalcular();
+    save({ 'Resumen departamento':aoaKpiDep(kpiPorDepto(rows)),
+           'Detalle empleado':aoaKpiEmp(kpiFiltrarEmpleados(rows)) }, `KPI_Cumplimiento_${stamp()}.xlsx`);
+  };
   $('#expCal').onclick  = ()=>{ if(!RESULT) return;
     const id=$('#selEmpCal').value, m=$('#selMes').value;
     save({Calendario:aoaCal(id,m)},`Calendario_${id}_${m}.xlsx`); };
@@ -1702,7 +2392,7 @@ document.addEventListener('DOMContentLoaded',()=>{
     localStorage.setItem('mb_overrides','{}'); runCalc(); showTab('cal'); renderCal(); };
   $$('#cIni,#cFin').forEach(()=>{});
   ['cIni','cFin','cNocIni','cNocFin','cUmbral','cAnclaje','cDoble','cTolIni','cTolFin',
-   'cAdmin','cCorte','cDesc','cDom','cDescRec','cInfer','cRedon','cImpar','cTolPunt','cAutor']
+   'cAdmin','cCorte','cDesc','cDom','cDescRec','cInfer','cRedon','cImpar','cTolPunt','cAutor','cIngMasivo']
     .forEach(k=>$('#'+k).addEventListener('change',()=>{ if(RESULT) runCalc(); }));
 });
 </script>
