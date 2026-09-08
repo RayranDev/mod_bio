@@ -168,9 +168,28 @@
   </div>
   <div class="bar" style="margin-top:10px">
     <button class="primary" id="btnCalc" disabled>Calcular ciclo</button>
+    <button id="btnDisp" data-nov="DISPOSITIVO">&#9881; Dispositivos</button>
     <span id="loadInfo" class="muted"></span>
   </div>
+  <div id="dispAviso" class="muted" style="margin-top:8px"></div>
 </section>
+
+<dialog id="dlgDisp">
+  <h3 style="margin:0 0 4px">Rol de cada biométrico</h3>
+  <p class="muted" style="margin:0 0 12px;max-width:620px">
+    De esto depende cómo se lee un hueco entre marcaciones, y por lo tanto las horas
+    pendientes. <b>Portería</b> = salió de la empresa, el hueco pesa completo.
+    <b>Descanso</b> = café, se perdona hasta el tope diario.
+    <b>Tránsito interior</b> = nunca salió (pasó frente al lector mientras trabajaba),
+    el hueco no genera pendiente. Se guarda en este navegador.</p>
+  <table id="tDisp"><thead><tr><th>Dispositivo</th><th class="num">Marcaciones</th>
+    <th>Rol</th></tr></thead><tbody></tbody></table>
+  <div class="bar" style="margin-top:12px">
+    <button class="primary" id="btnDispOk">Aplicar y recalcular</button>
+    <button id="btnDispAuto">Volver a la sugerencia automática</button>
+    <button id="btnDispClose">Cerrar</button>
+  </div>
+</dialog>
 
 <!-- ============ CONFIG ============ -->
 <section class="panel">
@@ -230,6 +249,8 @@
         <input type="text" id="cLactPref" value="T_LACT"></div>
       <div><label class="f">Tiempo de lactancia (min) <span class="muted">(E-04)</span></label>
         <input type="number" id="cLactMin" value="60" min="0"></div>
+      <div><label class="f">Avisar si un tránsito interior supera (min) <span class="muted">(B-16)</span></label>
+        <input type="number" id="cTransAviso" value="120" min="0"></div>
       <div><label class="f">Sobretiempo: minutos para la primera media hora</label>
         <input type="number" id="cEscPrimer" value="25" min="0"></div>
       <div><label class="f">Sobretiempo: gracia para cada media hora siguiente (min)</label>
@@ -509,6 +530,14 @@ const NOV = {
    q:'Este empleado esta marcado como personal de direccion, confianza y manejo.',
    p:'El Art. 162 del CST excluye a estos cargos de la jornada maxima legal, asi que no generan horas extra. Tampoco se les calculan horas pendientes: se reporta el tiempo efectivamente trabajado.',
    a:'Los recargos por trabajo nocturno, dominical o festivo se siguen calculando normalmente. Si la marca esta mal puesta, se quita desde el detalle del empleado.'},
+ 'B-16':{s:'ADV',t:'Transito interior prolongado',
+   q:'Hubo un hueco largo entre marcaciones que abre y cierra en biometricos INTERIORES, y por eso no genero horas pendientes.',
+   p:'La persona nunca cruzo una porteria, asi que segun los datos seguia dentro de la planta. Puede ser un recorrido normal de trabajo (mantenimiento, TI, almacen) o un dispositivo mal clasificado.',
+   a:'Verifique el rol de los biometricos involucrados en el boton Dispositivos. Si alguno es en realidad una salida de la empresa, cambielo a Porteria y recalcule.'},
+ 'DISPOSITIVO':{s:'INFO',t:'Rol de los biometricos',
+   q:'Cada biometrico tiene un rol que decide como se lee un hueco entre marcaciones.',
+   p:'Porteria = salio de la empresa, el hueco pesa completo como pendiente. Descanso = cafe, se perdona hasta el tope diario. Transito interior = nunca salio, el hueco no genera pendiente.',
+   a:'El rol se sugiere por el nombre del dispositivo y se puede corregir a mano; queda guardado en este navegador. Un dispositivo sin clasificar se trata como Descanso (el punto medio, con tope) y se avisa arriba.'},
  'E-04':{s:'INFO',t:'Tiempo de lactancia reconocido',
    q:'Este dia se le reconocieron minutos de lactancia como tiempo trabajado.',
    p:'El turno asignado es de lactancia (su codigo empieza por el prefijo parametrizado) y la empleada salio y volvio a marcar dentro de su jornada.',
@@ -648,6 +677,31 @@ const AUTOR     = JSON.parse(localStorage.getItem('mb_autor')||'{}');  // id -> 
 /* Direccion, confianza y manejo (Art. 162 CST): no estan sujetos a la jornada maxima,
    asi que no generan extras ni horas pendientes. Se reportan sus horas trabajadas. */
 let CONFIANZA = new Set(JSON.parse(localStorage.getItem('mb_confianza')||'[]'));
+/* Rol de cada biometrico. Override manual del usuario; lo que no este aqui se infiere
+   del nombre con rolAuto(). */
+let DISPOSITIVOS = JSON.parse(localStorage.getItem('mb_dispositivos')||'{}');
+
+/** Sugerencia por nombre. SOLO se infiere lo que el nombre realmente dice: un vestier es
+ *  un descanso, una porteria es una salida. Todo lo demas queda SIN CLASIFICAR a proposito.
+ *
+ *  Hubo aqui un tercer patron (/DISPOSITIVO|LECTOR/ -> INTERIOR) y era un error peligroso:
+ *  los 13 dispositivos reales empiezan por "Dispositivo-", asi que ese cajon de sastre
+ *  convertia cualquier lector nuevo y desconocido en transito de perdon LIBRE y sin tope.
+ *  Marcar un area de planta como interior es una decision de nomina, no algo que se pueda
+ *  adivinar de un nombre: la toma un humano en el boton Dispositivos, una sola vez. */
+function rolAuto(origen){
+  const u = String(origen||'').toUpperCase();
+  if(/VESTIER|CAFETERIA|CASINO/.test(u))                     return 'DESCANSO';
+  if(/PORTERIA|RECEPCION|INGRESO|SALIDA|TORNIQUETE/.test(u)) return 'PORTERIA';
+  return '';                                                 // sin clasificar: lo define el usuario
+}
+/** Rol vigente. '' = sin clasificar: se trata como DESCANSO (el punto medio, con tope)
+ *  para acotar el error en las dos direcciones, y se avisa para que un humano lo defina. */
+function rolDisp(origen){
+  const o = String(origen||'').trim();
+  return DISPOSITIVOS[o] || rolAuto(o) || '';
+}
+function rolEfectivo(origen){ return rolDisp(origen) || 'DESCANSO'; }
 
 /** Estado de autorizacion de extras de un empleado en una fecha. F-09 / F-02 / F-03. */
 function autorFor(id, iso){
@@ -793,6 +847,7 @@ function buildModel(){
   /* ── Marcaciones ── */
   const punches = new Map();     // id -> [{iso, min, ts, origen, dup}]
   const orphan = [];
+  const dispositivos = new Map();      // origen -> cantidad de marcaciones
   DATA.mar.rows.forEach((r,i)=>{
     const id = normId(pick(r,'^employee id','^empleado id'));
     const iso = toISO(pick(r,'^fecha$','^fecha'));
@@ -801,6 +856,7 @@ function buildModel(){
     const p = { id, iso, min, ts: dnum(iso)*1440+min, seq:i,
                 origen:String(pick(r,'origen del registro')||'').trim(),
                 tipo:String(pick(r,'tipo de marcacion')||'').trim() };
+    if(p.origen) dispositivos.set(p.origen, (dispositivos.get(p.origen)||0)+1);
     const e = employees.get(id);
     if(!e){ orphan.push(p); return; }                        // A-10
     /* La columna "Branch" de las marcaciones ES la Compania del maestro: verificado
@@ -830,7 +886,7 @@ function buildModel(){
     e.vigFin = (ult && ult > e.retiro) ? ult : e.retiro;
   });
 
-  return { employees, shifts, sched, punches, orphan };
+  return { employees, shifts, sched, punches, orphan, dispositivos };
 }
 
 /** Detecta fechas de ingreso compartidas por muchísima gente: eso no es gente contratada el
@@ -902,13 +958,24 @@ function quitarDescanso(intervalos, W, iso, cfg){
            ventana:{ini:bIni, fin:bFin} };
 }
 
-/** Minutos que la persona estuvo fuera SIN salir del turno: salio y volvio a marcar.
- *  Es el descanso de cafe (B-12). Se excluye la franja del almuerzo, que ya viene
- *  descontada de la jornada fija y no debe contarse dos veces. */
-function huecosInternos(pares, W, almVentana){
-  if(!W || !pares || pares.length<2) return 0;
+/** Minutos que la persona estuvo fuera SIN salir del turno, CLASIFICADOS por el rol de
+ *  los biometricos donde el hueco abre (por donde salio) y cierra (por donde volvio).
+ *  Se excluye la franja del almuerzo, que ya viene descontada de la jornada fija.
+ *
+ *  El motivo de existir de esta clasificacion, con datos de agosto 2026 (7.871 huecos):
+ *    VESTIER  -> VESTIER   7.254 huecos, mediana  24 min  -> es el cafe
+ *    INTERIOR -> INTERIOR    543 huecos, mediana  23 min  -> transito dentro de planta
+ *    PORTERIA -> PORTERIA     53 huecos, mediana 196 min  -> salida real de la empresa
+ *  Un tecnico que recorre la planta pasa frente a lectores interiores y el motor leia eso
+ *  como "salio y volvio", cargandole horas pendientes que nunca debio. Caso real 8456:
+ *  4,55 h de pendiente en un dia que trabajo completo.
+ *
+ *  Prioridad deliberada, de mas estricto a menos: si CUALQUIER extremo es porteria, el
+ *  hueco es ausencia real. Ante la duda se cobra al empleado, no a la empresa. */
+function clasificarHuecos(pares, W, almVentana){
+  const out = { cafe:0, transito:0, ausencia:0, total:0, maxTransito:0 };
+  if(!W || !pares || pares.length<2) return out;
   const ps = pares.slice().sort((a,b)=>a.ini-b.ini);
-  let tot = 0;
   for(let i=1;i<ps.length;i++){
     const a = Math.max(ps[i-1].fin, W.ini), b = Math.min(ps[i].ini, W.fin);
     if(b<=a) continue;
@@ -917,9 +984,14 @@ function huecosInternos(pares, W, almVentana){
       const ov = Math.min(b, almVentana.fin) - Math.max(a, almVentana.ini);
       if(ov>0) dur -= ov;
     }
-    if(dur>0) tot += dur;
+    if(dur<=0) continue;
+    out.total += dur;
+    const r1 = rolEfectivo(ps[i-1].oFin), r2 = rolEfectivo(ps[i].oIni);
+    if(r1==='PORTERIA' || r2==='PORTERIA')      out.ausencia += dur;
+    else if(r1==='DESCANSO' || r2==='DESCANSO') out.cafe     += dur;
+    else { out.transito += dur; out.maxTransito = Math.max(out.maxTransito, dur); }
   }
-  return tot;
+  return out;
 }
 
 /** Tope de cafe pagado del dia. Sale del PROPIO turno: si declara un descanso menor al
@@ -1024,6 +1096,7 @@ function readConfig(){
     escPrimer: +v('cEscPrimer')||0, escGracia: +v('cEscGracia')||0,
     cafeAdm: +v('cCafeAdm')||0,
     lactPref: (v('cLactPref')||'').trim(), lactMin: +v('cLactMin')||0,
+    transAviso: +v('cTransAviso')||0,
     semIni: +v('cSemIni')||0
   };
   cfg.corteOn = cfg.corte && cfg.fin >= cfg.corte;      // H-06
@@ -1217,7 +1290,8 @@ function compute(M, cfg){
           if(inCiclo) add('BLOQ','A-17',id,emp.nombre,iso,'Salida con hora anterior o igual a la entrada.');
           continue;
         }
-        row.pares.push({ini:a.ts, fin:b.ts, inferido:!!(a.inferido||b.inferido)});
+        row.pares.push({ini:a.ts, fin:b.ts, inferido:!!(a.inferido||b.inferido),
+                        oIni:a.origen||'', oFin:b.origen||''});
       }
       if(!row.pares.length){ rows.push(row); return; }
 
@@ -1262,6 +1336,7 @@ function compute(M, cfg){
         r.jornadaFijaMin = 0; r.dentroMin = r.workMin; r.pendienteMin = 0;
         r.excesoMin = 0; r.extraCredMin = 0; r.cafePagadoMin = 0; r.huecosMin = 0;
         r.lactPagadoMin = 0; r.topeLactMin = 0;
+        r.transitoMin = 0; r.ausenciaMin = 0; r.huecos = {cafe:0,transito:0,ausencia:0,total:0,maxTransito:0};
         const cortes = r.W ? [r.W.ini, r.W.fin] : [];
         r.tramos = [];
         r.iv.forEach(p=>atomize(p.ini,p.fin,cfg,cortes)
@@ -1280,18 +1355,26 @@ function compute(M, cfg){
 
         /* B-12: el cafe lo paga la empresa. Solo se perdonan los minutos en que la persona
            efectivamente salio y volvio dentro del turno — nunca una llegada tarde. */
-        r.huecosMin = huecosInternos(r.pares, r.W, alm.ventana);
+        const H = clasificarHuecos(r.pares, r.W, alm.ventana);
+        r.huecos = H;
+        r.huecosMin = H.total;
+        r.transitoMin = H.transito;      // nunca salio: no genera pendiente
+        r.ausenciaMin = H.ausencia;      // salio por porteria: pesa completo
+        /* El transito NO tiene tope: quien paso frente a un lector interior seguia dentro
+           de la planta. Pero si es largo se avisa, para que nadie perdone horas a ciegas. */
+        if(cfg.transAviso>0 && H.maxTransito>cfg.transAviso && !r.flags.includes('B-16'))
+          r.flags.push('B-16');
         r.topeCafeMin = topeCafe(r.W, cfg);
-        r.cafePagadoMin = Math.min(r.topeCafeMin, r.huecosMin);
+        r.cafePagadoMin = Math.min(r.topeCafeMin, H.cafe);
         /* E-04: la lactancia es un DERECHO, no una obligacion. Si la mujer no salio, no
            hay hueco que perdonar y no se le acredita nada: solo se reconoce el tiempo que
            efectivamente se tomo, hasta el tope. Se imputa despues del cafe para que el
            reporte muestre los dos conceptos por separado. */
         r.topeLactMin = topeLactancia(r.W, cfg);
-        r.lactPagadoMin = Math.min(r.topeLactMin, r.huecosMin - r.cafePagadoMin);
+        r.lactPagadoMin = Math.min(r.topeLactMin, H.cafe - r.cafePagadoMin);
         if(r.lactPagadoMin > 0 && !r.flags.includes('E-04')) r.flags.push('E-04');
-        r.pendienteMin = Math.max(0,
-          r.jornadaFijaMin - r.dentroMin - r.cafePagadoMin - r.lactPagadoMin);
+        r.pendienteMin = Math.max(0, r.jornadaFijaMin - r.dentroMin
+          - r.cafePagadoMin - r.lactPagadoMin - r.transitoMin);
 
         const exc = [];
         r.iv.forEach(p=>{ if(p.fin > r.W.fin)
@@ -1545,6 +1628,40 @@ function tagRetiro(emp){
             `Aparece porque tiene marcaciones dentro del ciclo consultado.`;
   return ` <span class="tag t-warn" data-tip="${esc(t)}">Retirado</span>`;
 }
+const ROLES = [['DESCANSO','Descanso / café'],['PORTERIA','Portería (sale de la empresa)'],
+               ['INTERIOR','Tránsito interior']];
+/** Pinta la tabla de dispositivos detectados en los datos cargados. */
+function renderDisp(){
+  const tb = $('#tDisp tbody');
+  if(!MODEL || !MODEL.dispositivos || !MODEL.dispositivos.size){
+    tb.innerHTML = `<tr><td colspan="3" class="muted" style="padding:14px">`+
+      `Cargue las marcaciones y calcule el ciclo para ver los biométricos detectados.</td></tr>`;
+    return;
+  }
+  const list = [...MODEL.dispositivos.entries()].sort((a,b)=>b[1]-a[1]);
+  tb.innerHTML = list.map(([o,n])=>{
+    const actual = rolDisp(o), auto = !DISPOSITIVOS[o];
+    return `<tr><td>${esc(o)}${auto&&actual?` <span class="tag t-mut">auto</span>`:''}`+
+      `${!actual?` <span class="tag t-warn">sin clasificar</span>`:''}</td>`+
+      `<td class="num">${n}</td><td><select data-disp="${esc(o)}">`+
+      `<option value="">— sin clasificar —</option>`+
+      ROLES.map(([v,l])=>`<option value="${v}"${actual===v?' selected':''}>${l}</option>`).join('')+
+      `</select></td></tr>`;
+  }).join('');
+  const sin = list.filter(([o])=>!rolDisp(o));
+  $('#dispAviso').innerHTML = sin.length
+    ? `<span class="tag t-warn" data-nov="DISPOSITIVO">${sin.length} biométrico(s) sin clasificar</span> `+
+      `se están tratando como descanso (con tope). Ábralos en <b>Dispositivos</b> y defina su rol: `+
+      esc(sin.map(([o])=>o).join(', '))
+    : '';
+}
+function guardarDisp(){
+  $$('#tDisp select').forEach(s=>{
+    const o = s.dataset.disp;
+    if(s.value) DISPOSITIVOS[o] = s.value; else delete DISPOSITIVOS[o];
+  });
+  localStorage.setItem('mb_dispositivos', JSON.stringify(DISPOSITIVOS));
+}
 function conceptCols(cfg){
   return CONCEPTS.map(c=>({key:c.key, code:c.code(cfg), label:c.label,
     tip:`${c.code(cfg)} — ${c.label}. ${CONC_DESC[c.key]}`,
@@ -1694,8 +1811,10 @@ function celdaPendiente(r){
   const min = r.pendienteMin||0;
   const cafe = r.cafePagadoMin||0;
   const lact = r.lactPagadoMin||0;
-  const reconocido = [cafe?`${cafe} min de café (B-12)`:'', lact?`${lact} min de lactancia (E-04)`:'']
-                     .filter(Boolean).join(' y ');
+  const tran = r.transitoMin||0;
+  const reconocido = [cafe?`${cafe} min de café (B-12)`:'', lact?`${lact} min de lactancia (E-04)`:'',
+                      tran?`${tran} min de tránsito interior, sin salir de la planta (B-16)`:'']
+                     .filter(Boolean).join(', ');
   if(!min){
     if(!reconocido) return '<td class="num muted"></td>';
     return `<td class="num muted" data-tip="${esc(`Salio ${r.huecosMin} min dentro del turno y se le `+
@@ -1984,7 +2103,7 @@ function aoaDet(e){
   const head = ['COD_EMPLEADO','NOMBRE','FECHA','DIA','TIPO DE DIA','TURNO','PROGRAMADO',
                 'MARCACIONES','MARCACIONES DESCARTADAS','ENTRO','SALIO',
                 'MIN TARDE ENTRADA','MIN ANTES SALIDA','ALMUERZO',
-                'HORAS TRABAJADAS','JORNADA FIJA','MIN CAFE RECONOCIDO','MIN LACTANCIA RECONOCIDO','HORAS PENDIENTES','HORAS EXTRA','EXTRA NO AUTORIZADA',
+                'HORAS TRABAJADAS','JORNADA FIJA','MIN CAFE RECONOCIDO','MIN LACTANCIA RECONOCIDO','MIN TRANSITO INTERIOR','MIN AUSENCIA POR PORTERIA','HORAS PENDIENTES','HORAS EXTRA','EXTRA NO AUTORIZADA',
                 'PERFIL','ACUMULADO SEMANA','TOTAL SEMANA','UMBRAL SEMANA','AUTORIZACION',
                 ...cols.map(c=>c.head), 'INFERIDO','NOVEDADES','EXPLICACION'];
   const body = e.ciclo.map(r=>[
@@ -1994,7 +2113,7 @@ function aoaDet(e){
     r.entDelta>0?Math.round(r.entDelta):'', r.salDelta<0?Math.round(-r.salDelta):'',
     r.almuerzo||'',
     r.workMin?+(r.workMin/60).toFixed(2):'', r.ordH||'',
-    r.cafePagadoMin||'', r.lactPagadoMin||'',
+    r.cafePagadoMin||'', r.lactPagadoMin||'', r.transitoMin||'', r.ausenciaMin||'',
     r.pendienteMin?+(r.pendienteMin/60).toFixed(2):'',
     r.noAutorizado?'':(r.extraH||''),
     r.noAutorizado?Object.values(r.concNoAut||{}).reduce((a,b)=>a+b,0):'',
@@ -2088,6 +2207,7 @@ function runCalc(){
     const cfg = readConfig();
     marcarIngresosMasivos(MODEL, cfg);
     RESULT = compute(MODEL, cfg);
+    renderDisp();
     fillSelects(); fillFiltros(); renderCons(); renderDet(); renderExc(); renderCal();
     const b = RESULT.exc.filter(x=>x.sev==='BLOQ').length;
     $('#status').innerHTML = `${RESULT.cons.length} empleados con conceptos · ` +
@@ -2112,6 +2232,11 @@ document.addEventListener('DOMContentLoaded',()=>{
   $('#fDepto').onchange  = ()=>RESULT&&renderCons();
   $('#fPerfil').onchange  = ()=>RESULT&&renderCons();
   $('#fVinc').onchange    = ()=>RESULT&&renderCons();
+  $('#btnDisp').onclick     = ()=>{ renderDisp(); $('#dlgDisp').showModal(); };
+  $('#btnDispClose').onclick= ()=>$('#dlgDisp').close();
+  $('#btnDispAuto').onclick = ()=>{ DISPOSITIVOS = {};
+    localStorage.setItem('mb_dispositivos','{}'); renderDisp(); };
+  $('#btnDispOk').onclick   = ()=>{ guardarDisp(); $('#dlgDisp').close(); if(MODEL) runCalc(); };
   $('#fSinConc').onchange = ()=>RESULT&&renderCons();
   $('#fExcDep').onchange = ()=>RESULT&&renderExc();
   $('#fClear').onclick   = ()=>{ $('#fCia').value=''; $('#fDepto').value='';
