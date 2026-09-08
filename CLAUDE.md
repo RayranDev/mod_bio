@@ -49,14 +49,15 @@ Verificado línea por línea contra el código actual (no es una lista de memori
 CONCEPTS, CKEYS, DOW_ES, NOV, CONC_DESC, MATRIZ        (diccionarios de datos)
 toISO, toMin, addDays, rangeDays, weekStart             (utilidades de fecha)
 easter, nextMonday, holidaysCO                          (festivos de Colombia)
-DATA, OVERRIDES, PERFILES, AUTOR, CONFIANZA             (estado global persistido en localStorage)
+DATA, OVERRIDES, PERFILES, AUTOR, CONFIANZA, DISPOSITIVOS (estado global en localStorage)
 autorFor, readSheet, pick, normId                       (parseo de Excel)
 buildModel                                              (construye el modelo desde los Excel cargados)
 marcarIngresosMasivos                                   (detección de fecha de ingreso masiva)
 shiftFor, segmentFor                                    (turno vigente por fecha)
 round05, dayType, classify, atomize                     (clasificación y redondeo)
 escalera, quitarDescanso, tramosAcreditados             (jornada fija + escalera de sobretiempo)
-huecosInternos, topeCafe                                (descanso de café pagado, B-12)
+clasificarHuecos, topeCafe                              (huecos por rol de dispositivo, B-12/B-16)
+rolAuto, rolDisp, rolEfectivo, renderDisp, guardarDisp   (rol de cada biométrico)
 esLactancia, topeLactancia                              (tiempo de lactancia pagado, E-04)
 readConfig                                              (lee los parámetros del formulario)
 limpiarMarcaciones                                      (dedupe A-06 + agrupación A-07)
@@ -180,8 +181,9 @@ git — ver `.gitignore`). Nombres típicos (el prefijo/timestamp varía en cada
   entre 19 y 25 minutos, se concentra en las franjas 08:00–09:59 y 16:00–18:59, afecta a 11.505
   empleado-día y el **96,6% de esos días tiene exactamente un hueco**. Es un patrón de descanso, no de
   ausentismo. El resto de los huecos cae en porterías y recepción, que son salidas reales de la
-  empresa — **se decidió no distinguir por dispositivo**: el tope diario de minutos perdonados hace
-  innecesaria esa distinción y evita hardcodear ids de biométricos que pueden cambiar.
+  empresa. **En su momento se decidió no distinguir por dispositivo; esa decisión se revirtió en
+  sept-2026** al aparecer el caso 8456 (ver abajo): el tope diario acotaba el daño pero no evitaba que
+  a un técnico que recorre la planta se le cargaran horas pendientes que nunca debió.
 - **El tope del café sale del propio turno, no de una constante.** Todos los turnos de planta declaran
   `Descanso 0.333` (20 min) en el Excel de Turno, además de su almuerzo. Ese valor es el tope. Solo
   `T_ADM1` declara únicamente la hora de almuerzo, y para esos casos existe el parámetro `cCafeAdm`
@@ -336,6 +338,62 @@ Efecto medido en agosto 2026: 8.357 días con café reconocido, 2.671 h pagadas,
 del ciclo bajaron de **6.395,8 h a 3.973,6 h**. Los minutos reconocidos se ven en el tooltip de la
 celda `PEND.` y se exportan en la columna `MIN CAFE RECONOCIDO` del Detalle.
 
+**Rol de cada biométrico (`clasificarHuecos`, B-12/B-16).** Un hueco entre marcaciones significaba
+una sola cosa: la persona salió. Eso lee mal a quien trabaja recorriendo la planta. El caso que lo
+destapó, empleado **8456** (técnico de sistemas), el 2026-08-05:
+
+```
+05:31 PORTERIA PLANTA 2 · 08:02 ALMACEN PP · 12:55 EXTRUSION PP · 14:16 RECEPCION PLANTA 2
+```
+
+Cuatro dispositivos distintos, nunca cruzó una portería entre medio. El motor leía el hueco
+08:02→12:55 como salida y le cargaba **4,55 h de pendiente en un día que trabajó completo**.
+
+Los 7.871 huecos de agosto 2026 se separan solos por dónde abre y dónde cierra el hueco:
+
+| Sale → vuelve | Huecos | Mediana | ≤60 min | Qué es |
+|---|---|---|---|---|
+| VESTIER → VESTIER | 7.254 | 24 min | 73% | el café |
+| INTERIOR → INTERIOR | 543 | 23 min | 73% | tránsito dentro de planta |
+| PORTERÍA → PORTERÍA | 53 | **196 min** | **15%** | salida real de la empresa |
+
+Cada dispositivo tiene ahora un **rol**, y el hueco se clasifica por el rol de los dos extremos:
+
+- **`PORTERIA`** — salió de la empresa: el hueco **pesa completo** como pendiente.
+- **`DESCANSO`** — café: se perdona **hasta el tope diario** (B-12).
+- **`INTERIOR`** — nunca cruzó el perímetro: **no genera pendiente**, sin tope, pero se marca `B-16`
+  si supera `cfg.transAviso` para que nadie perdone horas a ciegas.
+
+**La prioridad es deliberada: si CUALQUIER extremo es portería, el hueco es ausencia.** Ante la duda
+se cobra al empleado, no a la empresa.
+
+**El rol se sugiere por el nombre y lo confirma una persona** (botón *Dispositivos*, persistido en
+`localStorage.mb_dispositivos`). La sugerencia cubre **solo lo que el nombre realmente prueba**: un
+vestier es descanso, una portería es salida. Todo lo demás queda **sin clasificar** y se trata como
+`DESCANSO`, que acota el error al tope del café en las dos direcciones hasta que un humano decida.
+
+> **Un error que estuvo a punto de entrar, y por qué importa.** La primera versión de `rolAuto()` tenía
+> un tercer patrón, `/DISPOSITIVO|LECTOR/ → INTERIOR`. Como **los 13 dispositivos reales empiezan por
+> "Dispositivo-"**, ese cajón de sastre convertía cualquier lector nuevo y desconocido en tránsito de
+> perdón **libre y sin tope**. Acertaba en los 13 de hoy por casualidad, no por evidencia. Lo detectó
+> un caso sintético con un dispositivo inventado. Marcar un área de planta como interior es una
+> decisión de nómina; no se adivina de un nombre.
+
+**Este cambio no mueve un peso de nómina.** Ordinarias y extras son idénticas en los tres escenarios;
+solo se mueve el reporte de horas pendientes:
+
+| | HEAD | recién abierto | ya clasificado |
+|---|---|---|---|
+| horas ordinarias | 130.040,0 | 130.040,0 | 130.040,0 |
+| horas extra | 16.426,5 | 16.426,5 | 16.426,5 |
+| **horas pendientes** | 3.755,1 | **3.767,6** | **3.665,0** |
+| pendientes del 8456 | 15,00 | 15,00 | **8,98** |
+
+Sin clasificar nada, los pendientes **suben** 12,5 h: los huecos de portería dejan de recibir el
+perdón del café, que es la dirección correcta. Con los cuatro interiores clasificados, bajan 90,2 h.
+Y el 8456 pasa de 15 h a 8,98 h — **no a cero**: las horas que sí debe siguen ahí. Eso es lo que se
+buscaba, no un perdón general.
+
 **Tiempo de lactancia pagado (E-04 / C-09, `esLactancia` + `topeLactancia`).** Mismo mecanismo del
 café —minutos perdonados hasta un tope diario, en vez de horas pendientes— pero con dos diferencias
 que importan:
@@ -465,6 +523,10 @@ engranaje), con un botón explícito "Aplicar y recalcular" en vez de recalcular
 | `cCafeAdm` | Café para turnos que no lo declaran, minutos (default 20). Solo se usa cuando el turno no trae un `Descanso` menor al umbral de almuerzo | B-12 |
 | `cLactPref` | Prefijo de los códigos de turno de lactancia (default `T_LACT`) | E-04 |
 | `cLactMin` | Tiempo de lactancia reconocido por día, minutos (default 60). Va de 30 a 60 según el tiempo de gestación; lo decide RRHH, no el motor | E-04 / C-09 |
+| `cTransAviso` | Avisar (B-16) si un tránsito interior supera estos minutos (default 120). No lo topa: solo lo señala para revisión | B-16 |
+
+El **rol de cada biométrico** no es un campo del formulario: se edita en el botón *Dispositivos* y se
+guarda en `localStorage.mb_dispositivos`. Es la configuración que más pesa sobre las horas pendientes.
 | `cDom` | ¿El domingo genera recargo dominical? | — |
 | `cDescRec` | ¿El descanso propio (no dominical) genera recargo? | — |
 | `cInfer` | ¿Inferir la marcación faltante desde el turno programado? | A-02/A-03 |
