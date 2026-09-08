@@ -226,6 +226,10 @@
         <input type="number" id="cTolPunt" value="5" min="0"></div>
       <div><label class="f">Café para turnos que no lo declaran (min) <span class="muted">(B-12)</span></label>
         <input type="number" id="cCafeAdm" value="20" min="0"></div>
+      <div><label class="f">Prefijo de turnos de lactancia <span class="muted">(E-04)</span></label>
+        <input type="text" id="cLactPref" value="T_LACT"></div>
+      <div><label class="f">Tiempo de lactancia (min) <span class="muted">(E-04)</span></label>
+        <input type="number" id="cLactMin" value="60" min="0"></div>
       <div><label class="f">Sobretiempo: minutos para la primera media hora</label>
         <input type="number" id="cEscPrimer" value="25" min="0"></div>
       <div><label class="f">Sobretiempo: gracia para cada media hora siguiente (min)</label>
@@ -505,6 +509,10 @@ const NOV = {
    q:'Este empleado esta marcado como personal de direccion, confianza y manejo.',
    p:'El Art. 162 del CST excluye a estos cargos de la jornada maxima legal, asi que no generan horas extra. Tampoco se les calculan horas pendientes: se reporta el tiempo efectivamente trabajado.',
    a:'Los recargos por trabajo nocturno, dominical o festivo se siguen calculando normalmente. Si la marca esta mal puesta, se quita desde el detalle del empleado.'},
+ 'E-04':{s:'INFO',t:'Tiempo de lactancia reconocido',
+   q:'Este dia se le reconocieron minutos de lactancia como tiempo trabajado.',
+   p:'El turno asignado es de lactancia (su codigo empieza por el prefijo parametrizado) y la empleada salio y volvio a marcar dentro de su jornada.',
+   a:'La ley reconoce ese tiempo como trabajado, asi que NO se descuenta ni genera horas pendientes. Es un derecho, no una obligacion: quien no lo toma no recibe ningun credito por el. El cafe (B-12) y la lactancia son topes separados y acumulables.'},
  'F-09':{s:'ADV',t:'Extra sin autorizacion previa',
    q:'El dia genero tiempo suplementario y no existe una autorizacion registrada que cubra esa fecha.',
    p:'El catalogo exige decision explicita: las extras se calculan igual, pero no deberian pagarse sin que el jefe las autorice.',
@@ -923,6 +931,22 @@ function topeCafe(W, cfg){
   return (declarado>0 && declarado < cfg.descMin) ? declarado : cfg.cafeAdm;
 }
 
+/** E-04: turno de lactancia, identificado por el prefijo de su codigo (cfg.lactPref).
+ *  Se decidio NO leerlo de la columna Descanso del turno: una lactancia de 60 min choca
+ *  de frente con el umbral de almuerzo (cfg.descMin, tambien 60), y el motor la
+ *  descontaria como almuerzo en vez de perdonarla — o sea, le quitaria justo la hora que
+ *  la ley le reconoce. El prefijo es explicito y no depende de como BioTime configure
+ *  el descanso. Si el turno ademas declara un almuerzo real, ese se descuenta normal. */
+function esLactancia(W, cfg){
+  return !!(W && cfg.lactPref && String(W.code||'').startsWith(cfg.lactPref));
+}
+
+/** Tope diario de minutos perdonados: cafe + lactancia. Son derechos SEPARADOS y
+ *  acumulables, no uno en lugar del otro. */
+function topeLactancia(W, cfg){
+  return esLactancia(W, cfg) ? cfg.lactMin : 0;
+}
+
 /** Acredita exactamente `credMin` minutos tomados cronológicamente del tiempo en exceso.
  *  Si la escalera acredita más de lo efectivamente trabajado (p. ej. 50 min trabajados
  *  acreditan 1,0 h), se extiende desde el final del último tramo conservando su franja. */
@@ -999,6 +1023,7 @@ function readConfig(){
     ingMasivo: +v('cIngMasivo')||0,
     escPrimer: +v('cEscPrimer')||0, escGracia: +v('cEscGracia')||0,
     cafeAdm: +v('cCafeAdm')||0,
+    lactPref: (v('cLactPref')||'').trim(), lactMin: +v('cLactMin')||0,
     semIni: +v('cSemIni')||0
   };
   cfg.corteOn = cfg.corte && cfg.fin >= cfg.corte;      // H-06
@@ -1236,6 +1261,7 @@ function compute(M, cfg){
         r.confianza = true;
         r.jornadaFijaMin = 0; r.dentroMin = r.workMin; r.pendienteMin = 0;
         r.excesoMin = 0; r.extraCredMin = 0; r.cafePagadoMin = 0; r.huecosMin = 0;
+        r.lactPagadoMin = 0; r.topeLactMin = 0;
         const cortes = r.W ? [r.W.ini, r.W.fin] : [];
         r.tramos = [];
         r.iv.forEach(p=>atomize(p.ini,p.fin,cfg,cortes)
@@ -1257,7 +1283,15 @@ function compute(M, cfg){
         r.huecosMin = huecosInternos(r.pares, r.W, alm.ventana);
         r.topeCafeMin = topeCafe(r.W, cfg);
         r.cafePagadoMin = Math.min(r.topeCafeMin, r.huecosMin);
-        r.pendienteMin = Math.max(0, r.jornadaFijaMin - r.dentroMin - r.cafePagadoMin);
+        /* E-04: la lactancia es un DERECHO, no una obligacion. Si la mujer no salio, no
+           hay hueco que perdonar y no se le acredita nada: solo se reconoce el tiempo que
+           efectivamente se tomo, hasta el tope. Se imputa despues del cafe para que el
+           reporte muestre los dos conceptos por separado. */
+        r.topeLactMin = topeLactancia(r.W, cfg);
+        r.lactPagadoMin = Math.min(r.topeLactMin, r.huecosMin - r.cafePagadoMin);
+        if(r.lactPagadoMin > 0 && !r.flags.includes('E-04')) r.flags.push('E-04');
+        r.pendienteMin = Math.max(0,
+          r.jornadaFijaMin - r.dentroMin - r.cafePagadoMin - r.lactPagadoMin);
 
         const exc = [];
         r.iv.forEach(p=>{ if(p.fin > r.W.fin)
@@ -1659,14 +1693,17 @@ function celdaPendiente(r){
   if(r.confianza) return '<td class="num muted" data-nov="CONFIANZA">—</td>';
   const min = r.pendienteMin||0;
   const cafe = r.cafePagadoMin||0;
+  const lact = r.lactPagadoMin||0;
+  const reconocido = [cafe?`${cafe} min de café (B-12)`:'', lact?`${lact} min de lactancia (E-04)`:'']
+                     .filter(Boolean).join(' y ');
   if(!min){
-    if(!cafe) return '<td class="num muted"></td>';
-    return `<td class="num muted" data-tip="${esc(`Salio ${r.huecosMin} min dentro del turno y se le reconocen `+
-      `${cafe} min de descanso de cafe (B-12, lo paga la empresa), asi que no queda nada pendiente.`)}">·</td>`;
+    if(!reconocido) return '<td class="num muted"></td>';
+    return `<td class="num muted" data-tip="${esc(`Salio ${r.huecosMin} min dentro del turno y se le `+
+      `reconocen ${reconocido}, que se pagan como trabajados, asi que no queda nada pendiente.`)}">·</td>`;
   }
   const ent = r.entDelta>0 ? `Entro ${Math.round(r.entDelta)} min tarde. ` : '';
   const sal = r.salDelta<0 ? `Salio ${Math.abs(Math.round(r.salDelta))} min antes del fin de turno. ` : '';
-  const caf = cafe ? `Se le reconocen ${cafe} min de cafe de los ${r.huecosMin} min que estuvo fuera dentro del turno (B-12). ` : '';
+  const caf = reconocido ? `Se le reconocen ${reconocido} de los ${r.huecosMin} min que estuvo fuera dentro del turno. ` : '';
   const tip = `${ent}${sal}${caf}Trabajo ${(r.dentroMin/60).toFixed(2)} h de las ${(r.jornadaFijaMin/60).toFixed(2)} h `+
               `de su turno. Se le acreditan las ${(r.jornadaFijaMin/60).toFixed(2)} h completas igual; `+
               `estas ${(min/60).toFixed(2)} h quedan registradas como pendientes.`;
@@ -1947,7 +1984,7 @@ function aoaDet(e){
   const head = ['COD_EMPLEADO','NOMBRE','FECHA','DIA','TIPO DE DIA','TURNO','PROGRAMADO',
                 'MARCACIONES','MARCACIONES DESCARTADAS','ENTRO','SALIO',
                 'MIN TARDE ENTRADA','MIN ANTES SALIDA','ALMUERZO',
-                'HORAS TRABAJADAS','JORNADA FIJA','MIN CAFE RECONOCIDO','HORAS PENDIENTES','HORAS EXTRA','EXTRA NO AUTORIZADA',
+                'HORAS TRABAJADAS','JORNADA FIJA','MIN CAFE RECONOCIDO','MIN LACTANCIA RECONOCIDO','HORAS PENDIENTES','HORAS EXTRA','EXTRA NO AUTORIZADA',
                 'PERFIL','ACUMULADO SEMANA','TOTAL SEMANA','UMBRAL SEMANA','AUTORIZACION',
                 ...cols.map(c=>c.head), 'INFERIDO','NOVEDADES','EXPLICACION'];
   const body = e.ciclo.map(r=>[
@@ -1957,7 +1994,7 @@ function aoaDet(e){
     r.entDelta>0?Math.round(r.entDelta):'', r.salDelta<0?Math.round(-r.salDelta):'',
     r.almuerzo||'',
     r.workMin?+(r.workMin/60).toFixed(2):'', r.ordH||'',
-    r.cafePagadoMin||'',
+    r.cafePagadoMin||'', r.lactPagadoMin||'',
     r.pendienteMin?+(r.pendienteMin/60).toFixed(2):'',
     r.noAutorizado?'':(r.extraH||''),
     r.noAutorizado?Object.values(r.concNoAut||{}).reduce((a,b)=>a+b,0):'',
