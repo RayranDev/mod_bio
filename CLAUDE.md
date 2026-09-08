@@ -57,6 +57,7 @@ shiftFor, segmentFor                                    (turno vigente por fecha
 round05, dayType, classify, atomize                     (clasificación y redondeo)
 escalera, quitarDescanso, tramosAcreditados             (jornada fija + escalera de sobretiempo)
 huecosInternos, topeCafe                                (descanso de café pagado, B-12)
+esLactancia, topeLactancia                              (tiempo de lactancia pagado, E-04)
 readConfig                                              (lee los parámetros del formulario)
 limpiarMarcaciones                                      (dedupe A-06 + agrupación A-07)
 compute                                                 (el motor de horas y conceptos, ~490 líneas)
@@ -335,6 +336,45 @@ Efecto medido en agosto 2026: 8.357 días con café reconocido, 2.671 h pagadas,
 del ciclo bajaron de **6.395,8 h a 3.973,6 h**. Los minutos reconocidos se ven en el tooltip de la
 celda `PEND.` y se exportan en la columna `MIN CAFE RECONOCIDO` del Detalle.
 
+**Tiempo de lactancia pagado (E-04 / C-09, `esLactancia` + `topeLactancia`).** Mismo mecanismo del
+café —minutos perdonados hasta un tope diario, en vez de horas pendientes— pero con dos diferencias
+que importan:
+
+- **Se identifica por el código del turno, no por la columna `Descanso`.** El turno se llamará
+  `T_LACT*` y el prefijo es un parámetro (`cLactPref`, default `T_LACT`), igual que `cAdminPref`.
+  **Esto no es capricho:** una lactancia de 60 minutos choca de frente con el umbral de almuerzo
+  (`cfg.descMin`, también 60). Si el tope saliera de la columna `Descanso` como el del café,
+  `quitarDescanso()` la trataría como almuerzo y **se la descontaría de la jornada fija** — es decir,
+  le quitaría exactamente la hora que la ley le reconoce. Leerlo del código del turno evita esa
+  colisión y no depende de cómo BioTime configure el descanso. Si el turno además declara un almuerzo
+  real, ese se descuenta normal.
+- **Es un derecho, no una obligación.** El usuario fue explícito: *"habrán mujeres que se tomen ese
+  tiempo, habrán otras que no"*. El crédito está topado por los huecos que la persona
+  **efectivamente** tomó (`Math.min(topeLact, huecos − café)`), así que quien no sale no recibe
+  ningún crédito fantasma, y una llegada tarde **nunca** se perdona aunque el turno sea de lactancia.
+
+Café y lactancia son topes **separados y acumulables** (20 + 60 = 80 min/día con los defaults), porque
+son dos derechos distintos. Se imputa primero el café y el resto a lactancia, para que el reporte
+muestre los dos conceptos por separado: tooltip de la celda `PEND.` y columna
+`MIN LACTANCIA RECONOCIDO` en el Detalle. La novedad `E-04` marca solo los días donde de verdad se
+reconoció lactancia.
+
+**El código está en producción pero inerte hasta que exista el turno.** Con cero turnos `T_LACT*` en
+los datos, la salida es idéntica al commit anterior — verificado sobre agosto 2026 en los dos
+archivos. El comportamiento se validó con cinco casos sintéticos (turno `T_LACT1` 08:00–17:00,
+almuerzo 12:00, jornada fija 480 min):
+
+| caso | huecos | café | lactancia | pendiente |
+|---|---|---|---|---|
+| sale 80 min (café + lactancia completa) | 80 | 20 | 60 | **0** |
+| no se toma la lactancia, trabaja completo | 0 | 0 | 0 | **0** |
+| llega 60 min tarde, no sale en el turno | 0 | 0 | 0 | **60** |
+| sale 120 min (excede el tope de 80) | 120 | 20 | 60 | **40** |
+| control: mismas marcaciones, turno normal | 80 | 20 | **0** | **60** |
+
+La última fila es la que prueba que el crédito solo aplica al turno de lactancia: mismas marcaciones,
+turno normal, y conserva los 60 minutos de pendiente.
+
 **Dirección, confianza y manejo (Art. 162 CST, `CONFIANZA`).** Marca por empleado —checkbox en la
 barra de Detalle, persistida en `localStorage.mb_confianza`— para los cargos que la ley excluye de la
 jornada máxima legal. Un empleado marcado:
@@ -423,6 +463,8 @@ engranaje), con un botón explícito "Aplicar y recalcular" en vez de recalcular
 | `cCorte` | Fecha de corte 0253→0252 / 0259→0258 | H-06 |
 | `cDesc` | Horas mínimas de descanso para descontarlo como almuerzo | B-10/B-12 |
 | `cCafeAdm` | Café para turnos que no lo declaran, minutos (default 20). Solo se usa cuando el turno no trae un `Descanso` menor al umbral de almuerzo | B-12 |
+| `cLactPref` | Prefijo de los códigos de turno de lactancia (default `T_LACT`) | E-04 |
+| `cLactMin` | Tiempo de lactancia reconocido por día, minutos (default 60). Va de 30 a 60 según el tiempo de gestación; lo decide RRHH, no el motor | E-04 / C-09 |
 | `cDom` | ¿El domingo genera recargo dominical? | — |
 | `cDescRec` | ¿El descanso propio (no dominical) genera recargo? | — |
 | `cInfer` | ¿Inferir la marcación faltante desde el turno programado? | A-02/A-03 |
@@ -450,6 +492,11 @@ más estrictos que lo que pedía el catálogo original), B (jornada programada),
 (clasificación y redondeo, salvo D-14 y el contador mensual D.4), e I (los 12 invariantes —
 verificados en cada sesión de pruebas contra datos reales, siempre en cero violaciones).
 
+**Implementado en esta sesión, pendiente solo de que exista el dato en BioTime:** **E-04/C-09**
+(lactancia) tiene el motor completo y probado; se activa solo cuando aparezca un turno `T_LACT*`.
+La duración quedó parametrizada (30 a 60 min) en vez de fijarse, que era el "⚠️ definir duración"
+del catálogo original.
+
 **Resuelto como decisión de diseño documentada, no como código pendiente:** D-05 a D-08 (la matriz de
 concurrencia festivo × dentro/fuera de jornada) se implementó como **mutuamente excluyente por
 minuto** — un minuto nocturno en festivo genera `0259` solo, nunca `0253+0220` — documentado en el
@@ -461,7 +508,7 @@ integraciones externas que una herramienta local de un solo archivo no puede aut
 
 - **Bloque D.4** (contador mensual ocasional/habitual de descanso trabajado, D-25 a D-27) — no existe
   ningún conteo mensual en el código.
-- **E-04** (lactancia), **E-06/E-07** (temporales Granservicios, practicantes SENA — aunque el filtro
+- **E-06/E-07** (temporales Granservicios, practicantes SENA — aunque el filtro
   de compañía en Consolidado ayuda a *ver* la separación, no *decide* si entran al archivo), **E-09**
   (códigos de Sinergy duplicados — no hay ninguna pasada de detección de duplicados), **E-11**
   (convención colectiva) — ninguno tiene lógica propia.
