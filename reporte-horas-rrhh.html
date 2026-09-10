@@ -123,6 +123,10 @@
   td.cross{box-shadow:inset 3px 0 0 var(--ok)}
   td.over{color:var(--ok);font-weight:700}
   td.noaut{background:var(--err-soft);color:var(--err);text-decoration:line-through}
+  dialog#dlgDisp,dialog#dlgAutor{border:1px solid var(--line);border-radius:8px;padding:16px 18px;
+    max-width:860px;width:92vw;max-height:86vh;overflow:auto;background:#fff;color:var(--fg)}
+  dialog#dlgDisp::backdrop,dialog#dlgAutor::backdrop{background:rgba(10,14,20,.55)}
+  dialog#dlgAutor h3{font-size:13px;margin:0 0 4px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted)}
   .aut{background:#fff;border:1px solid var(--line);border-radius:6px;padding:10px 12px;margin-bottom:10px}
   .aut h3{font-size:12px;margin:0 0 8px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted)}
   .aut .row{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap}
@@ -204,6 +208,28 @@
     <button class="primary" id="btnDispOk">Aplicar y recalcular</button>
     <button id="btnDispAuto">Volver a la sugerencia automática</button>
     <button id="btnDispClose">Cerrar</button>
+  </div>
+</dialog>
+
+<dialog id="dlgAutor">
+    <h3>Autorizacion de horas extra <span class="muted" style="text-transform:none">(F-09)</span></h3>
+    <div class="row">
+      <div><label class="f">Desde</label><input type="date" id="aIni"></div>
+      <div><label class="f">Hasta</label><input type="date" id="aFin"></div>
+      <div><label class="f">Estado</label>
+        <select id="aEst">
+          <option value="AUT">Autorizado</option>
+          <option value="NO">No autorizado</option>
+        </select></div>
+      <div style="flex:1;min-width:200px"><label class="f">Motivo o soporte</label>
+        <input type="text" id="aMot" placeholder="Ej.: correo del jefe del 12/08"></div>
+      <button class="primary" id="aAdd">Agregar rango</button>
+      <button id="aAll">Autorizar todo el ciclo</button>
+      <button id="aNone">No autorizar el ciclo</button>
+    </div>
+    <table id="tAut"><thead><tr><th>Desde</th><th>Hasta</th><th>Estado</th><th>Motivo</th><th></th></tr></thead><tbody></tbody></table>
+  <div class="bar" style="margin-top:12px">
+    <button id="btnAutorClose">Cerrar</button>
   </div>
 </dialog>
 
@@ -371,25 +397,8 @@
            data-nov="CONFIANZA">
       <input type="checkbox" id="chkConfianza" style="width:auto">Dirección y confianza</label>
     <span class="sp"></span>
+    <button id="btnAutor" data-nov="F-09">Autorización de extras</button>
     <button id="expDet">Exportar detalle de este empleado (Excel)</button>
-  </div>
-  <div class="aut" id="autBox">
-    <h3>Autorizacion de horas extra <span class="muted" style="text-transform:none">(F-09)</span></h3>
-    <div class="row">
-      <div><label class="f">Desde</label><input type="date" id="aIni"></div>
-      <div><label class="f">Hasta</label><input type="date" id="aFin"></div>
-      <div><label class="f">Estado</label>
-        <select id="aEst">
-          <option value="AUT">Autorizado</option>
-          <option value="NO">No autorizado</option>
-        </select></div>
-      <div style="flex:1;min-width:200px"><label class="f">Motivo o soporte</label>
-        <input type="text" id="aMot" placeholder="Ej.: correo del jefe del 12/08"></div>
-      <button class="primary" id="aAdd">Agregar rango</button>
-      <button id="aAll">Autorizar todo el ciclo</button>
-      <button id="aNone">No autorizar el ciclo</button>
-    </div>
-    <table id="tAut"><thead><tr><th>Desde</th><th>Hasta</th><th>Estado</th><th>Motivo</th><th></th></tr></thead><tbody></tbody></table>
   </div>
   <div class="kpi" id="kpiDet"></div>
   <div class="scroll"><table id="tDet"><thead></thead><tbody></tbody></table></div>
@@ -2440,6 +2449,11 @@ function runCalc(){
     const b = RESULT.exc.filter(x=>x.sev==='BLOQ').length;
     $('#status').innerHTML = `${RESULT.cons.length} empleados con conceptos · ` +
       (b?`<b style="color:#fca5a5">${b} bloqueantes</b>`:'sin bloqueantes');
+    /* El panel de carga y los parametros ocupan mas de una pantalla, asi que al terminar
+       el calculo el resultado queda fuera de vista y hay que bajar a mano. Se lleva la
+       barra de pestanas al tope: desde ahi la tabla ocupa el alto util y el scroll de
+       adentro deja de pelear con el de la pagina. */
+    $('.tabs').scrollIntoView({behavior:'smooth', block:'start'});
   }catch(err){ console.error(err); toast('Error de cálculo: '+err.message); }
 }
 
@@ -2474,6 +2488,8 @@ document.addEventListener('DOMContentLoaded',()=>{
   $('#selEmp').onchange = e=>{ CUR_EMP=e.target.value;
     $('#selPerfil').value = PERFILES[CUR_EMP]||'';
     $('#chkConfianza').checked = CONFIANZA.has(CUR_EMP); renderDet(); };
+  $('#btnAutor').onclick   = ()=>{ renderAutor(); $('#dlgAutor').showModal(); };
+  $('#btnAutorClose').onclick = ()=>$('#dlgAutor').close();
   $('#aAdd').onclick  = ()=>addAutor($('#aIni').value,$('#aFin').value,$('#aEst').value,$('#aMot').value);
   $('#aAll').onclick  = ()=>addAutor(RESULT?.cfg.ini,RESULT?.cfg.fin,'AUT','Autorizacion global del ciclo');
   $('#aNone').onclick = ()=>addAutor(RESULT?.cfg.ini,RESULT?.cfg.fin,'NO','Sin autorizacion para el ciclo');
