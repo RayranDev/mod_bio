@@ -133,6 +133,22 @@
   .glos h3{font-size:12px;margin:0 0 10px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted)}
   .glos td:first-child{white-space:nowrap;vertical-align:top}
   .glos td{white-space:normal}
+  #tAsis th.stick1,#tAsis td.stick1{position:sticky;left:0;min-width:56px;max-width:56px;background:#fff}
+  #tAsis th.stick2,#tAsis td.stick2{position:sticky;left:56px;min-width:190px;max-width:190px;
+    background:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #tAsis td.stick1,#tAsis td.stick2{z-index:1}
+  #tAsis th.stick1,#tAsis th.stick2{z-index:3}
+  #tAsis th.asisday{min-width:30px;max-width:30px;text-align:center;padding:4px 2px;line-height:1.15}
+  #tAsis th.asisday b{display:block;font-size:11px}
+  #tAsis th.asisday i{display:block;font-style:normal;font-size:8px;color:var(--muted);font-weight:600}
+  #tAsis th.asisday.fes{background:#fff7ed}
+  #tAsis th.asisday.dom{background:#eff6ff}
+  #tAsis td.asiscell{text-align:center;font-weight:700;font-size:11px;cursor:help;
+    min-width:30px;max-width:30px;padding:4px 2px}
+  #tAsis td.est-A{background:var(--ok-soft);color:var(--ok)}
+  #tAsis td.est-S{background:var(--accent-soft);color:var(--accent)}
+  #tAsis td.est-F{background:var(--err-soft);color:var(--err)}
+  #tAsis td.est-na{color:var(--line)}
   #toast{position:fixed;right:16px;bottom:16px;background:#16202c;color:#fff;padding:9px 14px;
          border-radius:5px;font-size:12px;opacity:0;transition:.25s;pointer-events:none;z-index:99}
   #toast.on{opacity:1}
@@ -315,6 +331,7 @@
   <button data-tab="det">Detalle por empleado</button>
   <button data-tab="cal">Calendario de turnos</button>
   <button data-tab="exc">Excepciones</button>
+  <button data-tab="asis">Asistencia</button>
 </div>
 
 <section id="tab-cons" class="tabwrap on">
@@ -412,6 +429,29 @@
     <button id="expExc">Exportar excepciones (Excel)</button>
   </div>
   <div class="scroll"><table id="tExc"><thead></thead><tbody></tbody></table></div>
+</section>
+
+<section id="tab-asis" class="tabwrap">
+  <div class="bar">
+    <select id="fCiaAs" style="max-width:170px"><option value="">Todas las compañías</option></select>
+    <select id="fDeptoAs" style="max-width:250px"><option value="">Todos los departamentos</option></select>
+    <input type="text" id="qAs" placeholder="Código o nombre…" style="max-width:190px">
+    <button id="fClearAs">Limpiar</button>
+    <span id="fInfoAs" class="muted"></span>
+    <span class="sp"></span>
+    <button id="expAsis">Exportar asistencia (Excel)</button>
+  </div>
+  <div class="kpi" id="kpiAsis"></div>
+  <div class="scroll" style="max-height:75vh"><table id="tAsis"><thead></thead><tbody></tbody></table></div>
+  <p class="muted" style="font-size:11px;margin-top:8px">
+    <span class="tag t-ok">A</span> asistió con turno &middot;
+    <span class="tag t-info">S</span> asistió sin turno programado &middot;
+    <span class="tag t-err">F</span> no asistió (turno programado, sin marcaciones) &middot;
+    celda vacía = sin turno y sin marcaciones &middot; borde ámbar = turno con número impar de marcaciones (incompleto).
+    Pase el cursor sobre una celda para ver el detalle.
+    Una jornada nocturna sin turno asignado (entrada de noche, salida de madrugada) cuenta como un solo día:
+    el día en que empezó.
+  </p>
 </section>
 
 </main>
@@ -670,7 +710,7 @@ const isHoliday = iso => holidaysCO(+iso.slice(0,4))[iso] || null;
    PARSEO DE LOS XLSX
    ══════════════════════════════════════════════════════════════════ */
 const DATA = { emp:null, tur:null, hor:null, mar:null, ren:null };
-let MODEL = null, RESULT = null, CUR_EMP = null;
+let MODEL = null, RESULT = null, CUR_EMP = null, ASISTENCIA = null;
 const OVERRIDES = JSON.parse(localStorage.getItem('mb_overrides')||'{}'); // "id|fecha" -> shiftCode|""
 const PERFILES  = JSON.parse(localStorage.getItem('mb_perfiles')||'{}');
 const AUTOR     = JSON.parse(localStorage.getItem('mb_autor')||'{}');  // id -> [{ini,fin,estado,motivo}]
@@ -1568,6 +1608,143 @@ function compute(M, cfg){
 }
 
 /* ══════════════════════════════════════════════════════════════════
+   ASISTENCIA GENERAL
+   Reporte independiente del motor de horas: solo responde "vino o no".
+   No usa los buckets por turno del compute() de arriba porque ese agrupa
+   las marcaciones sueltas por FECHA CALENDARIO de cada marcación
+   individual, y eso separa en dos días una sola jornada nocturna sin
+   turno asignado (entra 22:00 del día A, sale 05:00 del día B). Aquí,
+   una marcación de madrugada solo se atribuye al día anterior cuando ese
+   día anterior queda con un número IMPAR de marcaciones sueltas (una
+   entrada sin su salida) y esa última marca cae en la franja nocturna:
+   esa es la firma de una jornada que cruzó la medianoche, igual que B-02
+   hace con los turnos nocturnos programados. Un cierre normal a las
+   22:00 con jornada completa (par) no se confunde con esto.
+   ══════════════════════════════════════════════════════════════════ */
+
+const AS_LABEL = { A:'Asistió', S:'Asistió sin turno', F:'No asistió' };
+
+function computeAsistencia(M, cfg){
+  const dates  = rangeDays(cfg.ini, cfg.fin);
+  const extIni = addDays(cfg.ini, -1);          // un día antes: por si la sesión empezó ahí
+  const extDates = rangeDays(extIni, cfg.fin);
+  const out = new Map();
+
+  M.employees.forEach((emp, id)=>{
+    const rawPunches = (M.punches.get(id)||[]).filter(p=>p.iso>=extIni && p.iso<=cfg.fin);
+    if(!rawPunches.length && !M.sched.has(id)) return;
+
+    const {clean} = limpiarMarcaciones(rawPunches, cfg);
+
+    /* ventanas programadas del rango extendido (respeta OVERRIDES vía shiftFor) */
+    const windows = [];
+    extDates.forEach(iso=>{
+      const sf  = shiftFor(M, id, iso);
+      const seg = sf.code ? segmentFor(M, sf.code, iso) : null;
+      if(!seg) return;
+      const base = dnum(iso)*1440;
+      windows.push({ iso, code:sf.code, ent:seg.ent, sal:seg.sal,
+                     ini: base+seg.ent, fin: base+seg.sal + (seg.cross?1440:0) });
+    });
+
+    /* asignar cada marcación a la ventana más cercana dentro de tolerancia */
+    const usadas = new Set();
+    const porVentana = new Map(windows.map(w=>[w.iso,[]]));
+    clean.forEach(p=>{
+      let best=null, bd=Infinity;
+      windows.forEach(w=>{
+        const lo=w.ini-cfg.tolIni, hi=w.fin+cfg.tolFin;
+        if(p.ts>=lo && p.ts<=hi){
+          const d = p.ts<w.ini ? w.ini-p.ts : p.ts>w.fin ? p.ts-w.fin : 0;
+          if(d<bd){ bd=d; best=w; }
+        }
+      });
+      if(best){ porVentana.get(best.iso).push(p); usadas.add(p); }
+    });
+    const sueltas = clean.filter(p=>!usadas.has(p));
+
+    /* agrupar las sueltas por día calendario */
+    const porDia = new Map();
+    sueltas.forEach(p=>{ if(!porDia.has(p.iso)) porDia.set(p.iso,[]); porDia.get(p.iso).push(p); });
+    porDia.forEach(arr=>arr.sort((a,b)=>a.ts-b.ts));
+
+    /* detectar cruces de medianoche SIN turno: el día D queda con una marcación de
+       entrada sin su salida (número impar) y esa última marca cae en la franja
+       nocturna, y el día D+1 abre con una marca de madrugada. Solo esa marca de
+       apertura de D+1 se "adopta" como cierre de la sesión de D — no todo el día D+1,
+       para no fundir jornadas normales de dos días consecutivos (p. ej. alguien que
+       sale a las 22:00 de un turno de tarde, con jornada completa y pareja ese día). */
+    const morningLimit = (cfg.nocFin + 240) % 1440;         // hasta ~4h después del fin de la franja nocturna
+    const colaDe = new Map();          // marcación del día D+1 -> iso del día D que la origina
+    const marcasSesion = new Map();    // iso de inicio -> marcas a mostrar en el tooltip (incluye la cola)
+    porDia.forEach((hoy, iso)=>{
+      const impar = hoy.length % 2 === 1;
+      const ultima = hoy[hoy.length-1];
+      if(!impar || ultima.min < cfg.nocIni) return;
+      const manana = addDays(iso,1);
+      const sig = porDia.get(manana);
+      if(!sig || !sig.length) return;
+      const primera = sig[0];
+      if(primera.min >= morningLimit) return;
+      colaDe.set(primera, iso);
+      marcasSesion.set(iso, [...hoy, primera]);
+    });
+
+    const dias = new Map();
+    const resumen = { A:0, S:0, F:0, incompleto:0 };
+    dates.forEach(iso=>{
+      const sf  = shiftFor(M, id, iso);
+      const seg = sf.code ? segmentFor(M, sf.code, iso) : null;
+      const enVentana = porVentana.get(iso) || [];
+      const propiasHoy = porDia.get(iso) || [];
+      const restantes = propiasHoy.filter(p=>!colaDe.has(p));
+      /* Un retirado sigue teniendo turno asignado en el Horario meses despues de irse
+         (la programacion llega hasta 2027-01-31), asi que sin este corte cada dia
+         posterior a su salida contaria como ausencia y hundiria el KPI. Se corta por la
+         vigencia REAL: fecha de retiro o ultima marcacion, la que sea posterior. */
+      const fueraVigencia = (emp.ingreso && iso<emp.ingreso && !M.ingresoMasivo.has(emp.ingreso))
+                          || (emp.vigFin && iso>emp.vigFin);
+
+      let estado='', tip='', marcasTxt='', incompleto=false;
+      if(fueraVigencia){
+        tip = 'Fuera del período de vigencia del empleado (antes del ingreso o después del retiro).';
+      } else if(seg && enVentana.length){
+        estado='A';
+        incompleto = enVentana.length%2===1;
+        marcasTxt = enVentana.map(p=>hhmm(p.min)).join(' ');
+        tip = `Turno ${sf.code} (${hhmm(seg.ent)}–${hhmm(seg.sal)}). Marcó: ${marcasTxt}.`;
+        if(incompleto) tip += ' Número impar de marcaciones — el turno no quedó completo (A-04).';
+      } else if(restantes.length){
+        estado='S';
+        const marcas = marcasSesion.get(iso) || restantes;
+        marcasTxt = marcas.map(p=>hhmm(p.min)).join(' ');
+        const cruza = marcas.some(p=>p.iso!==iso);
+        tip = `Sin turno programado. Marcó: ${marcasTxt}` + (cruza ? ' (incluye la salida al día siguiente).' : '.');
+      } else if(propiasHoy.length){
+        /* toda la marcación de hoy fue adoptada como cierre de la sesión de ayer */
+        const inicioDe = colaDe.get(propiasHoy[0]);
+        estado = seg ? 'F' : '';
+        tip = (seg ? `Turno ${sf.code} (${hhmm(seg.ent)}–${hhmm(seg.sal)}) programado, sin marcaciones propias dentro de tolerancia. `
+                    : 'Sin turno programado. ') +
+              `La marcación de las ${hhmm(propiasHoy[0].min)} es la salida de la jornada sin turno iniciada el ${inicioDe}.`;
+      } else if(seg){
+        estado='F';
+        tip = `Turno ${sf.code} (${hhmm(seg.ent)}–${hhmm(seg.sal)}) programado, sin ninguna marcación.`;
+      } else {
+        tip = 'Sin turno programado y sin marcaciones.';
+      }
+      if(estado) resumen[estado]++;
+      if(incompleto) resumen.incompleto++;
+      dias.set(iso, {estado, tip, turno: sf.code||null, incompleto});
+    });
+
+    out.set(id, { emp, dias, resumen });
+  });
+
+  return out;
+}
+
+/* ══════════════════════════════════════════════════════════════════
    RENDER
    ══════════════════════════════════════════════════════════════════ */
 const $  = s => document.querySelector(s);
@@ -1617,6 +1794,53 @@ function initPop(){
   });
 }
 
+function asisFiltrado(){
+  const cia = $('#fCiaAs').value, dep = $('#fDeptoAs').value, q = $('#qAs').value.trim().toLowerCase();
+  return [...ASISTENCIA.values()]
+    .filter(e=> (!cia||e.emp.empresa===cia) && (!dep||e.emp.depto===dep)
+             && (!q || e.emp.id.includes(q) || e.emp.nombre.toLowerCase().includes(q)))
+    .sort((a,b)=>a.emp.nombre.localeCompare(b.emp.nombre,'es'));
+}
+function renderAsistencia(){
+  if(!RESULT || !ASISTENCIA) return;
+  const dates = rangeDays(RESULT.cfg.ini, RESULT.cfg.fin);
+  const list  = asisFiltrado();
+  const activo = $('#fCiaAs').value || $('#fDeptoAs').value || $('#qAs').value.trim();
+  $('#fInfoAs').textContent = activo ? `${list.length} de ${ASISTENCIA.size}` : '';
+
+  $('#tAsis thead').innerHTML = `<tr><th class="stick1">Código</th><th class="stick2">Nombre</th>` +
+    dates.map(iso=>{
+      const fes = isHoliday(iso), dw = dow(iso);
+      const cls = fes ? 'fes' : dw===0 ? 'dom' : '';
+      const tip = iso + (fes ? ' — '+fes : '');
+      return `<th class="asisday ${cls}" data-tip="${esc(tip)}"><b>${+iso.slice(-2)}</b><i>${DOW_ES[dw][0]}</i></th>`;
+    }).join('') + `</tr>`;
+
+  $('#tAsis tbody').innerHTML = list.map(e=>
+    `<tr><td class="mono stick1">${esc(e.emp.id)}</td><td class="stick2">${esc(e.emp.nombre)}</td>` +
+    dates.map(iso=>{
+      const d = e.dias.get(iso) || {estado:'',tip:'Sin datos.'};
+      return `<td class="asiscell est-${d.estado||'na'}${d.incompleto?' incompleto':''}" data-tip="${esc(d.tip)}">${d.estado||'·'}</td>`;
+    }).join('') + `</tr>`
+  ).join('') || `<tr><td colspan="${2+dates.length}" class="muted" style="padding:18px">Sin empleados que coincidan con el filtro.</td></tr>`;
+
+  const tot = list.reduce((s,e)=>({A:s.A+e.resumen.A, S:s.S+e.resumen.S, F:s.F+e.resumen.F}), {A:0,S:0,F:0});
+  $('#kpiAsis').innerHTML =
+    `<div><div class="k">Empleados</div><div class="v">${list.length}</div></div>
+     <div data-tip="Suma de días-persona con turno programado y marcaciones que lo completan."><div class="k">Asistió (A)</div><div class="v">${tot.A}</div></div>
+     <div data-tip="Suma de días-persona sin turno programado pero con marcaciones."><div class="k">Sin turno (S)</div><div class="v">${tot.S}</div></div>
+     <div data-tip="Suma de días-persona con turno programado y CERO marcaciones."><div class="k">No asistió (F)</div><div class="v">${tot.F}</div></div>`;
+}
+function aoaAsistencia(){
+  const dates = rangeDays(RESULT.cfg.ini, RESULT.cfg.fin);
+  const head = ['COD_EMPLEADO','NOMBRE','DEPARTAMENTO','COMPAÑÍA','DÍAS ASISTIÓ','DÍAS SIN TURNO','DÍAS NO ASISTIÓ',
+                ...dates];
+  const body = asisFiltrado().map(e=>[
+    e.emp.id, e.emp.nombre, e.emp.depto||'', e.emp.empresa||'',
+    e.resumen.A, e.resumen.S, e.resumen.F,
+    ...dates.map(iso=>(e.dias.get(iso)||{}).estado||'') ]);
+  return [head, ...body];
+}
 function toast(m){ const t=$('#toast'); t.textContent=m; t.classList.add('on');
   clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove('on'),2600); }
 
@@ -1713,6 +1937,8 @@ function fillFiltros(){
   keep($('#fCia'),   cias, 'Todas las compañías');
   keep($('#fDepto'), deps, 'Todos los departamentos');
   keep($('#fExcDep'),deps, 'Todos los departamentos');
+  keep($('#fCiaAs'), cias, 'Todas las compañías');
+  keep($('#fDeptoAs'),deps,'Todos los departamentos');
 }
 
 function renderCons(){
@@ -2207,8 +2433,10 @@ function runCalc(){
     const cfg = readConfig();
     marcarIngresosMasivos(MODEL, cfg);
     RESULT = compute(MODEL, cfg);
+    ASISTENCIA = computeAsistencia(MODEL, cfg);
     renderDisp();
     fillSelects(); fillFiltros(); renderCons(); renderDet(); renderExc(); renderCal();
+    renderAsistencia();
     const b = RESULT.exc.filter(x=>x.sev==='BLOQ').length;
     $('#status').innerHTML = `${RESULT.cons.length} empleados con conceptos · ` +
       (b?`<b style="color:#fca5a5">${b} bloqueantes</b>`:'sin bloqueantes');
@@ -2283,6 +2511,12 @@ document.addEventListener('DOMContentLoaded',()=>{
           Excepciones:aoaExc(filtroHay()?ids:null)},
          `Reporte_Horas_${stamp()}.xlsx`); };
   $('#expExc').onclick  = ()=>RESULT&&save({Excepciones:aoaExc()},`Excepciones_${stamp()}.xlsx`);
+  $('#fCiaAs').onchange   = ()=>ASISTENCIA&&renderAsistencia();
+  $('#fDeptoAs').onchange = ()=>ASISTENCIA&&renderAsistencia();
+  $('#qAs').oninput       = ()=>ASISTENCIA&&renderAsistencia();
+  $('#fClearAs').onclick  = ()=>{ $('#fCiaAs').value=''; $('#fDeptoAs').value=''; $('#qAs').value='';
+    ASISTENCIA&&renderAsistencia(); };
+  $('#expAsis').onclick   = ()=>ASISTENCIA&&save({Asistencia:aoaAsistencia()},`Asistencia_${stamp()}.xlsx`);
   $('#expCal').onclick  = ()=>{ if(!RESULT) return;
     const id=$('#selEmpCal').value, m=$('#selMes').value;
     save({Calendario:aoaCal(id,m)},`Calendario_${id}_${m}.xlsx`); };
