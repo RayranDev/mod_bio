@@ -123,6 +123,12 @@
   td.cross{box-shadow:inset 3px 0 0 var(--ok)}
   td.over{color:var(--ok);font-weight:700}
   td.noaut{background:var(--err-soft);color:var(--err);text-decoration:line-through}
+  /* Dos modos de pantalla. En reportes desaparecen carga y parametros, asi el unico
+     scroll de la ventana es el del resultado. Los <dialog> quedan FUERA de esto a
+     proposito: se abren en cualquiera de los dos modos. */
+  body[data-modo="reportes"] .setup{display:none}
+  body[data-modo="setup"] #reportes{display:none}
+  #btnVolver[hidden]{display:none}
   dialog#dlgDisp,dialog#dlgAutor,dialog#dlgCols{border:1px solid var(--line);border-radius:8px;padding:16px 18px;
     max-width:860px;width:92vw;max-height:86vh;overflow:auto;background:#fff;color:var(--fg)}
   dialog#dlgDisp::backdrop,dialog#dlgAutor::backdrop,dialog#dlgCols::backdrop{background:rgba(10,14,20,.55)}
@@ -159,20 +165,21 @@
 </style>
 <style id="colDetStyle"></style>
 </head>
-<body>
+<body data-modo="setup">
 
 <header>
   <h1>Reporte de Horas &middot; RRHH</h1>
   <span class="sub">SIRH Plastitec &middot; contabilización y seguimiento &middot; procesamiento 100% local</span>
   <span class="sp" style="flex:1"></span>
   <span id="status" class="sub">Sin datos cargados</span>
+  <button id="btnVolver" hidden title="Volver a cargar archivos o cambiar parámetros">&#8592; Datos y parámetros</button>
   <button id="btnGear" title="Configuración avanzada" aria-label="Configuración avanzada">&#9881;</button>
 </header>
 
 <main>
 
 <!-- ============ CARGA ============ -->
-<section class="panel">
+<section class="panel setup">
   <h2>1 &middot; Fuentes de datos</h2>
   <div class="grid g4">
     <div><label class="f">Empleados (Empleado_*.xlsx)</label>
@@ -248,7 +255,7 @@
 </dialog>
 
 <!-- ============ CONFIG ============ -->
-<section class="panel">
+<section class="panel setup">
   <h2>2 &middot; Ciclo a procesar</h2>
   <div class="bar">
     <div><label class="f">Inicio de ciclo</label><input type="date" id="cIni"></div>
@@ -365,6 +372,7 @@
   </div>
 </dialog>
 
+<div id="reportes">
 <!-- ============ TABS ============ -->
 <div class="tabs">
   <button data-tab="cons" class="on">Consolidado</button>
@@ -478,6 +486,7 @@
   </p>
 </section>
 
+</div><!-- /#reportes -->
 </main>
 <div id="pop"></div>
 <div id="toast"></div>
@@ -2348,6 +2357,12 @@ function buscarEmp(texto, destino){
   else toast(`Ningún empleado con código o nombre «${q}».`);
 }
 
+/** Cambia entre la pantalla de preparacion y la de reportes. */
+function modo(m){
+  $('body').dataset.modo = m;
+  $('#btnVolver').hidden = m !== 'reportes';
+  window.scrollTo(0, 0);
+}
 function showTab(t){
   $$('.tabs button').forEach(b=>b.classList.toggle('on', b.dataset.tab===t));
   $$('.tabwrap').forEach(s=>s.classList.toggle('on', s.id==='tab-'+t));
@@ -2502,11 +2517,7 @@ function runCalc(){
     const b = RESULT.exc.filter(x=>x.sev==='BLOQ').length;
     $('#status').innerHTML = `${RESULT.cons.length} empleados con conceptos · ` +
       (b?`<b style="color:#fca5a5">${b} bloqueantes</b>`:'sin bloqueantes');
-    /* El panel de carga y los parametros ocupan mas de una pantalla, asi que al terminar
-       el calculo el resultado queda fuera de vista y hay que bajar a mano. Se lleva la
-       barra de pestanas al tope: desde ahi la tabla ocupa el alto util y el scroll de
-       adentro deja de pelear con el de la pagina. */
-    $('.tabs').scrollIntoView({behavior:'smooth', block:'start'});
+    modo('reportes');          // fuera carga y parametros: una sola barra de scroll
   }catch(err){ console.error(err); toast('Error de cálculo: '+err.message); }
 }
 
@@ -2541,6 +2552,7 @@ document.addEventListener('DOMContentLoaded',()=>{
   $('#selEmp').onchange = e=>{ CUR_EMP=e.target.value;
     $('#selPerfil').value = PERFILES[CUR_EMP]||'';
     $('#chkConfianza').checked = CONFIANZA.has(CUR_EMP); renderDet(); };
+  $('#btnVolver').onclick   = ()=>modo('setup');
   $('#btnCols').onclick     = ()=>{ renderCols(); $('#dlgCols').showModal(); };
   $('#btnColsClose').onclick= ()=>$('#dlgCols').close();
   $('#btnColsAll').onclick  = ()=>{ COLS_OCULTAS = new Set();
