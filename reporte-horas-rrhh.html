@@ -153,7 +153,12 @@
   #tAsis th.asisday i{display:block;font-style:normal;font-size:8px;color:var(--muted);font-weight:600}
   #tAsis th.asisday.fes{background:#fff7ed}
   #tAsis th.asisday.dom{background:#eff6ff}
-  #tAsis td.asiscell{text-align:center;font-weight:700;font-size:11px;cursor:help;
+  /* La fila a la que se llego desde el calendario o la asistencia. Se limpia sola en
+     el siguiente render, porque renderDet() reconstruye el tbody entero. */
+  #tDet tbody tr.foco>td{background:var(--accent-soft)}
+  #tDet tbody tr.foco>td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
+  #calGrid .d[data-iso]{cursor:pointer}
+  #tAsis td.asiscell{text-align:center;font-weight:700;font-size:11px;cursor:pointer;
     min-width:30px;max-width:30px;padding:4px 2px}
   #tAsis td.est-A{background:var(--ok-soft);color:var(--ok)}
   #tAsis td.est-S{background:var(--accent-soft);color:var(--accent)}
@@ -1853,9 +1858,13 @@ function renderAsistencia(){
     `<tr><td class="mono stick1">${esc(e.emp.id)}</td><td class="stick2">${esc(e.emp.nombre)}</td>` +
     dates.map(iso=>{
       const d = e.dias.get(iso) || {estado:'',tip:'Sin datos.'};
-      return `<td class="asiscell est-${d.estado||'na'}${d.incompleto?' incompleto':''}" data-tip="${esc(d.tip)}">${d.estado||'·'}</td>`;
+      return `<td class="asiscell est-${d.estado||'na'}${d.incompleto?' incompleto':''}"
+        data-id="${esc(e.emp.id)}" data-iso="${iso}"
+        data-tip="${esc(d.tip)} — clic para ver el detalle de ese día.">${d.estado||'·'}</td>`;
     }).join('') + `</tr>`
   ).join('') || `<tr><td colspan="${2+dates.length}" class="muted" style="padding:18px">Sin empleados que coincidan con el filtro.</td></tr>`;
+
+  $$('#tAsis td.asiscell').forEach(td=>td.onclick=()=>irADetalle(td.dataset.id, td.dataset.iso));
 
   const tot = list.reduce((s,e)=>({A:s.A+e.resumen.A, S:s.S+e.resumen.S, F:s.F+e.resumen.F}), {A:0,S:0,F:0});
   $('#kpiAsis').innerHTML =
@@ -2210,7 +2219,7 @@ function renderDet(){
               : r.tipoDia==='DES' ? 't-mut' : 't-mut';
     const flags = [...new Set(r.flags)].map(f=>chip(f,r)).join(' ') +
       (r.inferido?' '+chip('INFERIDO',r):'');
-    return `<tr>
+    return `<tr data-iso="${r.iso}">
       <td class="mono" data-col="fecha">${r.iso}</td><td data-col="dia">${r.dow}</td>
       <td data-col="tipo"><span class="tag ${tag}">${esc(r.tipoLabel)}</span></td>
       <td class="mono" data-col="turno">${esc(r.turno)}</td><td class="mono" data-col="prog">${esc(r.prog)}</td>
@@ -2298,22 +2307,29 @@ function renderCal(){
   });
   $('#calGrid').innerHTML = html;
 
-  $$('#calGrid .d[data-iso]').forEach(el=>el.onclick=()=>{
-    const iso = el.dataset.iso;
-    const codes = [...MODEL.shifts.keys()];
-    const cur = shiftFor(MODEL,id,iso).code || '';
-    const val = prompt(
-      `Turno para ${iso}\n\nTurnos disponibles:\n${codes.join(', ')}\n\n` +
-      `Escriba el código, "-" para dejar sin turno, o vacío para volver a la programación regular.`, cur);
-    if(val===null) return;
-    const k = id+'|'+iso;
-    if(val.trim()==='') delete OVERRIDES[k];
-    else if(val.trim()==='-') OVERRIDES[k]='';
-    else if(MODEL.shifts.has(val.trim())) OVERRIDES[k]=val.trim();
-    else { toast('Código de turno inexistente'); return; }
-    localStorage.setItem('mb_overrides',JSON.stringify(OVERRIDES));
-    runCalc(); showTab('cal'); renderCal();
-  });
+  $$('#calGrid .d[data-iso]').forEach(el=>el.onclick=()=>irADetalle(id, el.dataset.iso));
+}
+
+/** Lleva al detalle de un empleado, posicionado en un dia concreto.
+ *  Es el unico camino que ofrecen el calendario y la asistencia: esta herramienta
+ *  sirve para analizar y decidir, no para editar los datos de origen. */
+function irADetalle(id, iso){
+  if(!RESULT || !id) return;
+  const e = RESULT.byEmp.get(id);
+  if(!e){ toast(`El empleado ${id} no está en el cálculo actual.`); return; }
+  CUR_EMP = id;
+  $('#selEmp').value = id;
+  $('#selPerfil').value = PERFILES[id] || '';
+  $('#chkConfianza').checked = CONFIANZA.has(id);
+  renderDet();
+  showTab('det');
+  const fila = $(`#tDet tbody tr[data-iso="${iso}"]`);
+  if(fila){
+    fila.classList.add('foco');
+    fila.scrollIntoView({block:'center'});
+  } else {
+    toast(`${iso}: ese día no tiene fila en el ciclo calculado (${RESULT.cfg.ini} a ${RESULT.cfg.fin}).`);
+  }
 }
 
 function fillSelects(){
