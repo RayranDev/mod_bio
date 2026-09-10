@@ -146,6 +146,19 @@
   #tAsis td.est-S{background:var(--accent-soft);color:var(--accent)}
   #tAsis td.est-F{background:var(--err-soft);color:var(--err)}
   #tAsis td.est-na{color:var(--line)}
+  /* Cobertura de datos: tres proporciones sobre el mismo denominador, para poder
+     compararlas de un vistazo. Meter con track del mismo ramp (ver dataviz). */
+  .cober{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px;margin-bottom:12px}
+  .cober>div{background:#fff;border:1px solid var(--line);border-radius:6px;padding:10px 12px}
+  .cober .k{font-size:11px;color:var(--muted);margin-bottom:5px}
+  .cober .v{font-size:21px;font-weight:600;line-height:1.1}
+  .cober .v small{font-size:12px;font-weight:500;color:var(--muted);margin-left:5px}
+  .cober .meter{height:6px;border-radius:3px;margin-top:8px;overflow:hidden}
+  .cober .meter>span{display:block;height:100%;border-radius:3px}
+  .cober .m-ok{background:var(--ok-soft)}      .cober .m-ok>span{background:var(--ok)}
+  .cober .m-warn{background:var(--warn-soft)}  .cober .m-warn>span{background:var(--warn)}
+  .cober .m-err{background:var(--err-soft)}    .cober .m-err>span{background:var(--err)}
+  .cober .falta{font-size:11px;color:var(--muted);margin-top:6px}
   #kpiChartWrap{overflow-y:auto;overflow-x:hidden;border:1px solid var(--line);border-radius:6px;
     background:#fff;padding:8px 4px}
   #kpiChart{display:block;width:100%;height:auto}
@@ -464,6 +477,7 @@
       ¿por qué excluir por departamento?</span>
   </div>
 
+  <div class="cober" id="kpiCober"></div>
   <div class="note" id="kpiCobertura" hidden></div>
   <div class="kpi" id="kpiTot"></div>
 
@@ -2029,9 +2043,47 @@ function svgKpiChart(deps){
   return svg;
 }
 
+/** Cobertura de los datos de entrada, que NO es lo mismo que cumplimiento.
+ *  Las tres proporciones van sobre el MISMO denominador (las personas en pantalla)
+ *  justamente para poder enfrentarlas: si "con turno" y "con marcaciones" no coinciden,
+ *  la diferencia es un hueco de datos, no gente incumpliendo. La tercera es la unica
+ *  poblacion sobre la que un indicador de cumplimiento significa algo. */
+function renderCobertura(rows){
+  const n = rows.length;
+  const conTurno = rows.filter(r=>r.conTurno).length;
+  const conMarca = rows.filter(r=>r.conMarca).length;
+  const ambas    = rows.filter(r=>r.conTurno && r.conMarca).length;
+  const nivel = p => p>=95 ? 'm-ok' : p>=75 ? 'm-warn' : 'm-err';
+  const tile = (etq, v, tip, faltaTxt) => {
+    const p = n>0 ? v/n*100 : 0;
+    const falta = n - v;
+    return `<div data-tip="${esc(tip)}">
+      <div class="k">${esc(etq)}</div>
+      <div class="v">${v}<small>de ${n} · ${n>0?p.toFixed(1):'—'}%</small></div>
+      <div class="meter ${nivel(p)}"><span style="width:${n>0?p.toFixed(1):0}%"></span></div>
+      <div class="falta">${falta>0 ? esc(faltaTxt.replace('{n}', falta)) : 'cobertura completa'}</div>
+    </div>`;
+  };
+  $('#kpiCober').innerHTML = n===0 ? '' : [
+    tile('Personas con turno programado', conTurno,
+      'Cuantas de las personas en pantalla tienen alguna asignacion de turno que toque el ciclo. '+
+      'Sin turno no hay contra que medir: esos dias no son incumplimiento, son programacion faltante.',
+      '{n} sin ninguna programacion de turno'),
+    tile('Personas con marcaciones', conMarca,
+      'Cuantas registraron al menos una marcacion en el ciclo. Se compara contra la barra de arriba: '+
+      'si las dos no coinciden, la diferencia es un hueco de datos de una de las dos fuentes.',
+      '{n} sin ninguna marcacion'),
+    tile('Medibles: turno y marcaciones', ambas,
+      'Personas que tienen las DOS cosas. Es la unica poblacion sobre la que un indicador de '+
+      'cumplimiento significa algo; el resto primero necesita que se corrijan los datos de origen.',
+      '{n} fuera de medicion por datos incompletos'),
+  ].join('');
+}
+
 function renderKpi(){
   if(!RESULT || !ASISTENCIA) return;
   const rows = kpiCalcular();
+  renderCobertura(rows);
   $('#fInfoExclKpi').textContent = KPI_EXCLUIDOS_ULTIMO
     ? `${KPI_EXCLUIDOS_ULTIMO} excluidos` : '';
   const tot = rows.reduce((s,r)=>({sinMarca:s.sinMarca+r.sinMarca, incompleto:s.incompleto+r.incompleto,
