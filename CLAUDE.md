@@ -16,7 +16,7 @@ qué convención seguir al modificarlo.
 | Archivo | Qué es |
 |---|---|
 | `reporte-horas.html` | Herramienta completa: 7 pestañas (Consolidado, Detalle, Calendario, Excepciones, Asistencia, KPI Cumplimiento, Glosario). Para análisis, auditoría de datos y seguimiento del proceso de implementación. |
-| `reporte-horas-rrhh.html` | Versión lite para RRHH: 4 pestañas (Consolidado, Detalle, Calendario, Excepciones). Sin Asistencia/KPI/Glosario. Parametrización avanzada detrás de un botón de engranaje (`⚙`) en vez de siempre visible. |
+| `reporte-horas-rrhh.html` | Versión lite para RRHH: 5 pestañas (Consolidado, Detalle, Calendario, Excepciones, Asistencia). Sin KPI/Glosario. Parametrización avanzada detrás de un botón de engranaje (`⚙`) en vez de siempre visible. |
 | `CATALOGO-CONDICIONES.md` | Las 137 condiciones de diseño original, con sus códigos (A-01, D-14, I-03, etc.) usados como referencia cruzada en el código. |
 | `CLAUDE.md` | Este archivo. |
 | `.gitignore` | Excluye `*.xlsx`, `*.xls` y `.atl/` — los datos de empleados **nunca** se suben al repo. |
@@ -64,6 +64,8 @@ limpiarMarcaciones                                      (dedupe A-06 + agrupaci�
 compute                                                 (el motor de horas y conceptos, ~490 líneas)
 celdaPendiente                                          (celda de horas no cumplidas)
 tagRetiro                                               (marca de empleado retirado, A-16)
+AS_LABEL, ASISTENCIA (global)                           (reporte de asistencia general)
+computeAsistencia, asisFiltrado, renderAsistencia, aoaAsistencia
 tipHTML, chip, initPop                                  (sistema de tooltips — ver nota abajo)
 toast, conceptCols, renderMatriz
 filtroActivo, filtroHay, filtroSlug, consFiltrado, fillFiltros
@@ -74,11 +76,15 @@ aoaCons, aoaDet, aoaExc, aoaCal, sinergyTxt
 checkReady, hook, runCalc
 ```
 
+> **Asistencia pasó a ser compartida (sept-2026).** El usuario la pidió también en la versión
+> RRHH, así que `AS_LABEL`, `ASISTENCIA`, `computeAsistencia`, `asisFiltrado`, `renderAsistencia` y
+> `aoaAsistencia` viven ahora en los DOS archivos y entran en la lista de arriba. KPI y Glosario
+> siguen siendo exclusivos del archivo completo.
+
 ### Funciones exclusivas de `reporte-horas.html` (NO existen en la versión RRHH, a propósito)
 
 ```
-ASISTENCIA (global), KPI_EXCL, KPI_EXCLUIDOS_ULTIMO, AS_LABEL
-computeAsistencia, asisFiltrado, renderAsistencia, aoaAsistencia
+KPI_EXCL, KPI_EXCLUIDOS_ULTIMO
 kpiCalcular, pct, kpiPorDepto, kpiFiltrarEmpleados, barPath, svgKpiChart,
   renderKpi, aoaKpiDep, aoaKpiEmp
 renderGlosario
@@ -99,6 +105,34 @@ archivo seguía siendo JS válido) pero cualquier pantalla habría fallado en ti
 encontró recién al ejecutar de verdad cada función de render contra datos reales, no al revisar la
 sintaxis. La corrección quedó documentada como un commit aparte (`c7121a8`) en vez de reescribir el
 commit roto — la historia de git cuenta la verdad de lo que pasó.
+
+**Y volvió a morder, en la dirección contraria (sept-2026).** Al copiar la pestaña de Asistencia
+*hacia* la versión RRHH, extraer el rango completo entre `computeAsistencia()` y `aoaAsistencia()`
+arrastró esos mismos ocho helpers y los duplicó: el archivo murió con
+`Identifier '$' has already been declared`. **El código de Asistencia son DOS PIEZAS DISJUNTAS**, y la
+frontera es el banner `/* RENDER */`:
+
+| Pieza | Contenido |
+|---|---|
+| A | banner `ASISTENCIA GENERAL` + `AS_LABEL` + `computeAsistencia()` |
+| — | *(helpers compartidos: `$`, `$$`, `esc`, `fmt`, `sevCls`, `tipHTML`, `chip`, `initPop`)* |
+| B | `asisFiltrado()` + `renderAsistencia()` + `aoaAsistencia()` |
+
+Cualquier script que mueva código entre los dos archivos debe respetar esa frontera y **afirmar que
+ningún helper compartido quedó duplicado** antes de escribir. Lo detectó la ejecución en Node, no la
+lectura del diff.
+
+**Al mover bloques entre los dos archivos, extraerlos por script en vez de transcribirlos.** Es la
+única forma de garantizar que queden byte a byte idénticos. La prueba correspondiente compara cada
+función carácter a carácter, delimitándolas por su primer `
+}
+` — **no** por la función siguiente,
+porque lo que viene después difiere entre archivos (el full sigue con el KPI) y eso da una diferencia
+falsa.
+
+**Ojo con `core.autocrlf=true`:** un `git checkout` deja el working copy en CRLF mientras el otro
+archivo sigue en LF, y entonces ningún anclaje de texto coincide. El repo guarda LF; normalizar a LF
+antes de parchear.
 
 **Lección aplicada de ahora en más: un chequeo de sintaxis nunca es suficiente para validar un cambio
 al motor. Hay que ejecutar `buildModel()` → `compute()` → cada función de render/export contra datos
