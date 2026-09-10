@@ -123,9 +123,9 @@
   td.cross{box-shadow:inset 3px 0 0 var(--ok)}
   td.over{color:var(--ok);font-weight:700}
   td.noaut{background:var(--err-soft);color:var(--err);text-decoration:line-through}
-  dialog#dlgDisp,dialog#dlgAutor{border:1px solid var(--line);border-radius:8px;padding:16px 18px;
+  dialog#dlgDisp,dialog#dlgAutor,dialog#dlgCols{border:1px solid var(--line);border-radius:8px;padding:16px 18px;
     max-width:860px;width:92vw;max-height:86vh;overflow:auto;background:#fff;color:var(--fg)}
-  dialog#dlgDisp::backdrop,dialog#dlgAutor::backdrop{background:rgba(10,14,20,.55)}
+  dialog#dlgDisp::backdrop,dialog#dlgAutor::backdrop,dialog#dlgCols::backdrop{background:rgba(10,14,20,.55)}
   dialog#dlgAutor h3{font-size:13px;margin:0 0 4px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted)}
   .aut{background:#fff;border:1px solid var(--line);border-radius:6px;padding:10px 12px;margin-bottom:10px}
   .aut h3{font-size:12px;margin:0 0 8px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted)}
@@ -157,6 +157,7 @@
          border-radius:5px;font-size:12px;opacity:0;transition:.25s;pointer-events:none;z-index:99}
   #toast.on{opacity:1}
 </style>
+<style id="colDetStyle"></style>
 </head>
 <body>
 
@@ -230,6 +231,19 @@
     <table id="tAut"><thead><tr><th>Desde</th><th>Hasta</th><th>Estado</th><th>Motivo</th><th></th></tr></thead><tbody></tbody></table>
   <div class="bar" style="margin-top:12px">
     <button id="btnAutorClose">Cerrar</button>
+  </div>
+</dialog>
+
+<dialog id="dlgCols">
+  <h3 style="margin:0 0 4px;font-size:13px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted)">
+    Columnas del detalle</h3>
+  <p class="muted" style="margin:0 0 12px;max-width:560px;font-size:12px">
+    Oculte lo que no esté mirando. La fecha siempre queda visible porque identifica la fila.
+    Se guarda en este navegador y no afecta la exportación a Excel, que sigue completa.</p>
+  <div id="colsBox"></div>
+  <div class="bar" style="margin-top:12px">
+    <button id="btnColsAll">Mostrar todas</button>
+    <button id="btnColsClose">Cerrar</button>
   </div>
 </dialog>
 
@@ -397,6 +411,7 @@
            data-nov="CONFIANZA">
       <input type="checkbox" id="chkConfianza" style="width:auto">Dirección y confianza</label>
     <span class="sp"></span>
+    <button id="btnCols">Columnas</button>
     <button id="btnAutor" data-nov="F-09">Autorización de extras</button>
     <button id="expDet">Exportar detalle de este empleado (Excel)</button>
   </div>
@@ -2025,6 +2040,43 @@ function renderCons(){
 }
 
 /** Celda de entrada o salida, con color si hay desviacion contra el turno. */
+/* ── Columnas visibles del Detalle ────────────────────────────────────────────────
+   Se guarda la lista de OCULTAS, no la de visibles: asi una columna nueva aparece
+   sola en vez de quedar invisible para quien ya tenia una preferencia guardada. */
+let COLS_OCULTAS = new Set(JSON.parse(localStorage.getItem('mb_colsDet')||'[]'));
+
+const COLS_FIJAS = [['dia','Día'],['tipo','Tipo de día'],['turno','Turno'],
+  ['prog','Programado'],['marcas','Marcaciones'],['ent','Entró'],['sal','Salió'],
+  ['alm','Almuerzo'],['hrs','Hrs'],['ord','Ordin.'],['pend','Pend.'],['extra','Extra'],
+  ['acum','Acum. semana'],['nov','Novedades']];
+
+/** Estampa la columna en el <td> que devuelven celdaHora/celdaPendiente/celdaSemana.
+ *  Reemplaza solo la primera aparicion, que es la etiqueta de apertura. */
+function marcarCol(k, html){ return html.replace('<td', `<td data-col="${k}"`); }
+
+function aplicarCols(){
+  $('#colDetStyle').textContent = [...COLS_OCULTAS]
+    .map(k=>`#tDet [data-col="${k}"]{display:none}`).join('');
+}
+function renderCols(){
+  const cols = RESULT ? conceptCols(RESULT.cfg) : [];
+  const caja = (etq, items) => `<div style="margin-bottom:10px">
+    <div class="f" style="margin-bottom:6px">${esc(etq)}</div>
+    <div style="display:flex;flex-wrap:wrap;gap:10px 16px">${items}</div></div>`;
+  const chk = (k, l) => `<label style="display:flex;align-items:center;gap:5px;font-size:12px;white-space:nowrap">
+    <input type="checkbox" data-col-chk="${esc(k)}" style="width:auto"${COLS_OCULTAS.has(k)?'':' checked'}>${esc(l)}</label>`;
+  $('#colsBox').innerHTML =
+    caja('Jornada', COLS_FIJAS.map(([k,l])=>chk(k,l)).join('')) +
+    (cols.length ? caja('Conceptos de nómina',
+       cols.map(c=>chk('c-'+c.code, c.code)).join('')) : '');
+  $$('#colsBox input[data-col-chk]').forEach(i => i.onchange = () => {
+    const k = i.dataset.colChk;
+    if(i.checked) COLS_OCULTAS.delete(k); else COLS_OCULTAS.add(k);
+    localStorage.setItem('mb_colsDet', JSON.stringify([...COLS_OCULTAS]));
+    aplicarCols();
+  });
+}
+
 function celdaHora(r, cual){
   const ts = cual==='ent' ? r.entTs : r.salTs;
   if(ts==null) return '<td class="mono muted">—</td>';
@@ -2130,18 +2182,19 @@ function renderDet(){
        <div class="v">${fmt(e.tot[c.key])}</div></div>`).join('');
 
   $('#tDet thead').innerHTML = `<tr>
-    <th>Fecha</th><th>Día</th><th>Tipo de día</th><th>Turno</th><th>Programado</th>
-    <th>Marcaciones</th>
-    <th data-tip="Primera marcacion del dia. En rojo si es posterior al inicio del turno por encima de la tolerancia de puntualidad. El numero es la desviacion en minutos.">Entro</th>
-    <th data-tip="Ultima marcacion del dia. En rojo si es anterior al fin del turno por encima de la tolerancia de puntualidad. El numero es la desviacion en minutos.">Salio</th>
-    <th>Almuerzo</th>
-    <th class="num" data-tip="Tiempo trabajado real del dia, sin redondear.">Hrs</th>
-    <th class="num" data-tip="Horas fijas del turno de ese dia (salida menos entrada menos almuerzo). Se acreditan completas aunque la persona haya trabajado algunos minutos menos; lo que falto queda en la columna Pendiente.">Ordin.</th>
-    <th class="num" data-tip="Horas pendientes: lo que le falto para completar su turno y aun asi se le pago. Sirve para sustentar un reclamo sin dejar de pagarle la jornada.">Pend.</th>
-    <th class="num" data-tip="Sobretiempo del dia, contado desde el FIN DEL TURNO con la escalera: la primera media hora exige 25 minutos y cada media hora siguiente se acredita 10 minutos antes de completarse. Tachado si no esta autorizado.">Extra</th>
-    <th class="num" data-tip="Acumulado corrido de la semana al cierre de este dia, contando solo las horas que compiten contra el umbral (la jornada fija de cada turno). El sobretiempo del mismo dia no entra: ya es extra por la escalera. En verde el dia en que se cruza el umbral: desde ahi lo demas se paga como extra (D-17 y D-18). El personal administrativo no usa umbral: se compara cada dia contra su jornada (D-23).">Acum. semana</th>` +
-    cols.map(c=>`<th class="num cw" data-tip="${esc(c.tip)}"><b>${esc(c.code)}</b><i>${esc(c.label.split(' ').slice(0,2).join(' '))}</i></th>`).join('') +
-    `<th>Novedades</th></tr>`;
+    <th data-col="fecha">Fecha</th><th data-col="dia">Día</th><th data-col="tipo">Tipo de día</th>
+    <th data-col="turno">Turno</th><th data-col="prog">Programado</th>
+    <th data-col="marcas">Marcaciones</th>
+    <th data-col="ent" data-tip="Primera marcacion del dia. En rojo si es posterior al inicio del turno por encima de la tolerancia de puntualidad. El numero es la desviacion en minutos.">Entro</th>
+    <th data-col="sal" data-tip="Ultima marcacion del dia. En rojo si es anterior al fin del turno por encima de la tolerancia de puntualidad. El numero es la desviacion en minutos.">Salio</th>
+    <th data-col="alm">Almuerzo</th>
+    <th class="num" data-col="hrs" data-tip="Tiempo trabajado real del dia, sin redondear.">Hrs</th>
+    <th class="num" data-col="ord" data-tip="Horas fijas del turno de ese dia (salida menos entrada menos almuerzo). Se acreditan completas aunque la persona haya trabajado algunos minutos menos; lo que falto queda en la columna Pendiente.">Ordin.</th>
+    <th class="num" data-col="pend" data-tip="Horas pendientes: lo que le falto para completar su turno y aun asi se le pago. Sirve para sustentar un reclamo sin dejar de pagarle la jornada.">Pend.</th>
+    <th class="num" data-col="extra" data-tip="Sobretiempo del dia, contado desde el FIN DEL TURNO con la escalera: la primera media hora exige 25 minutos y cada media hora siguiente se acredita 10 minutos antes de completarse. Tachado si no esta autorizado.">Extra</th>
+    <th class="num" data-col="acum" data-tip="Acumulado corrido de la semana al cierre de este dia, contando solo las horas que compiten contra el umbral (la jornada fija de cada turno). El sobretiempo del mismo dia no entra: ya es extra por la escalera. En verde el dia en que se cruza el umbral: desde ahi lo demas se paga como extra (D-17 y D-18). El personal administrativo no usa umbral: se compara cada dia contra su jornada (D-23).">Acum. semana</th>` +
+    cols.map(c=>`<th class="num cw" data-col="c-${esc(c.code)}" data-tip="${esc(c.tip)}"><b>${esc(c.code)}</b><i>${esc(c.label.split(' ').slice(0,2).join(' '))}</i></th>`).join('') +
+    `<th data-col="nov">Novedades</th></tr>`;
 
   $('#tDet tbody').innerHTML = e.ciclo.map(r=>{
     const tag = r.tipoDia==='FES' ? 't-warn' : r.tipoDia==='DOM' ? 't-info'
@@ -2149,21 +2202,21 @@ function renderDet(){
     const flags = [...new Set(r.flags)].map(f=>chip(f,r)).join(' ') +
       (r.inferido?' '+chip('INFERIDO',r):'');
     return `<tr>
-      <td class="mono">${r.iso}</td><td>${r.dow}</td>
-      <td><span class="tag ${tag}">${esc(r.tipoLabel)}</span></td>
-      <td class="mono">${esc(r.turno)}</td><td class="mono">${esc(r.prog)}</td>
-      <td class="mono">${esc(r.marcas||'—')}${r.descartadas?
+      <td class="mono" data-col="fecha">${r.iso}</td><td data-col="dia">${r.dow}</td>
+      <td data-col="tipo"><span class="tag ${tag}">${esc(r.tipoLabel)}</span></td>
+      <td class="mono" data-col="turno">${esc(r.turno)}</td><td class="mono" data-col="prog">${esc(r.prog)}</td>
+      <td class="mono" data-col="marcas">${esc(r.marcas||'—')}${r.descartadas?
           ` <span class="desc" data-nov="SUGERIDO">${esc(r.descartadas.join(' '))}</span>`:''}</td>
-      ${celdaHora(r,'ent')}${celdaHora(r,'sal')}
-      <td class="mono muted">${esc(r.almuerzo||'—')}</td>
-      <td class="num">${r.workMin?(r.workMin/60).toFixed(2):''}</td>
-      <td class="num">${fmt(r.ordH)}</td>
-      ${celdaPendiente(r)}
-      <td class="num ${r.noAutorizado?'noaut':''}">${
+      ${marcarCol('ent',celdaHora(r,'ent'))}${marcarCol('sal',celdaHora(r,'sal'))}
+      <td class="mono muted" data-col="alm">${esc(r.almuerzo||'—')}</td>
+      <td class="num" data-col="hrs">${r.workMin?(r.workMin/60).toFixed(2):''}</td>
+      <td class="num" data-col="ord">${fmt(r.ordH)}</td>
+      ${marcarCol('pend',celdaPendiente(r))}
+      <td class="num ${r.noAutorizado?'noaut':''}" data-col="extra">${
         r.noAutorizado ? fmt(Object.values(r.concNoAut||{}).reduce((a,b)=>a+b,0)) : fmt(r.extraH)}</td>
-      ${celdaSemana(r)}` +
-      cols.map(c=>`<td class="num cw">${fmt(r.conc[c.key])}</td>`).join('') +
-      `<td>${flags||'<span class="tag t-ok">OK</span>'}</td></tr>`;
+      ${marcarCol('acum',celdaSemana(r))}` +
+      cols.map(c=>`<td class="num cw" data-col="c-${esc(c.code)}">${fmt(r.conc[c.key])}</td>`).join('') +
+      `<td data-col="nov">${flags||'<span class="tag t-ok">OK</span>'}</td></tr>`;
   }).join('');
 }
 
@@ -2458,7 +2511,7 @@ function runCalc(){
 }
 
 document.addEventListener('DOMContentLoaded',()=>{
-  renderMatriz(); initPop();
+  renderMatriz(); initPop(); aplicarCols();
   const dlgConfig = $('#dlgConfig');
   $('#btnGear').onclick  = ()=>dlgConfig.showModal();
   $('#btnGear2').onclick = ()=>dlgConfig.showModal();
@@ -2488,6 +2541,10 @@ document.addEventListener('DOMContentLoaded',()=>{
   $('#selEmp').onchange = e=>{ CUR_EMP=e.target.value;
     $('#selPerfil').value = PERFILES[CUR_EMP]||'';
     $('#chkConfianza').checked = CONFIANZA.has(CUR_EMP); renderDet(); };
+  $('#btnCols').onclick     = ()=>{ renderCols(); $('#dlgCols').showModal(); };
+  $('#btnColsClose').onclick= ()=>$('#dlgCols').close();
+  $('#btnColsAll').onclick  = ()=>{ COLS_OCULTAS = new Set();
+    localStorage.setItem('mb_colsDet','[]'); aplicarCols(); renderCols(); };
   $('#btnAutor').onclick   = ()=>{ renderAutor(); $('#dlgAutor').showModal(); };
   $('#btnAutorClose').onclick = ()=>$('#dlgAutor').close();
   $('#aAdd').onclick  = ()=>addAutor($('#aIni').value,$('#aFin').value,$('#aEst').value,$('#aMot').value);
