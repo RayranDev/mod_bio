@@ -167,6 +167,31 @@
   #toast{position:fixed;right:16px;bottom:16px;background:#16202c;color:#fff;padding:9px 14px;
          border-radius:5px;font-size:12px;opacity:0;transition:.25s;pointer-events:none;z-index:99}
   #toast.on{opacity:1}
+  /* ── Calidad de marcacion ───────────────────────────────────────────────────── */
+  .hero{background:#fff;border:1px solid var(--line);border-radius:8px;padding:16px 18px;
+    display:flex;align-items:center;gap:22px;flex-wrap:wrap;margin-bottom:12px}
+  .hero .big{font-size:46px;font-weight:600;line-height:1;letter-spacing:-1px}
+  .hero .cap{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px}
+  .hero .det{font-size:12px;color:var(--muted);max-width:560px;line-height:1.5}
+  .hero .track{height:8px;border-radius:4px;background:var(--line);overflow:hidden;margin-top:9px}
+  .hero .track>span{display:block;height:100%;border-radius:4px}
+  .emb{width:100%;border-collapse:collapse}
+  .emb td{padding:5px 8px;border:0;vertical-align:middle}
+  .emb .via{width:150px}
+  .emb .via i{display:block;height:11px;border-radius:2px;background:var(--accent)}
+  .emb .via u{display:block;height:11px;border-radius:2px;background:var(--line);text-decoration:none}
+  .emb .n{text-align:right;font-variant-numeric:tabular-nums;font-weight:600;width:84px}
+  .emb .c{text-align:right;font-variant-numeric:tabular-nums;color:var(--muted);width:74px;font-size:11px}
+  .duenos{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:10px;margin-bottom:12px}
+  .duenos>div{background:#fff;border:1px solid var(--line);border-radius:6px;padding:12px 14px}
+  .duenos h4{margin:0 0 2px;font-size:12px;text-transform:uppercase;letter-spacing:.5px}
+  .duenos .quien{font-size:11px;color:var(--muted);margin-bottom:9px}
+  .duenos dl{margin:0;display:grid;grid-template-columns:1fr auto;gap:4px 10px;font-size:12px}
+  .duenos dt{color:var(--muted)}
+  .duenos dd{margin:0;text-align:right;font-weight:600;font-variant-numeric:tabular-nums}
+  .qbar{display:inline-block;width:62px;height:7px;border-radius:4px;background:var(--line);
+    overflow:hidden;vertical-align:middle;margin-right:7px}
+  .qbar>span{display:block;height:100%;border-radius:4px}
   /* Cobertura de datos: tres proporciones sobre el mismo denominador, para poder
      compararlas de un vistazo. Meter con track del mismo ramp (ver dataviz). */
   .cober{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px;margin-bottom:12px}
@@ -208,6 +233,14 @@
     body.print-kpi #kpiChartWrap, body.print-kpi .scroll{
       max-height:none!important; overflow:visible!important; border:0 }
     body.print-kpi table{ font-size:9px }
+    body.print-q #tab-cal2, body.print-q #tab-cal2 *{ visibility:visible }
+    body.print-q #tab-cal2{ position:absolute; left:0; top:0; width:100%; display:block!important }
+    body.print-q #qPrintHead{ display:block; margin-bottom:10px }
+    body.print-q #qPrintHead h2{ margin:0 0 2px; font-size:15px }
+    body.print-q .bar-noprint{ display:none!important }
+    body.print-q .scroll{ max-height:none!important; overflow:visible!important; border:0 }
+    body.print-q table{ font-size:9px }
+    body.print-q .hero, body.print-q .duenos>div{ break-inside:avoid }
     body.print-kpi .cober{ break-inside:avoid }
     body.print-kpi #kpiChartWrap{ break-inside:avoid }
   }
@@ -437,6 +470,7 @@
   <button data-tab="cal">Calendario de turnos</button>
   <button data-tab="asis">Asistencia</button>
   <button data-tab="kpi">KPI Cumplimiento</button>
+  <button data-tab="cal2">Calidad de marcación</button>
 </div>
 
 <section id="tab-cons" class="tabwrap on">
@@ -585,6 +619,39 @@
   <p class="muted" style="font-size:11px;margin-top:8px">
     Clic en un departamento filtra el detalle a esa área. Clic en un empleado abre su detalle día por día.
   </p>
+</section>
+
+<section id="tab-cal2" class="tabwrap">
+  <div class="note bar-noprint">
+    La calidad de marcación es la base de fidelidad de todo lo demás: una hora calculada sobre un día
+    que el motor tuvo que interpretar no es un dato del reloj, es una deducción. Este tablero separa
+    los hallazgos por <b>quién los resuelve</b>, no por gravedad — un departamento con muchos días
+    dudosos porque nadie le cargó los turnos no tiene un problema de disciplina.
+  </div>
+  <div class="bar bar-noprint">
+    <select id="fCiaQ" style="max-width:170px"><option value="">Todas las compañías</option></select>
+    <select id="fDeptoQ" style="max-width:250px"><option value="">Todos los departamentos</option></select>
+    <button id="fClearQ">Limpiar</button>
+    <span class="sp"></span>
+    <button id="expQ">Exportar calidad (Excel)</button>
+    <button id="pdfQ">Exportar calidad (PDF)</button>
+  </div>
+  <div id="qPrintHead"></div>
+  <div class="hero" id="qHero"></div>
+  <div class="grid" style="grid-template-columns:minmax(320px,1fr) minmax(320px,1.1fr);gap:12px;margin-bottom:12px">
+    <div class="glos" style="margin:0">
+      <h3>De dónde sale ese número</h3>
+      <table class="emb" id="qEmbudo"><tbody></tbody></table>
+    </div>
+    <div class="glos" style="margin:0">
+      <h3>Tiempo fuera del turno que no es extra</h3>
+      <div id="qFuera"></div>
+    </div>
+  </div>
+  <div class="duenos" id="qDuenos"></div>
+  <h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin:14px 0 8px">
+    Calidad por departamento</h3>
+  <div class="scroll" style="max-height:44vh"><table id="tQ"><thead></thead><tbody></tbody></table></div>
 </section>
 
 </div><!-- /#reportes -->
@@ -2383,6 +2450,206 @@ function aoaKpiEmp(rows){
       r.sinMarca,p(r.pctSinMarca),r.incompleto,p(r.pctIncompleto),r.sinTurno,p(r.pctSinTurno),r.total])];
 }
 
+/* ══════════════════════════════════════════════════════════════════
+   CALIDAD DE MARCACION
+   La fidelidad del informe. Un dia "dudoso" no esta mal calculado: esta
+   calculado sobre una decision del motor en vez de sobre el reloj. La
+   diferencia importa cuando alguien reclama.
+   ══════════════════════════════════════════════════════════════════ */
+
+/** Recorre el ciclo ya calculado y clasifica cada dia-persona por su calidad de
+ *  marcacion, y cada hallazgo por QUIEN lo resuelve. */
+function computeCalidad(M, R, cfg){
+  const dep = new Map();
+  const nuevo = k => ({ dep:k, dias:0, sinMarca:0, bloq:0, sugerido:0, limpio:0,
+    hLimpia:0, hDudosa:0, antesMin:0, antesDias:0, sinTurno:0, tarde:0, temprano:0,
+    conTurno:0, emp:new Set(), empDudosos:new Set() });
+  const T = nuevo('TOTAL');
+
+  R.byEmp.forEach(e=>{
+    const k = e.emp.depto || '(sin departamento)';
+    if(!dep.has(k)) dep.set(k, nuevo(k));
+    const o = dep.get(k);
+    o.emp.add(e.emp.id); T.emp.add(e.emp.id);
+
+    e.ciclo.forEach(r=>{
+      const f = r.flags || [];
+      /* Un dia es BLOQUEADO cuando el numero de marcaciones es impar y no hubo forma de
+         emparejarlo, o cuando una salida quedo antes de su entrada: no se calcula nada.
+         Es SUGERIDO cuando el motor eligio que marcacion descartar — se calculo, pero
+         sobre una interpretacion. */
+      const bloq = f.includes('A-17') || (f.includes('A-04') && !f.includes('SUGERIDO'));
+      const sug  = f.includes('SUGERIDO') || r.inferido;
+      const sinMarca = f.includes('A-18');
+      const h = (r.creditMin||0)/60;
+
+      [o,T].forEach(x=>{
+        x.dias++;
+        if(r.W) x.conTurno++;
+        if(f.includes('A-19')) x.sinTurno++;
+        if(sinMarca) x.sinMarca++;
+        else if(bloq) x.bloq++;
+        else if(sug) x.sugerido++;
+        else x.limpio++;
+        if(bloq||sug){ x.hDudosa += h; x.empDudosos.add(e.emp.id); }
+        else x.hLimpia += h;
+        if(r.entDelta > cfg.tolPunt) x.tarde++;
+        if(r.salDelta < -cfg.tolPunt) x.temprano++;
+      });
+
+      /* D-15: el tiempo anterior al inicio del turno no se acredita y tampoco es extra.
+         Nadie lo reporta hoy, pero la persona estaba adentro: o llega temprano por
+         costumbre, o el turno no arranca a la hora en que arranca la operacion. */
+      if(r.W && r.pares && r.pares.length){
+        let antes = 0;
+        r.pares.forEach(p=>{ const t = Math.min(p.fin, r.W.ini) - p.ini; if(t>0) antes += t; });
+        if(antes>0){ o.antesMin += antes; o.antesDias++; T.antesMin += antes; T.antesDias++; }
+      }
+    });
+  });
+
+  const cerrar = o => { o.empleados = o.emp.size; o.empDudososN = o.empDudosos.size;
+    o.calidad = o.dias ? o.limpio / o.dias * 100 : null;
+    o.hTotal = o.hLimpia + o.hDudosa;
+    o.pctHDudosa = o.hTotal ? o.hDudosa / o.hTotal * 100 : null;
+    delete o.emp; delete o.empDudosos; return o; };
+  return { total: cerrar(T), deps: [...dep.values()].map(cerrar)
+    .sort((a,b)=>(a.calidad==null?101:a.calidad)-(b.calidad==null?101:b.calidad)) };
+}
+
+function calidadFiltrada(){
+  const cia = $('#fCiaQ').value, dep = $('#fDeptoQ').value;
+  const R2 = { byEmp: new Map(), cfg: RESULT.cfg };
+  RESULT.byEmp.forEach((e,id)=>{
+    if(cia && e.emp.empresa!==cia) return;
+    if(dep && e.emp.depto!==dep) return;
+    R2.byEmp.set(id, e);
+  });
+  return computeCalidad(MODEL, R2, RESULT.cfg);
+}
+
+const nivelQ = p => p>=90 ? 'ok' : p>=75 ? 'warn' : 'err';
+
+function renderCalidad(){
+  if(!RESULT || !$('#qHero')) return;
+  const Q = calidadFiltrada(), T = Q.total;
+  const col = n => n==='ok' ? 'var(--ok)' : n==='warn' ? 'var(--warn)' : 'var(--err)';
+  const nv = T.calidad==null ? 'err' : nivelQ(T.calidad);
+
+  $('#qHero').innerHTML = `
+    <div style="min-width:210px">
+      <div class="cap">Calidad de marcación</div>
+      <div class="big" style="color:${col(nv)}">${T.calidad==null?'—':T.calidad.toFixed(1)+'%'}</div>
+      <div class="track"><span style="width:${T.calidad||0}%;background:${col(nv)}"></span></div>
+    </div>
+    <div class="det">
+      <b>${fmtN(T.limpio)}</b> de <b>${fmtN(T.dias)}</b> días-persona se calcularon sobre marcaciones
+      que no hubo que interpretar. El resto sí: el motor tuvo que elegir qué marcación descartar,
+      o no había ninguna.<br>
+      Eso sostiene <b>${fmtN(Math.round(T.hDudosa))} h</b> de las
+      <b>${fmtN(Math.round(T.hTotal))} h</b> acreditadas
+      (<b>${T.pctHDudosa==null?'—':T.pctHDudosa.toFixed(1)+'%'}</b>), y toca a
+      <b>${fmtN(T.empDudososN)}</b> de ${fmtN(T.empleados)} empleados.
+    </div>`;
+
+  /* Embudo: cada escalon es un subconjunto del anterior, asi que la tasa se lee contra
+     el escalon de arriba, no contra el total. */
+  const pasos = [
+    ['Días-persona del ciclo', T.dias, 'Todo día con turno programado o con alguna marcación.'],
+    ['…con alguna marcación', T.dias - T.sinMarca, 'Se descuentan los días con turno y cero marcaciones.'],
+    ['…con marcaciones emparejables', T.dias - T.sinMarca - T.bloq, 'Se descuentan los días que quedaron impares sin solución.'],
+    ['…sin necesidad de interpretar', T.limpio, 'Se descuentan los días donde el motor eligió qué marcación descartar.'],
+  ];
+  $('#qEmbudo tbody').innerHTML = pasos.map((p,i)=>{
+    const w = T.dias ? p[1]/T.dias*100 : 0;
+    const conv = i===0 ? '' : (pasos[i-1][1] ? (p[1]/pasos[i-1][1]*100).toFixed(1)+'%' : '—');
+    return `<tr data-tip="${esc(p[2])}">
+      <td class="via"><i style="width:${w.toFixed(1)}%"></i></td>
+      <td>${esc(p[0])}</td><td class="n">${fmtN(p[1])}</td><td class="c">${conv}</td></tr>`;
+  }).join('');
+
+  const hAntes = T.antesMin/60;
+  $('#qFuera').innerHTML = `
+    <dl class="duenos" style="display:grid;grid-template-columns:1fr auto;gap:6px 12px;margin:0;font-size:12px">
+      <dt style="color:var(--muted)" data-tip="Minutos dentro de la planta anteriores al inicio del turno. Por D-15 no se acreditan, y tampoco son sobretiempo: el sobretiempo se cuenta desde el FIN del turno.">Presente antes de que arranque su turno</dt>
+      <dd style="text-align:right;font-weight:600">${fmtN(Math.round(hAntes))} h</dd>
+      <dt style="color:var(--muted)">…repartidas en</dt>
+      <dd style="text-align:right;font-weight:600">${fmtN(T.antesDias)} días</dd>
+      <dt style="color:var(--muted)">…promedio por día</dt>
+      <dd style="text-align:right;font-weight:600">${T.antesDias?Math.round(T.antesMin/T.antesDias):0} min</dd>
+      <dt style="color:var(--muted)" data-tip="Días con marcaciones en los que no había turno asignado (A-19). Se pagan como sobretiempo, pero indican programación faltante.">Trabajó sin turno asignado</dt>
+      <dd style="text-align:right;font-weight:600">${fmtN(T.sinTurno)} días</dd>
+    </dl>
+    <p class="muted" style="font-size:11px;margin:10px 0 0;line-height:1.5">
+      Estas horas no se pagan y no son extra — la regla es que el tiempo anterior al turno no cuenta.
+      Se muestran porque la persona <b>sí estaba adentro</b>: o llega temprano por costumbre, o el
+      turno no arranca a la hora en que arranca la operación. Es una decisión de Operación, no de nómina.
+    </p>`;
+
+  const caja = (titulo, quien, filas) => `<div>
+    <h4>${esc(titulo)}</h4><div class="quien">${esc(quien)}</div>
+    <dl>${filas.map(([k,v,tip])=>
+      `<dt${tip?` data-tip="${esc(tip)}"`:''}>${esc(k)}</dt><dd>${v}</dd>`).join('')}</dl></div>`;
+  const pd = n => T.dias ? ` <span class="muted" style="font-weight:400">(${(n/T.dias*100).toFixed(1)}%)</span>` : '';
+  $('#qDuenos').innerHTML =
+    caja('Programación', 'Lo resuelve RRHH / quien carga los turnos en BioTime', [
+      ['Días trabajados sin turno', fmtN(T.sinTurno)+pd(T.sinTurno),
+       'Hay marcaciones pero no hay turno asignado ese día (A-19).'],
+      ['Días con turno cargado', fmtN(T.conTurno)+pd(T.conTurno), ''],
+    ]) +
+    caja('Disciplina de marcación', 'Lo resuelve el jefe directo con su gente', [
+      ['Días que hubo que interpretar', fmtN(T.sugerido)+pd(T.sugerido),
+       'Número impar de marcaciones: el motor eligió cuál descartar.'],
+      ['Días sin poder calcular', fmtN(T.bloq)+pd(T.bloq),
+       'Impares sin solución o salida anterior a la entrada. No se calculó nada.'],
+      ['Empleados involucrados', fmtN(T.empDudososN)+' de '+fmtN(T.empleados), ''],
+    ]) +
+    caja('Ausencias', 'Lo resuelve el jefe directo: ¿faltó, o no marcó?', [
+      ['Turno programado, cero marcaciones', fmtN(T.sinMarca)+pd(T.sinMarca), ''],
+      ['Entradas tarde', fmtN(T.tarde)+pd(T.tarde), ''],
+      ['Salidas temprano', fmtN(T.temprano)+pd(T.temprano), ''],
+    ]);
+
+  $('#tQ thead').innerHTML = `<tr><th>Departamento</th><th class="num">Empleados</th>
+    <th class="num">Días</th><th>Calidad</th><th class="num" data-tip="Días que el motor tuvo que interpretar más los que no pudo calcular.">Dudosos</th>
+    <th class="num" data-tip="Días con marcaciones y sin turno asignado. Es programación faltante, no indisciplina.">Sin turno</th>
+    <th class="num">Turno sin marca</th><th class="num" data-tip="Horas dentro de la planta anteriores al inicio del turno.">H. antes</th>
+    <th class="num">% horas dudosas</th></tr>`;
+  $('#tQ tbody').innerHTML = Q.deps.map(d=>{
+    const n = d.calidad==null ? 'err' : nivelQ(d.calidad);
+    return `<tr><td>${esc(d.dep)}</td><td class="num">${fmtN(d.empleados)}</td>
+      <td class="num">${fmtN(d.dias)}</td>
+      <td><span class="qbar"><span style="width:${d.calidad||0}%;background:${col(n)}"></span></span>${
+        d.calidad==null?'—':d.calidad.toFixed(1)+'%'}</td>
+      <td class="num">${fmtN(d.sugerido+d.bloq)}</td>
+      <td class="num${d.sinTurno===d.dias&&d.dias?' dev':''}"${
+        d.sinTurno===d.dias&&d.dias?' data-tip="TODOS los días de este departamento salen sin turno: no hay programación cargada para él."':''
+        }>${fmtN(d.sinTurno)}</td>
+      <td class="num">${fmtN(d.sinMarca)}</td>
+      <td class="num">${fmtN(Math.round(d.antesMin/60))}</td>
+      <td class="num">${d.pctHDudosa==null?'—':d.pctHDudosa.toFixed(1)+'%'}</td></tr>`;
+  }).join('') || `<tr><td colspan="9" class="muted" style="padding:18px">Sin datos para el filtro activo.</td></tr>`;
+
+  const fCia = $('#fCiaQ').value, fDep = $('#fDeptoQ').value;
+  $('#qPrintHead').innerHTML =
+    `<h2>Calidad de marcación — ciclo ${esc(RESULT.cfg.ini)} a ${esc(RESULT.cfg.fin)}</h2>` +
+    `<div class="muted" style="font-size:11px">${esc(fCia||'Todas las compañías')} · ` +
+    `${esc(fDep||'Todos los departamentos')} · ${fmtN(T.empleados)} empleados · ` +
+    `generado ${new Date().toLocaleString('es-CO')}</div>`;
+}
+
+function aoaCalidad(){
+  const Q = calidadFiltrada();
+  const head = ['DEPARTAMENTO','EMPLEADOS','DIAS','CALIDAD %','DIAS LIMPIOS','DIAS INTERPRETADOS',
+    'DIAS SIN CALCULAR','DIAS SIN TURNO','TURNO SIN MARCA','ENTRADAS TARDE','SALIDAS TEMPRANO',
+    'HORAS ANTES DEL TURNO','HORAS LIMPIAS','HORAS DUDOSAS','% HORAS DUDOSAS'];
+  const fila = d => [d.dep, d.empleados, d.dias, d.calidad==null?'':+d.calidad.toFixed(1),
+    d.limpio, d.sugerido, d.bloq, d.sinTurno, d.sinMarca, d.tarde, d.temprano,
+    +(d.antesMin/60).toFixed(1), +d.hLimpia.toFixed(1), +d.hDudosa.toFixed(1),
+    d.pctHDudosa==null?'':+d.pctHDudosa.toFixed(1)];
+  return [head, ...Q.deps.map(fila), fila({...Q.total, dep:'TOTAL'})];
+}
+
 function toast(m){ const t=$('#toast'); t.textContent=m; t.classList.add('on');
   clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove('on'),2600); }
 
@@ -2484,6 +2751,8 @@ function fillFiltros(){
   keep($('#fDeptoAs'),deps,'Todos los departamentos');
   keep($('#fCiaKpi'), cias, 'Todas las compañías');
   keep($('#fDeptoKpi'),deps,'Todos los departamentos');
+  keep($('#fCiaQ'),  cias, 'Todas las compañías');
+  keep($('#fDeptoQ'),deps, 'Todos los departamentos');
 }
 
 function renderCons(){
@@ -3035,7 +3304,7 @@ function runCalc(){
     ASISTENCIA = computeAsistencia(MODEL, cfg);
     renderDisp();
     fillSelects(); fillFiltros(); renderCons(); renderDet(); renderExc(); renderCal();
-    renderAsistencia(); renderKpi();
+    renderAsistencia(); renderKpi(); renderCalidad();
     const b = RESULT.exc.filter(x=>x.sev==='BLOQ').length;
     $('#status').innerHTML = `${RESULT.cons.length} empleados con conceptos · ` +
       (b?`<b style="color:#fca5a5">${b} bloqueantes</b>`:'sin bloqueantes');
@@ -3155,6 +3424,20 @@ document.addEventListener('DOMContentLoaded',()=>{
     const rows = kpiCalcular();
     save({ 'Resumen departamento':aoaKpiDep(kpiPorDepto(rows)),
            'Detalle empleado':aoaKpiEmp(kpiFiltrarEmpleados(rows)) }, `KPI_Cumplimiento_${stamp()}.xlsx`);
+  };
+  $('#fCiaQ').onchange   = ()=>RESULT&&renderCalidad();
+  $('#fDeptoQ').onchange = ()=>RESULT&&renderCalidad();
+  $('#fClearQ').onclick  = ()=>{ $('#fCiaQ').value=''; $('#fDeptoQ').value='';
+    RESULT&&renderCalidad(); };
+  $('#expQ').onclick = ()=>RESULT&&save({'Calidad de marcacion':aoaCalidad()},
+    `Calidad_Marcacion_${stamp()}.xlsx`);
+  $('#pdfQ').onclick = ()=>{
+    if(!RESULT){ toast('Primero calcule el ciclo.'); return; }
+    document.body.classList.add('print-q');
+    const limpiar = ()=>document.body.classList.remove('print-q');
+    window.addEventListener('afterprint', limpiar, {once:true});
+    setTimeout(limpiar, 1500);
+    window.print();
   };
   $('#expCal').onclick  = ()=>{ if(!RESULT) return;
     const id=$('#selEmpCal').value, m=$('#selMes').value;
