@@ -377,6 +377,8 @@
       <input type="text" id="cExtraPref" value="T_EXTRA"></div>
     <div><label class="f">Paso de redondeo en turnos de extras (min) <span class="muted">(T-EXTRA)</span></label>
       <input type="number" id="cExtraPaso" value="30" min="1"></div>
+    <div><label class="f">Días mínimos para calificar a un departamento <span class="muted">(muestra)</span></label>
+      <input type="number" id="cMinDias" value="60" min="1"></div>
     <div><label class="f">Sobretiempo: minutos para la primera media hora</label>
       <input type="number" id="cEscPrimer" value="25" min="0"></div>
     <div><label class="f">Sobretiempo: gracia para cada media hora siguiente (min)</label>
@@ -621,6 +623,10 @@
   <div class="bar bar-noprint">
     <select id="fCiaQ" style="max-width:170px"><option value="">Todas las compañías</option></select>
     <select id="fDeptoQ" style="max-width:250px"><option value="">Todos los departamentos</option></select>
+    <select id="fOrdQ" style="max-width:230px">
+      <option value="peso">Ordenar por peso en el total</option>
+      <option value="tasa">Ordenar por tasa propia</option>
+    </select>
     <button id="fClearQ">Limpiar</button>
     <span class="sp"></span>
     <button id="expQ">Exportar calidad (Excel)</button>
@@ -1378,6 +1384,7 @@ function readConfig(){
     lactPref: (v('cLactPref')||'').trim(), lactMin: +v('cLactMin')||0,
     transAviso: +v('cTransAviso')||0,
     extraPref: (v('cExtraPref')||'').trim(), extraPaso: +v('cExtraPaso')||30,
+    minDias: +v('cMinDias')||60,
     semIni: +v('cSemIni')||0
   };
   cfg.corteOn = cfg.corte && cfg.fin >= cfg.corte;      // H-06
@@ -2208,10 +2215,17 @@ function svgKpiChart(deps){
   /* Cada panel se queda solo con los departamentos que TIENEN valor para su indicador,
      ordenados de mayor a menor. Los que no tienen denominador no se dibujan como una
      rayita invisible: se cuentan en una nota al pie del panel. */
+  /* Un departamento con pocos dias no entra al ranking por tasa: con 19 dias, un solo
+     dia malo mueve la tasa cinco puntos y lo pone primero. En agosto 2026 el top lo
+     encabezaba TARJETA con UN dia, mientras el departamento que aporta dos tercios de
+     las incidencias quedaba octavo. Se cuentan aparte en la nota al pie. */
+  const minD = (RESULT && RESULT.cfg && RESULT.cfg.minDias) || 60;
   const paneles = SERIES.map(s=>{
-    const con = deps.filter(d=>d[s.key]!=null).sort((a,b)=>b[s.key]-a[s.key]);
+    const conDato = deps.filter(d=>d[s.key]!=null);
+    const con = conDato.filter(d=>d[s.den] >= minD).sort((a,b)=>b[s.key]-a[s.key]);
     return { s, filas: con.slice(0,TOPE), ocultos: Math.max(0, con.length-TOPE),
-             sinDatos: deps.length-con.length };
+             sinDatos: deps.length-conDato.length,
+             cortos: conDato.length-con.length };
   });
   const altoPanel = p => tituloH + Math.max(p.filas.length,1)*(barH+gapRow) + notaH;
   const H = paneles.reduce((a,p)=>a+altoPanel(p),0) + panelGap*(paneles.length-1) + 6;
@@ -2263,6 +2277,7 @@ function svgKpiChart(deps){
 
     const notas = [];
     if(p.ocultos)  notas.push(`${p.ocultos} departamento(s) más en la tabla de abajo`);
+    if(p.cortos)   notas.push(`${p.cortos} con menos de ${minD} días, fuera del ranking por muestra corta`);
     if(p.sinDatos) notas.push(`${p.sinDatos} sin datos suficientes`);
     if(notas.length)
       svg += `<text class="panel-note" x="${x0}" y="${yFin+12}">${esc(notas.join(' · '))}</text>`;
@@ -2509,11 +2524,24 @@ function computeCalidad(M, R, cfg){
 
   const cerrar = o => { o.empleados = o.emp.size; o.empDudososN = o.empDudosos.size;
     o.calidad = o.dias ? o.limpio / o.dias * 100 : null;
+    o.dudosos = o.sugerido + o.bloq;
     o.hTotal = o.hLimpia + o.hDudosa;
     o.pctHDudosa = o.hTotal ? o.hDudosa / o.hTotal * 100 : null;
     delete o.emp; delete o.empDudosos; return o; };
-  return { total: cerrar(T), deps: [...dep.values()].map(cerrar)
-    .sort((a,b)=>(a.calidad==null?101:a.calidad)-(b.calidad==null?101:b.calidad)) };
+  cerrar(T);
+  const deps = [...dep.values()].map(cerrar);
+  /* TASA y PESO son dos preguntas distintas y hay que responder las dos.
+     La tasa dice que tan bien marca ESE departamento; el peso, cuanto del problema de
+     la empresa esta ahi. Un 69,5% sobre 11.507 dias y un 47,4% sobre 19 no se comparan:
+     el primero es dos tercios de todo lo que hay que arreglar, el segundo cabe en una
+     tarde. Y `muestraCorta` marca al que no tiene dias suficientes para que su tasa
+     signifique algo — con 19 dias, un solo dia malo mueve la tasa cinco puntos. */
+  deps.forEach(d=>{
+    d.peso = T.dudosos ? d.dudosos / T.dudosos * 100 : null;
+    d.muestraCorta = d.dias < (cfg.minDias || 60);
+    d.diasPorPunto = d.dias / 100;
+  });
+  return { total: T, deps: deps.sort((a,b)=>(b.dudosos||0)-(a.dudosos||0)) };
 }
 
 function calidadFiltrada(){
@@ -2532,6 +2560,10 @@ const nivelQ = p => p>=90 ? 'ok' : p>=75 ? 'warn' : 'err';
 function renderCalidad(){
   if(!RESULT || !$('#qHero')) return;
   const Q = calidadFiltrada(), T = Q.total;
+  /* Referencia de toda la empresa, sin filtrar: un porcentaje de departamento sin el
+     general al lado no se puede juzgar. */
+  const GEN = computeCalidad(MODEL, RESULT, RESULT.cfg).total;
+  const filtrando = !!($('#fCiaQ').value || $('#fDeptoQ').value);
   const col = n => n==='ok' ? 'var(--ok)' : n==='warn' ? 'var(--warn)' : 'var(--err)';
   const nv = T.calidad==null ? 'err' : nivelQ(T.calidad);
 
@@ -2549,7 +2581,17 @@ function renderCalidad(){
       <b>${fmtN(Math.round(T.hTotal))} h</b> acreditadas
       (<b>${T.pctHDudosa==null?'—':T.pctHDudosa.toFixed(1)+'%'}</b>), y toca a
       <b>${fmtN(T.empDudososN)}</b> de ${fmtN(T.empleados)} empleados.
-    </div>`;
+    </div>` + (filtrando ? `
+    <div style="min-width:150px;border-left:1px solid var(--line);padding-left:20px">
+      <div class="cap">Toda la empresa</div>
+      <div style="font-size:26px;font-weight:600;line-height:1.1;color:var(--muted)">${
+        GEN.calidad==null?'—':GEN.calidad.toFixed(1)+'%'}</div>
+      <div class="muted" style="font-size:11px;margin-top:4px">
+        ${fmtN(GEN.dias)} días · ${fmtN(GEN.empleados)} empleados<br>
+        ${T.dudosos&&GEN.dudosos ? `esta selección es el <b>${(T.dudosos/GEN.dudosos*100).toFixed(1)}%</b>
+        de los días dudosos de la empresa` : ''}
+      </div>
+    </div>` : '');
 
   /* Embudo: cada escalon es un subconjunto del anterior, asi que la tasa se lee contra
      el escalon de arriba, no contra el total. */
@@ -2610,24 +2652,39 @@ function renderCalidad(){
     ]);
 
   $('#tQ thead').innerHTML = `<tr><th>Departamento</th><th class="num">Empleados</th>
-    <th class="num">Días</th><th>Calidad</th><th class="num" data-tip="Días que el motor tuvo que interpretar más los que no pudo calcular.">Dudosos</th>
+    <th class="num">Días</th><th data-tip="Qué tan bien marca ESE departamento, contra sus propios días. No se compara entre departamentos de tamaños distintos sin mirar el peso.">Calidad (tasa propia)</th>
+    <th class="num" data-tip="Días que el motor tuvo que interpretar más los que no pudo calcular.">Dudosos</th>
+    <th data-tip="Qué porcentaje de TODOS los días dudosos de la selección está en este departamento. Es lo que dice dónde conviene empezar.">Peso en el total</th>
     <th class="num" data-tip="Días con marcaciones y sin turno asignado. Es programación faltante, no indisciplina.">Sin turno</th>
     <th class="num">Turno sin marca</th><th class="num" data-tip="Horas dentro de la planta anteriores al inicio del turno.">H. antes</th>
     <th class="num">% horas dudosas</th></tr>`;
-  $('#tQ tbody').innerHTML = Q.deps.map(d=>{
+  /* Por defecto manda el PESO: es lo que dice donde empezar. Ordenar por tasa pone
+     arriba a quien tiene tres dias y un mal dia. */
+  const orden = $('#fOrdQ') ? $('#fOrdQ').value : 'peso';
+  const lista = Q.deps.slice().sort(orden==='tasa'
+    ? (a,b)=>(a.calidad==null?101:a.calidad)-(b.calidad==null?101:b.calidad)
+    : (a,b)=>(b.dudosos||0)-(a.dudosos||0));
+  $('#tQ tbody').innerHTML = lista.map(d=>{
     const n = d.calidad==null ? 'err' : nivelQ(d.calidad);
+    const corta = d.muestraCorta
+      ? ` <span class="tag t-mut" data-tip="Solo ${fmtN(d.dias)} días: un punto porcentual vale ${
+          d.diasPorPunto.toFixed(1)} días, así que un día malo mueve la tasa varios puntos. No decida sobre este número solo.">muestra corta</span>`
+      : '';
     return `<tr><td>${esc(d.dep)}</td><td class="num">${fmtN(d.empleados)}</td>
       <td class="num">${fmtN(d.dias)}</td>
-      <td><span class="qbar"><span style="width:${d.calidad||0}%;background:${col(n)}"></span></span>${
-        d.calidad==null?'—':d.calidad.toFixed(1)+'%'}</td>
-      <td class="num">${fmtN(d.sugerido+d.bloq)}</td>
+      <td${d.muestraCorta?' style="opacity:.55"':''}><span class="qbar"><span style="width:${
+        d.calidad||0}%;background:${col(n)}"></span></span>${
+        d.calidad==null?'—':d.calidad.toFixed(1)+'%'}${corta}</td>
+      <td class="num">${fmtN(d.dudosos)}</td>
+      <td><span class="qbar"><span style="width:${(d.peso||0).toFixed(1)}%;background:var(--accent)"></span></span>${
+        d.peso==null?'—':d.peso.toFixed(1)+'%'}</td>
       <td class="num${d.sinTurno===d.dias&&d.dias?' dev':''}"${
         d.sinTurno===d.dias&&d.dias?' data-tip="TODOS los días de este departamento salen sin turno: no hay programación cargada para él."':''
         }>${fmtN(d.sinTurno)}</td>
       <td class="num">${fmtN(d.sinMarca)}</td>
       <td class="num">${fmtN(Math.round(d.antesMin/60))}</td>
       <td class="num">${d.pctHDudosa==null?'—':d.pctHDudosa.toFixed(1)+'%'}</td></tr>`;
-  }).join('') || `<tr><td colspan="9" class="muted" style="padding:18px">Sin datos para el filtro activo.</td></tr>`;
+  }).join('') || `<tr><td colspan="10" class="muted" style="padding:18px">Sin datos para el filtro activo.</td></tr>`;
 
   const fCia = $('#fCiaQ').value, fDep = $('#fDeptoQ').value;
   $('#qPrintHead').innerHTML =
@@ -2639,10 +2696,12 @@ function renderCalidad(){
 
 function aoaCalidad(){
   const Q = calidadFiltrada();
-  const head = ['DEPARTAMENTO','EMPLEADOS','DIAS','CALIDAD %','DIAS LIMPIOS','DIAS INTERPRETADOS',
+  const head = ['DEPARTAMENTO','EMPLEADOS','DIAS','CALIDAD %','PESO EN EL TOTAL %','MUESTRA CORTA',
+    'DIAS LIMPIOS','DIAS INTERPRETADOS',
     'DIAS SIN CALCULAR','DIAS SIN TURNO','TURNO SIN MARCA','ENTRADAS TARDE','SALIDAS TEMPRANO',
     'HORAS ANTES DEL TURNO','HORAS LIMPIAS','HORAS DUDOSAS','% HORAS DUDOSAS'];
   const fila = d => [d.dep, d.empleados, d.dias, d.calidad==null?'':+d.calidad.toFixed(1),
+    d.peso==null?'':+d.peso.toFixed(1), d.muestraCorta?'SI':'',
     d.limpio, d.sugerido, d.bloq, d.sinTurno, d.sinMarca, d.tarde, d.temprano,
     +(d.antesMin/60).toFixed(1), +d.hLimpia.toFixed(1), +d.hDudosa.toFixed(1),
     d.pctHDudosa==null?'':+d.pctHDudosa.toFixed(1)];
@@ -3421,8 +3480,9 @@ document.addEventListener('DOMContentLoaded',()=>{
   };
   $('#fCiaQ').onchange   = ()=>RESULT&&renderCalidad();
   $('#fDeptoQ').onchange = ()=>RESULT&&renderCalidad();
+  $('#fOrdQ').onchange    = ()=>RESULT&&renderCalidad();
   $('#fClearQ').onclick  = ()=>{ $('#fCiaQ').value=''; $('#fDeptoQ').value='';
-    RESULT&&renderCalidad(); };
+    $('#fOrdQ').value='peso'; RESULT&&renderCalidad(); };
   $('#expQ').onclick = ()=>RESULT&&save({'Calidad de marcacion':aoaCalidad()},
     `Calidad_Marcacion_${stamp()}.xlsx`);
   $('#pdfQ').onclick = ()=>{
