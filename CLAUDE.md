@@ -16,7 +16,7 @@ qué convención seguir al modificarlo.
 | Archivo | Qué es |
 |---|---|
 | `reporte-horas.html` | Herramienta completa: 7 pestañas (Consolidado, Detalle, Calendario, Excepciones, Asistencia, KPI Cumplimiento, Glosario). Para análisis, auditoría de datos y seguimiento del proceso de implementación. |
-| `reporte-horas-rrhh.html` | Versión lite para RRHH: 5 pestañas (Consolidado, Detalle, Calendario, Excepciones, Asistencia). Sin KPI/Glosario. Parametrización avanzada detrás de un botón de engranaje (`⚙`) en vez de siempre visible. |
+| `reporte-horas-rrhh.html` | Versión lite para RRHH: 5 pestañas (Consolidado, Detalle, Calendario, Asistencia, KPI Cumplimiento). Sin Excepciones ni Glosario. Parametrización avanzada detrás de un botón de engranaje (`⚙`) en vez de siempre visible. |
 | `CATALOGO-CONDICIONES.md` | Las 137 condiciones de diseño original, con sus códigos (A-01, D-14, I-03, etc.) usados como referencia cruzada en el código. |
 | `CLAUDE.md` | Este archivo. |
 | `.gitignore` | Excluye `*.xlsx`, `*.xls` y `.atl/` — los datos de empleados **nunca** se suben al repo. |
@@ -66,6 +66,12 @@ celdaPendiente                                          (celda de horas no cumpl
 tagRetiro                                               (marca de empleado retirado, A-16)
 AS_LABEL, ASISTENCIA (global)                           (reporte de asistencia general)
 computeAsistencia, asisFiltrado, renderAsistencia, aoaAsistencia
+KPI_EXCL, KPI_EXCLUIDOS_ULTIMO                          (estado del KPI)
+kpiCalcular, pct, kpiPorDepto, kpiFiltrarEmpleados      (KPI de cumplimiento)
+barPath, fmtPct, fmtN, svgKpiChart, renderCobertura, renderKpi, aoaKpiDep, aoaKpiEmp
+esTurnoExtra, pasoExtra                                 (turnos de solo extras, T-EXTRA)
+activoEnCiclo                                           (universo del reporte segun el rango)
+modo, irADetalle, marcarCol, aplicarCols, renderCols     (interfaz: modos, salto y columnas)
 tipHTML, chip, initPop                                  (sistema de tooltips — ver nota abajo)
 toast, conceptCols, renderMatriz
 filtroActivo, filtroHay, filtroSlug, consFiltrado, fillFiltros
@@ -76,6 +82,25 @@ aoaCons, aoaDet, aoaExc, aoaCal, sinergyTxt
 checkReady, hook, runCalc
 ```
 
+> **Asistencia y KPI pasaron a ser compartidos; Excepciones salió de RRHH (sept-2026).**
+> Las funciones del KPI (`KPI_EXCL`, `KPI_EXCLUIDOS_ULTIMO`, `kpiCalcular`, `pct`, `kpiPorDepto`,
+> `kpiFiltrarEmpleados`, `barPath`, `fmtPct`, `fmtN`, `svgKpiChart`, `renderCobertura`, `renderKpi`,
+> `aoaKpiDep`, `aoaKpiEmp`) viven ahora en los DOS archivos. Solo `renderGlosario` sigue siendo
+> exclusiva del archivo completo.
+>
+> **`renderExc` y `aoaExc` SIGUEN en los dos archivos** aunque RRHH ya no tenga la pestaña: la
+> exportación combinada de RRHH escribe igual la hoja de Excepciones, y es la única vía por la que
+> RRHH las ve. `renderExc()` se protege sola con `if(!$('#tExc')) return;`.
+>
+> **Al quitar una pestaña hay que blindar primero lo compartido.** Esta operación rompió el proyecto
+> dos veces (borró ocho helpers, después los duplicó). Las guardas —`keep()` con select ausente,
+> `renderExc()` sin tabla, el salto del chip de novedad, el cableado de los filtros— van **idénticas
+> en los dos archivos**, nunca solo en el que perdió la pestaña: eso sería abrir una divergencia.
+>
+> **El mock de DOM debe devolver `null` para lo que el archivo no declara.** Un stub permisivo que
+> devuelve un elemento falso para todo enmascara exactamente el error que se está buscando. Ver la
+> sección de validación.
+
 > **Asistencia pasó a ser compartida (sept-2026).** El usuario la pidió también en la versión
 > RRHH, así que `AS_LABEL`, `ASISTENCIA`, `computeAsistencia`, `asisFiltrado`, `renderAsistencia` y
 > `aoaAsistencia` viven ahora en los DOS archivos y entran en la lista de arriba. KPI y Glosario
@@ -84,9 +109,6 @@ checkReady, hook, runCalc
 ### Funciones exclusivas de `reporte-horas.html` (NO existen en la versión RRHH, a propósito)
 
 ```
-KPI_EXCL, KPI_EXCLUIDOS_ULTIMO
-kpiCalcular, pct, kpiPorDepto, kpiFiltrarEmpleados, barPath, svgKpiChart,
-  renderKpi, aoaKpiDep, aoaKpiEmp
 renderGlosario
 ```
 
@@ -662,7 +684,15 @@ El patrón usado en toda la sesión, y el que hay que seguir para cualquier camb
    // los tres deben dar 0 siempre
    ```
 5. **Si el cambio toca el motor compartido, repetir los pasos 1 a 4 en los dos archivos.**
-6. Para cambios de interfaz que el usuario deba juzgar visualmente (un gráfico, un color, un layout),
+6. **El mock debe devolver `null` para los elementos que el archivo NO declara.** Un stub que
+   devuelve un elemento falso para cualquier selector enmascara justo el fallo que se busca cuando
+   una versión no tiene una pestaña. El patrón usado:
+   ```js
+   const existe = sel => { const id=/^#([\w-]+)/.exec(sel.trim());
+     return id ? fuente.includes(`id="${id[1]}"`) : true; };
+   querySelector: s => existe(s) ? mkEl(s) : null
+   ```
+7. Para cambios de interfaz que el usuario deba juzgar visualmente (un gráfico, un color, un layout),
    decirlo explícitamente: la verificación hecha fue lógica y estructural, no visual.
 
 ---
