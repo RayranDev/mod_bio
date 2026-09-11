@@ -259,7 +259,7 @@ git — ver `.gitignore`). Nombres típicos (el prefijo/timestamp varía en cada
   departamento → 0, y las 52 excepciones bloqueantes B-14 ("empleado sin cargo") desaparecen porque
   Renuncia sí trae el cargo.
 - **La llave del archivo de Renuncia viene pegada:** la columna `Empleado` trae el id y el nombre en
-  una sola celda (`"9094 BRAYAN EDUARDO"`). **No hay columna de id limpia.** Se separa con
+  una sola celda (`"9999 NOMBRE APELLIDO"`). **No hay columna de id limpia.** Se separa con
   `/^(\d+)\s+(.*)$/`; los 483 registros parsean bien hoy, pero es frágil: un id con letras rompe el
   regex silenciosamente (la fila se ignora, no lanza error).
 - **`Branch` en las marcaciones ES la `Compañía` del maestro.** Verificado sobre los 1.039 activos con

@@ -1019,7 +1019,7 @@ function buildModel(){
      estan ahi: sin este archivo sus marcaciones caen en huerfanos (A-10) o entran a
      medias por el Horario, sin departamento y por tanto invisibles a los filtros.
      Ojo con la llave: la columna "Empleado" trae el id y el nombre PEGADOS en una sola
-     celda ("9094 BRAYAN EDUARDO"). No hay columna de id limpia; se separa por regex. */
+     celda ("9999 NOMBRE APELLIDO"). No hay columna de id limpia; se separa por regex. */
   if(DATA.ren) DATA.ren.rows.forEach(r=>{
     const crudo = String(pick(r,'^empleado$','^empleado ','^empleado id')||'').trim();
     const m = /^(\d+)\s+(.*)$/.exec(crudo);
