@@ -1781,9 +1781,24 @@ function compute(M, cfg){
     const raw = Object.fromEntries(CKEYS.map(k=>[k,0]));            // minutos exactos del ciclo
     rows.forEach(r=>{
       const festivo = esFestivo(r.tipoDia);
+      /* El tipo de dia se evalua por la fecha DEL TRAMO, no por la del turno.
+         Un turno nocturno que arranca un festivo cruza a un dia ordinario a las 00:00:
+         a partir de ahi ya es el dia siguiente y el recargo festivo deja de aplicar.
+         Caso real: lunes 2026-08-17 (Asuncion), turno 18:00-06:00. Las horas de 19:00 a
+         medianoche son recargo nocturno festivo; las de medianoche a 06:00 son recargo
+         nocturno comun, porque el martes 18 no es festivo.
+         atomize() ya corta en medianoche y deja `t.iso` con la fecha de cada tramo — lo
+         unico que faltaba era mirarla. Se memoiza por fecha: un dia parte en pocos tramos
+         pero el ciclo entero son decenas de miles. */
+      const fesPorDia = new Map([[r.iso, festivo]]);
+      const fesDe = iso => {
+        if(!iso) return festivo;
+        if(!fesPorDia.has(iso)) fesPorDia.set(iso, esFestivo(dayType(iso, !!r.W, cfg).kind));
+        return fesPorDia.get(iso);
+      };
       const acum = Object.fromEntries(CKEYS.map(k=>[k,0]));
       (r.tramos||[]).forEach(t=>{
-        const k = classify(festivo, t.extra, t.noct);
+        const k = classify(fesDe(t.iso), t.extra, t.noct);
         if(k) acum[k]+=t.min;
         if(t.inferido) r.inferido = true;
       });
