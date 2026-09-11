@@ -320,6 +320,10 @@
       <input type="number" id="cLactMin" value="60" min="0"></div>
     <div><label class="f">Avisar si un tránsito interior supera (min) <span class="muted">(B-16)</span></label>
       <input type="number" id="cTransAviso" value="120" min="0"></div>
+    <div><label class="f">Prefijo de turnos de solo extras <span class="muted">(T-EXTRA)</span></label>
+      <input type="text" id="cExtraPref" value="T_EXTRA"></div>
+    <div><label class="f">Paso de redondeo en turnos de extras (min) <span class="muted">(T-EXTRA)</span></label>
+      <input type="number" id="cExtraPaso" value="30" min="1"></div>
     <div><label class="f">Sobretiempo: minutos para la primera media hora</label>
       <input type="number" id="cEscPrimer" value="25" min="0"></div>
     <div><label class="f">Sobretiempo: gracia para cada media hora siguiente (min)</label>
@@ -675,6 +679,10 @@ const NOV = {
    q:'Cada biometrico tiene un rol que decide como se lee un hueco entre marcaciones.',
    p:'Porteria = salio de la empresa, el hueco pesa completo como pendiente. Descanso = cafe, se perdona hasta el tope diario. Transito interior = nunca salio, el hueco no genera pendiente.',
    a:'El rol se sugiere por el nombre del dispositivo y se puede corregir a mano; queda guardado en este navegador. Un dispositivo sin clasificar se trata como Descanso (el punto medio, con tope) y se avisa arriba.'},
+ 'T-EXTRA':{s:'INFO',t:'Turno de solo extras',
+   q:'El turno de este dia es de solo extras: todo el tiempo trabajado se paga como sobretiempo.',
+   p:'Su codigo empieza por el prefijo parametrizado. Estos turnos no tienen jornada ordinaria que cumplir.',
+   a:'No hay jornada fija ni horas pendientes, y no corre la escalera de 25 minutos. El calculo toma la PRIMERA y la ULTIMA marcacion del dia y lleva cada una a la media hora mas cercana; un hueco en el medio no se descuenta. Si el tiempo entre las dos medias horas da cero (menos de un cuarto de hora), el dia no acredita nada.'},
  'E-04':{s:'INFO',t:'Tiempo de lactancia reconocido',
    q:'Este dia se le reconocieron minutos de lactancia como tiempo trabajado.',
    p:'El turno asignado es de lactancia (su codigo empieza por el prefijo parametrizado) y la empleada salio y volvio a marcar dentro de su jornada.',
@@ -1168,6 +1176,23 @@ function topeCafe(W, cfg){
   return (declarado>0 && declarado < cfg.descMin) ? declarado : cfg.cafeAdm;
 }
 
+/** Turno de SOLO EXTRAS, por prefijo de codigo (cfg.extraPref, default T_EXTRA).
+ *  Todo lo trabajado en un turno asi es sobretiempo: no hay jornada fija que cumplir,
+ *  asi que tampoco hay horas pendientes ni escalera de 25 minutos. */
+function esTurnoExtra(W, cfg){
+  return !!(W && cfg.extraPref && String(W.code||'').startsWith(cfg.extraPref));
+}
+
+/** Lleva una marca de tiempo a la media hora MAS CERCANA (cfg.extraPaso, default 30).
+ *  Es simetrico a proposito: 07:12 baja a 07:00 y 07:20 sube a 07:30. Redondea tanto a
+ *  favor como en contra, que es como se acordo la regla.
+ *  `ts` es dnum(iso)*1440+minuto, y 1440 es multiplo de 30, asi que redondear el
+ *  absoluto equivale a redondear el minuto del dia — sin riesgo de correr la fecha. */
+function pasoExtra(ts, cfg){
+  const p = (cfg && cfg.extraPaso > 0) ? cfg.extraPaso : 30;
+  return Math.round(ts / p) * p;
+}
+
 /** E-04: turno de lactancia, identificado por el prefijo de su codigo (cfg.lactPref).
  *  Se decidio NO leerlo de la columna Descanso del turno: una lactancia de 60 min choca
  *  de frente con el umbral de almuerzo (cfg.descMin, tambien 60), y el motor la
@@ -1262,6 +1287,7 @@ function readConfig(){
     cafeAdm: +v('cCafeAdm')||0,
     lactPref: (v('cLactPref')||'').trim(), lactMin: +v('cLactMin')||0,
     transAviso: +v('cTransAviso')||0,
+    extraPref: (v('cExtraPref')||'').trim(), extraPaso: +v('cExtraPaso')||30,
     semIni: +v('cSemIni')||0
   };
   cfg.corteOn = cfg.corte && cfg.fin >= cfg.corte;      // H-06
@@ -1507,6 +1533,25 @@ function compute(M, cfg){
         r.iv.forEach(p=>atomize(p.ini,p.fin,cfg,cortes)
           .forEach(t=>r.tramos.push({...t, extra:false, inferido:p.inferido})));
         if(!r.flags.includes('CONFIANZA')) r.flags.push('CONFIANZA');
+      } else if(esTurnoExtra(r.W, cfg)){
+        /* Turno de solo extras. Se ignora la ventana del turno para el calculo: manda la
+           PRIMERA y la ULTIMA marcacion del dia, cada una llevada a la media hora mas
+           cercana. Si la persona salio y volvio en el medio, ese hueco NO se descuenta:
+           la regla acordada mira los dos extremos, no los tramos. */
+        r.turnoExtra = true;
+        r.jornadaFijaMin = 0; r.dentroMin = 0; r.pendienteMin = 0;
+        r.cafePagadoMin = 0; r.topeCafeMin = 0; r.lactPagadoMin = 0; r.topeLactMin = 0;
+        r.transitoMin = 0; r.ausenciaMin = 0; r.huecosMin = 0;
+        r.huecos = {cafe:0, transito:0, ausencia:0, total:0, maxTransito:0};
+        const ps = r.pares.slice().sort((a,b)=>a.ini-b.ini);
+        r.extraIni = pasoExtra(ps[0].ini, cfg);
+        r.extraFin = pasoExtra(ps[ps.length-1].fin, cfg);
+        r.excesoMin = Math.max(0, r.extraFin - r.extraIni);
+        r.extraCredMin = r.excesoMin;
+        r.tramos = r.excesoMin
+          ? atomize(r.extraIni, r.extraFin, cfg).map(t=>({...t, extra:true}))
+          : [];
+        if(!r.flags.includes('T-EXTRA')) r.flags.push('T-EXTRA');
       } else if(r.W){
         const cortes = [r.W.ini, r.W.fin];
         const alm = quitarDescanso([{ini:r.W.ini, fin:r.W.fin}], r.W, r.iso, cfg);
@@ -2502,6 +2547,7 @@ function celdaHora(r, cual){
 /** Celda de horas pendientes: lo que falto para completar el turno y aun asi se pago. */
 function celdaPendiente(r){
   if(r.confianza) return '<td class="num muted" data-nov="CONFIANZA">—</td>';
+  if(r.turnoExtra) return '<td class="num muted" data-nov="T-EXTRA">—</td>';
   const min = r.pendienteMin||0;
   const cafe = r.cafePagadoMin||0;
   const lact = r.lactPagadoMin||0;
@@ -2811,7 +2857,7 @@ function aoaDet(e){
   const head = ['COD_EMPLEADO','NOMBRE','FECHA','DIA','TIPO DE DIA','TURNO','PROGRAMADO',
                 'MARCACIONES','MARCACIONES DESCARTADAS','ENTRO','SALIO',
                 'MIN TARDE ENTRADA','MIN ANTES SALIDA','ALMUERZO',
-                'HORAS TRABAJADAS','JORNADA FIJA','MIN CAFE RECONOCIDO','MIN LACTANCIA RECONOCIDO','MIN TRANSITO INTERIOR','MIN AUSENCIA POR PORTERIA','HORAS PENDIENTES','HORAS EXTRA','EXTRA NO AUTORIZADA',
+                'HORAS TRABAJADAS','JORNADA FIJA','MIN CAFE RECONOCIDO','MIN LACTANCIA RECONOCIDO','MIN TRANSITO INTERIOR','MIN AUSENCIA POR PORTERIA','VENTANA REDONDEADA (T-EXTRA)','HORAS PENDIENTES','HORAS EXTRA','EXTRA NO AUTORIZADA',
                 'PERFIL','ACUMULADO SEMANA','TOTAL SEMANA','UMBRAL SEMANA','AUTORIZACION',
                 ...cols.map(c=>c.head), 'INFERIDO','NOVEDADES','EXPLICACION'];
   const body = e.ciclo.map(r=>[
@@ -2822,6 +2868,7 @@ function aoaDet(e){
     r.almuerzo||'',
     r.workMin?+(r.workMin/60).toFixed(2):'', r.ordH||'',
     r.cafePagadoMin||'', r.lactPagadoMin||'', r.transitoMin||'', r.ausenciaMin||'',
+    r.turnoExtra ? `${hhmm(r.extraIni%1440)}–${hhmm(r.extraFin%1440)}` : '',
     r.pendienteMin?+(r.pendienteMin/60).toFixed(2):'',
     r.noAutorizado?'':(r.extraH||''),
     r.noAutorizado?Object.values(r.concNoAut||{}).reduce((a,b)=>a+b,0):'',
