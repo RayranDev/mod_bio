@@ -525,6 +525,35 @@ realmente trabajado por un dato mal registrado en BioTime. Consecuencias:
 Cuando RRHH termine de corregir las fechas de retiro en BioTime, se puede endurecer esto; hoy sería
 prematuro y perdería horas legítimas.
 
+**El tipo de día se evalúa POR TRAMO, no por turno (bug real, sept-2026).** `atomize()` corta en
+cada medianoche y le estampa a cada tramo su propia fecha (`t.iso`), pero la clasificación hacía
+`const festivo = esFestivo(r.tipoDia)` **una sola vez por fila** y se lo aplicaba a todos los tramos.
+Consecuencia: un turno nocturno que arranca un festivo arrastraba el recargo festivo hasta el final,
+aunque a las 00:00 ya fuera otro día.
+
+Caso real reportado por el usuario — lunes **2026-08-17** (Asunción), turno `T_12H_NOCHE` 18:00–06:00,
+almuerzo 22:00–23:00:
+
+| Tramo | Fecha real | Antes | Ahora |
+|---|---|---|---|
+| 18:00–19:00 diurno | 17 (festivo) | `REC_F` 1 h | `REC_F` 1 h |
+| 19:00–22:00 nocturno | 17 (festivo) | `REC_FN` | `REC_FN` |
+| 23:00–00:00 nocturno | 17 (festivo) | `REC_FN` | `REC_FN` |
+| 00:00–06:00 nocturno | **18 (ordinario)** | `REC_FN` | **`REC_N` 6 h** |
+
+Resultado: `REC_F=1 · REC_FN=10` pasó a `REC_F=1 · REC_FN=4 · REC_N=6`. La hora que separa el 4 del 5
+que uno esperaría a ojo es el **almuerzo 22:00–23:00**, que cae del lado del lunes.
+
+**El bug estaba en las dos direcciones, y la otra le costaba al empleado:** 235 días *ganaron* recargo
+festivo que nunca se les pagó (1.421 h) — gente que trabajó la noche del 6 de agosto y cruzó al
+festivo del 7, facturada como noche común. La dirección reportada son 424 días y 2.555 h.
+
+**No es un recálculo, es una reclasificación:** la suma de todos los conceptos es idéntica antes y
+después (70.662,5 h). Si un cambio futuro en esta zona mueve esa suma, es un bug.
+
+El `festivo` por fecha se memoiza en un `Map` por fila (`fesPorDia`): un día son pocos tramos, pero el
+ciclo entero son decenas de miles.
+
 **Segmentación temporal (`atomize`).** Parte un intervalo `[a,b)` en tramos atómicos cortando en cada
 medianoche, en el inicio/fin de la franja nocturna, y en cualquier frontera adicional que se le pase
 (típicamente el inicio/fin de la jornada programada, para separar "dentro de turno" de "fuera de
