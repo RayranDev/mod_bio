@@ -1982,6 +1982,7 @@ function initPop(){
   document.addEventListener('click', ev=>{
     const el = ev.target.closest('.tag[data-nov]');
     if(!el || !RESULT) return;
+    if(!$('#tab-exc')){ pop.style.display='none'; return; }
     $('#fExc').value=''; $('#qExc').value = el.dataset.nov;
     showTab('exc'); renderExc(); pop.style.display='none';
   });
@@ -2469,6 +2470,7 @@ function fillFiltros(){
   RESULT.byEmp.forEach(e=>{ if(e.emp.empresa) cias.add(e.emp.empresa);
                             if(e.emp.depto)   deps.add(e.emp.depto); });
   const keep = (sel, vals, todos)=>{
+    if(!sel) return;                 // la pestana de ese filtro no existe en esta version
     const prev = sel.value;
     sel.innerHTML = `<option value="">${todos}</option>` +
       [...vals].sort((a,b)=>a.localeCompare(b,'es')).map(v=>`<option>${esc(v)}</option>`).join('');
@@ -2740,6 +2742,7 @@ function renderDet(){
 }
 
 function renderExc(){
+  if(!$('#tExc')) return;            // la version RRHH no tiene pestana de Excepciones
   const f = $('#fExc').value, q = $('#qExc').value.trim().toLowerCase();
   const dep = $('#fExcDep').value;
   const list = RESULT.exc
@@ -3056,11 +3059,13 @@ document.addEventListener('DOMContentLoaded',()=>{
     localStorage.setItem('mb_dispositivos','{}'); renderDisp(); };
   $('#btnDispOk').onclick   = ()=>{ guardarDisp(); $('#dlgDisp').close(); if(MODEL) runCalc(); };
   $('#fSinConc').onchange = ()=>RESULT&&renderCons();
-  $('#fExcDep').onchange = ()=>RESULT&&renderExc();
+  if($('#tab-exc')) $('#fExcDep').onchange = ()=>RESULT&&renderExc();
   $('#fClear').onclick   = ()=>{ $('#fCia').value=''; $('#fDepto').value='';
     $('#fPerfil').value=''; $('#qCons').value=''; $('#fSinConc').checked=false; RESULT&&renderCons(); };
-  $('#fExc').onchange = ()=>RESULT&&renderExc();
-  $('#qExc').oninput   = ()=>RESULT&&renderExc();
+  if($('#tab-exc')){
+    $('#fExc').onchange = ()=>RESULT&&renderExc();
+    $('#qExc').oninput  = ()=>RESULT&&renderExc();
+  }
   $('#selEmp').onchange = e=>{ CUR_EMP=e.target.value;
     $('#selPerfil').value = PERFILES[CUR_EMP]||'';
     $('#chkConfianza').checked = CONFIANZA.has(CUR_EMP); renderDet(); };
@@ -3107,7 +3112,8 @@ document.addEventListener('DOMContentLoaded',()=>{
     save({Consolidado:aoaCons(), Detalle:[head,...body],
           Excepciones:aoaExc(filtroHay()?ids:null)},
          `Reporte_Horas_${stamp()}.xlsx`); };
-  $('#expExc').onclick  = ()=>RESULT&&save({Excepciones:aoaExc()},`Excepciones_${stamp()}.xlsx`);
+  if($('#expExc'))
+    $('#expExc').onclick = ()=>RESULT&&save({Excepciones:aoaExc()},`Excepciones_${stamp()}.xlsx`);
   $('#fCiaAs').onchange   = ()=>ASISTENCIA&&renderAsistencia();
   $('#fDeptoAs').onchange = ()=>ASISTENCIA&&renderAsistencia();
   $('#qAs').oninput       = ()=>ASISTENCIA&&renderAsistencia();

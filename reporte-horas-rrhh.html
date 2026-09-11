@@ -167,6 +167,54 @@
   #toast{position:fixed;right:16px;bottom:16px;background:#16202c;color:#fff;padding:9px 14px;
          border-radius:5px;font-size:12px;opacity:0;transition:.25s;pointer-events:none;z-index:99}
   #toast.on{opacity:1}
+  /* Cobertura de datos: tres proporciones sobre el mismo denominador, para poder
+     compararlas de un vistazo. Meter con track del mismo ramp (ver dataviz). */
+  .cober{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px;margin-bottom:12px}
+  .cober>div{background:#fff;border:1px solid var(--line);border-radius:6px;padding:10px 12px}
+  .cober .k{font-size:11px;color:var(--muted);margin-bottom:5px}
+  .cober .v{font-size:21px;font-weight:600;line-height:1.1}
+  .cober .v small{font-size:12px;font-weight:500;color:var(--muted);margin-left:5px}
+  .cober .meter{height:6px;border-radius:3px;margin-top:8px;overflow:hidden}
+  .cober .meter>span{display:block;height:100%;border-radius:3px}
+  .cober .m-ok{background:var(--ok-soft)}      .cober .m-ok>span{background:var(--ok)}
+  .cober .m-warn{background:var(--warn-soft)}  .cober .m-warn>span{background:var(--warn)}
+  .cober .m-err{background:var(--err-soft)}    .cober .m-err>span{background:var(--err)}
+  .cober .falta{font-size:11px;color:var(--muted);margin-top:6px}
+  #kpiChartWrap{overflow-y:auto;overflow-x:hidden;border:1px solid var(--line);border-radius:6px;
+    background:#fff;padding:8px 4px}
+  #kpiChart{display:block;width:100%;height:auto}
+  #kpiChart text{font-family:-apple-system,"Segoe UI",Roboto,sans-serif}
+  #kpiChart .dep-label{font-size:10.5px;fill:var(--muted)}
+  #kpiChart .axis-label{font-size:9.5px;fill:var(--muted)}
+  #kpiChart .val-label{font-size:10px;fill:var(--ink);font-weight:600}
+  #kpiChart .panel-title{font-size:11.5px;fill:var(--ink);font-weight:600}
+  #kpiChart .panel-sub{font-size:9.5px;fill:var(--muted)}
+  #kpiChart .panel-note{font-size:9.5px;fill:var(--muted)}
+  #kpiChart .bar{cursor:help}
+  #kpiChart .bar:hover{filter:brightness(1.12)}
+  #kpiChart .hit{fill:transparent;cursor:help}
+  /* Cabecera que solo existe en el PDF: sin ella la hoja impresa no dice de que ciclo
+     ni de que filtro salio, y un reporte sin contexto no sirve para decidir. */
+  #kpiPrintHead{display:none}
+  @media print{
+    @page{ size:A4 landscape; margin:11mm }
+    body *{ visibility:hidden }
+    body.print-kpi #tab-kpi, body.print-kpi #tab-kpi *{ visibility:visible }
+    body.print-kpi #tab-kpi{ position:absolute; left:0; top:0; width:100%; display:block!important }
+    body.print-kpi #kpiPrintHead{ display:block; margin-bottom:10px }
+    body.print-kpi #kpiPrintHead h2{ margin:0 0 2px; font-size:15px }
+    body.print-kpi .bar-noprint{ display:none!important }
+    /* los contenedores con scroll propio se expanden: en papel no hay scroll */
+    body.print-kpi #kpiChartWrap, body.print-kpi .scroll{
+      max-height:none!important; overflow:visible!important; border:0 }
+    body.print-kpi table{ font-size:9px }
+    body.print-kpi .cober{ break-inside:avoid }
+    body.print-kpi #kpiChartWrap{ break-inside:avoid }
+  }
+  #tAsis td.incompleto{box-shadow:inset 0 0 0 2px var(--warn)}
+  #toast{position:fixed;right:16px;bottom:16px;background:#16202c;color:#fff;padding:9px 14px;
+         border-radius:5px;font-size:12px;opacity:0;transition:.25s;pointer-events:none;z-index:99}
+  #toast.on{opacity:1}
 </style>
 <style id="colDetStyle"></style>
 </head>
@@ -387,8 +435,8 @@
   <button data-tab="cons" class="on">Consolidado</button>
   <button data-tab="det">Detalle por empleado</button>
   <button data-tab="cal">Calendario de turnos</button>
-  <button data-tab="exc">Excepciones</button>
   <button data-tab="asis">Asistencia</button>
+  <button data-tab="kpi">KPI Cumplimiento</button>
 </div>
 
 <section id="tab-cons" class="tabwrap on">
@@ -459,19 +507,6 @@
   </div>
 </section>
 
-<section id="tab-exc" class="tabwrap">
-  <div class="bar">
-    <select id="fExcDep" style="max-width:250px"><option value="">Todos los departamentos</option></select>
-    <input type="text" id="qExc" placeholder="Novedad, código o nombre…" style="max-width:250px">
-    <select id="fExc" style="max-width:230px"><option value="">Todas las severidades</option>
-      <option value="BLOQ">Bloqueantes</option><option value="ADV">Advertencias</option>
-      <option value="INFO">Informativas</option></select>
-    <span class="sp"></span>
-    <button id="expExc">Exportar excepciones (Excel)</button>
-  </div>
-  <div class="scroll"><table id="tExc"><thead></thead><tbody></tbody></table></div>
-</section>
-
 <section id="tab-asis" class="tabwrap">
   <div class="bar">
     <select id="fCiaAs" style="max-width:170px"><option value="">Todas las compañías</option></select>
@@ -492,6 +527,63 @@
     Pase el cursor sobre una celda para ver el detalle.
     Una jornada nocturna sin turno asignado (entrada de noche, salida de madrugada) cuenta como un solo día:
     el día en que empezó.
+  </p>
+</section>
+
+<section id="tab-kpi" class="tabwrap">
+  <div class="note bar-noprint">
+    Estos tres indicadores existen para el seguimiento del proceso de implementación: encontrar a quién
+    hay que asignarle turno, a quién hay que recordarle marcar completo, y a quién hay que preguntarle
+    por qué no está viniendo. Ninguno de los tres implica automáticamente una sanción — cada fila se
+    valida antes de actuar.
+  </div>
+  <div class="bar bar-noprint">
+    <select id="fCiaKpi" style="max-width:170px"><option value="">Todas las compañías</option></select>
+    <!-- la barra se marca abajo como no imprimible -->
+    <select id="fDeptoKpi" style="max-width:250px"><option value="">Todos los departamentos</option></select>
+    <select id="fTipoKpi" style="max-width:230px">
+      <option value="">Los tres indicadores</option>
+      <option value="sinMarca">Turno sin marcaciones</option>
+      <option value="incompleto">Turno incompleto</option>
+      <option value="sinTurno">Marcó sin turno</option>
+    </select>
+    <input type="number" id="fMinKpi" value="1" min="1" style="max-width:70px" title="Mínimo de incidencias">
+    <label class="f" style="margin:0">mín. incidencias</label>
+    <input type="text" id="qKpi" placeholder="Código o nombre…" style="max-width:180px">
+    <button id="fClearKpi">Limpiar</button>
+    <span class="sp"></span>
+    <button id="expKpi">Exportar KPI (Excel)</button>
+    <button id="pdfKpi">Exportar KPI (PDF)</button>
+  </div>
+  <div class="bar">
+    <label class="f" style="margin:0">Excluir de este reporte (cuentas de prueba, tarjetas manuales, etc.)</label>
+    <input type="text" id="fExclDeptos" placeholder="Departamentos separados por coma, ej: TARJETA, SNAPIT" style="max-width:340px">
+    <span id="fInfoExclKpi" class="muted" style="font-size:11px"></span>
+    <span class="muted" style="font-size:11px" data-tip="Estas personas no son evaluables como empleados de planta: no tienen un turno individual que cumplir. Se excluyen SOLO de este reporte de cumplimiento — siguen visibles en Consolidado, Detalle, Calendario y Asistencia.">
+      ¿por qué excluir por departamento?</span>
+  </div>
+
+  <div id="kpiPrintHead"></div>
+  <div class="cober" id="kpiCober"></div>
+  <div class="note" id="kpiCobertura" hidden></div>
+  <div class="kpi" id="kpiTot"></div>
+
+  <h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin:14px 0 8px">
+    General &middot; por departamento
+  </h3>
+  <div id="kpiChartWrap" style="max-height:60vh;margin-bottom:10px"><div id="kpiChart"></div></div>
+  <p class="muted" style="font-size:11px;margin:0 0 10px">
+    Barra corta y gris = sin datos suficientes para calcular ese porcentaje en ese departamento
+    (ver «Con marca» / «Con turno»), no 0% de incidencia. Pase el cursor sobre una barra para el detalle.
+  </p>
+  <div class="scroll" style="max-height:32vh"><table id="tKpiDep"><thead></thead><tbody></tbody></table></div>
+
+  <h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin:16px 0 8px">
+    Detalle &middot; por empleado
+  </h3>
+  <div class="scroll"><table id="tKpiEmp"><thead></thead><tbody></tbody></table></div>
+  <p class="muted" style="font-size:11px;margin-top:8px">
+    Clic en un departamento filtra el detalle a esa área. Clic en un empleado abre su detalle día por día.
   </p>
 </section>
 
@@ -762,6 +854,7 @@ const PERFILES  = JSON.parse(localStorage.getItem('mb_perfiles')||'{}');
 const AUTOR     = JSON.parse(localStorage.getItem('mb_autor')||'{}');  // id -> [{ini,fin,estado,motivo}]
 /* Direccion, confianza y manejo (Art. 162 CST): no estan sujetos a la jornada maxima,
    asi que no generan extras ni horas pendientes. Se reportan sus horas trabajadas. */
+let KPI_EXCL = new Set(JSON.parse(localStorage.getItem('mb_kpi_excl')||'[]'));  // departamentos (mayúsculas) fuera del KPI
 let CONFIANZA = new Set(JSON.parse(localStorage.getItem('mb_confianza')||'[]'));
 /* Rol de cada biometrico. Override manual del usuario; lo que no este aqui se infiere
    del nombre con rolAuto(). */
@@ -1899,6 +1992,7 @@ function initPop(){
   document.addEventListener('click', ev=>{
     const el = ev.target.closest('.tag[data-nov]');
     if(!el || !RESULT) return;
+    if(!$('#tab-exc')){ pop.style.display='none'; return; }
     $('#fExc').value=''; $('#qExc').value = el.dataset.nov;
     showTab('exc'); renderExc(); pop.style.display='none';
   });
@@ -1955,6 +2049,340 @@ function aoaAsistencia(){
     ...dates.map(iso=>(e.dias.get(iso)||{}).estado||'') ]);
   return [head, ...body];
 }
+let KPI_EXCLUIDOS_ULTIMO = 0;
+function kpiCalcular(){
+  const cia = $('#fCiaKpi').value, dep = $('#fDeptoKpi').value, q = $('#qKpi').value.trim().toLowerCase();
+  const rows = [];
+  KPI_EXCLUIDOS_ULTIMO = 0;
+  ASISTENCIA.forEach(e=>{
+    if(cia && e.emp.empresa!==cia) return;
+    if(dep && e.emp.depto!==dep) return;
+    if(KPI_EXCL.has((e.emp.depto||'').toUpperCase())){ KPI_EXCLUIDOS_ULTIMO++; return; }
+    if(q && !e.emp.id.includes(q) && !e.emp.nombre.toLowerCase().includes(q)) return;
+    const sinMarca = e.resumen.F, incompleto = e.resumen.incompleto, sinTurno = e.resumen.S, asistio = e.resumen.A;
+    const conMarca = (MODEL.punches.get(e.emp.id)||[]).length>0;
+    const conTurno = (MODEL.sched.get(e.emp.id)||[]).some(s=>s.ini<=RESULT.cfg.fin && s.fin>=RESULT.cfg.ini);
+    /* diasProgramados: universo de días con turno asignado (asistió + no asistió).
+       diasEvaluables: eso más los días trabajados sin turno — el universo para "marcó sin turno". */
+    const diasProgramados = asistio + sinMarca;
+    const diasEvaluables  = diasProgramados + sinTurno;
+    rows.push({ emp:e.emp, sinMarca, incompleto, sinTurno, asistio, conMarca, conTurno,
+                diasProgramados, diasEvaluables, total: sinMarca+incompleto+sinTurno,
+                pctSinMarca:pct(sinMarca,diasProgramados), pctIncompleto:pct(incompleto,diasProgramados),
+                pctSinTurno:pct(sinTurno,diasEvaluables) });
+  });
+  return rows;
+}
+/** Porcentaje o null si el denominador es cero (sin datos para calcularlo, no "0% de incidencia"). */
+function pct(n, d){ return d>0 ? n/d*100 : null; }
+
+function kpiPorDepto(rows){
+  const g = new Map();
+  rows.forEach(r=>{
+    const k = r.emp.depto || '(sin departamento)';
+    if(!g.has(k)) g.set(k, {depto:k, sinMarca:0, incompleto:0, sinTurno:0, asistio:0,
+      diasProgramados:0, diasEvaluables:0, empleados:0, afectados:0, conMarca:0, conTurno:0});
+    const o = g.get(k);
+    o.sinMarca+=r.sinMarca; o.incompleto+=r.incompleto; o.sinTurno+=r.sinTurno; o.asistio+=r.asistio;
+    o.diasProgramados+=r.diasProgramados; o.diasEvaluables+=r.diasEvaluables;
+    o.empleados++; if(r.total>0) o.afectados++; if(r.conMarca) o.conMarca++; if(r.conTurno) o.conTurno++;
+  });
+  const deps = [...g.values()];
+  deps.forEach(o=>{
+    o.pctSinMarca    = pct(o.sinMarca,    o.diasProgramados);
+    o.pctIncompleto  = pct(o.incompleto,  o.diasProgramados);
+    o.pctSinTurno    = pct(o.sinTurno,    o.diasEvaluables);
+  });
+  return deps.sort((a,b)=>(b.sinMarca+b.incompleto+b.sinTurno)-(a.sinMarca+a.incompleto+a.sinTurno));
+}
+function kpiFiltrarEmpleados(rows){
+  const tipo = $('#fTipoKpi').value;
+  const min = Math.max(1, +$('#fMinKpi').value || 1);
+  return rows.filter(r=> tipo ? r[tipo]>=min : r.total>=min)
+             .sort((a,b)=> tipo ? b[tipo]-a[tipo] : b.total-a.total);
+}
+const fmtPct = p => p==null ? '—' : p.toFixed(1)+'%';
+const fmtN   = n => n.toLocaleString('es-CO');
+
+/** Barra horizontal redondeada solo del lado del dato (cuadrada en la base), como pide
+ *  la guía de marcas: nunca un rect con las 4 esquinas iguales para una barra que crece
+ *  desde una base fija. */
+function barPath(x0, y, w, h, r){
+  if(w<=0) return '';
+  const rr = Math.min(r, w/2, h/2);
+  return `M${x0},${y} H${x0+w-rr} Q${x0+w},${y} ${x0+w},${y+rr} V${y+h-rr} `+
+         `Q${x0+w},${y+h} ${x0+w-rr},${y+h} H${x0} Z`;
+}
+
+/** Gráfico de barras horizontales agrupadas: 3 series (categórico, no severidad) por
+ *  departamento, valor = porcentaje sobre el denominador correcto de cada indicador.
+ *  Paleta y specs de marca según la skill dataviz (references/palette.md,
+ *  marks-and-anatomy.md): 3 slots categóricos validados, barras <=24px, extremo
+ *  redondeado 4px / base cuadrada, gap de 2px, tooltip por barra vía el mismo sistema
+ *  data-tip que usa el resto del reporte. */
+/** Small multiples: un panel por indicador.
+ *
+ *  Por que no van las tres series juntas en un eje compartido: cada indicador se mide
+ *  contra un denominador distinto (dias programados vs dias evaluables, y difieren en 22
+ *  de 25 departamentos). Ponerlas lado a lado en el mismo 0-100% invita a comparar
+ *  barras que no son comparables — el mismo error que un grafico de doble eje.
+ *
+ *  Y cada panel se ordena por SU propio valor. El grafico anterior dibujaba porcentajes
+ *  pero heredaba el orden por conteo absoluto de kpiPorDepto(), asi que el peor en tasa
+ *  aparecia decimo. Un ranking cuyo orden no es el que se lee es peor que no tenerlo. */
+function svgKpiChart(deps){
+  const SERIES = [
+    { key:'pctSinMarca',   color:'var(--cat-1)', label:'Turno sin marca',
+      den:'diasProgramados', num:'sinMarca',  denLabel:'días programados' },
+    { key:'pctIncompleto', color:'var(--cat-2)', label:'Turno incompleto',
+      den:'diasProgramados', num:'incompleto',denLabel:'días programados' },
+    { key:'pctSinTurno',   color:'var(--cat-3)', label:'Marcó sin turno',
+      den:'diasEvaluables', num:'sinTurno',  denLabel:'días evaluables' },
+  ];
+  const TOPE = 10;                       // el resto vive en la tabla de abajo
+  const W = 900, labelW = 232, padR = 54;
+  const plotW = W - labelW - padR;
+  const barH = 13, gapRow = 7;
+  const tituloH = 40, notaH = 18, panelGap = 20;
+  const x0 = labelW;
+  const xAt = p => x0 + (p/100)*plotW;
+  const trunc = t => t.length>32 ? t.slice(0,31)+'…' : t;
+
+  /* Cada panel se queda solo con los departamentos que TIENEN valor para su indicador,
+     ordenados de mayor a menor. Los que no tienen denominador no se dibujan como una
+     rayita invisible: se cuentan en una nota al pie del panel. */
+  const paneles = SERIES.map(s=>{
+    const con = deps.filter(d=>d[s.key]!=null).sort((a,b)=>b[s.key]-a[s.key]);
+    return { s, filas: con.slice(0,TOPE), ocultos: Math.max(0, con.length-TOPE),
+             sinDatos: deps.length-con.length };
+  });
+  const altoPanel = p => tituloH + Math.max(p.filas.length,1)*(barH+gapRow) + notaH;
+  const H = paneles.reduce((a,p)=>a+altoPanel(p),0) + panelGap*(paneles.length-1) + 6;
+
+  let svg = `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" role="img" `+
+            `aria-label="Porcentaje de incidencias por departamento, un panel por indicador">`;
+  let y = 4;
+
+  paneles.forEach(p=>{
+    const s = p.s;
+    const yPlot = y + tituloH;
+    const yFin  = yPlot + Math.max(p.filas.length,1)*(barH+gapRow);
+
+    svg += `<text class="panel-title" x="0" y="${y+13}">${esc(s.label)}</text>`;
+    svg += `<text class="panel-sub" x="0" y="${y+27}">sobre ${esc(s.denLabel)}</text>`;
+
+    // grilla: hairlines solidas, un tono por encima de la superficie
+    [0,25,50,75,100].forEach(g=>{
+      const gx = xAt(g);
+      svg += `<line x1="${gx}" y1="${yPlot-9}" x2="${gx}" y2="${yFin}" `+
+             `stroke="var(--chart-grid)" stroke-width="1"/>`;
+      svg += `<text class="axis-label" x="${gx}" y="${yPlot-13}" text-anchor="middle">${g}%</text>`;
+    });
+    svg += `<line x1="${x0}" y1="${yPlot-9}" x2="${x0}" y2="${yFin}" `+
+           `stroke="var(--chart-axis)" stroke-width="1"/>`;
+
+    if(!p.filas.length){
+      svg += `<text class="panel-note" x="${x0+6}" y="${yPlot+barH}">`+
+             `Ningún departamento tiene datos suficientes para este indicador.</text>`;
+    }
+
+    p.filas.forEach((d,i)=>{
+      const yb = yPlot + i*(barH+gapRow);
+      const val = d[s.key];
+      const w = Math.max((val/100)*plotW, val>0 ? 2 : 0);
+      const tip = `${esc(s.label)} — ${esc(d.depto)}: ${fmtPct(val)} `+
+                  `(${fmtN(d[s.num])} de ${fmtN(d[s.den])} ${s.denLabel}).`;
+      svg += `<text class="dep-label" x="${labelW-10}" y="${yb+barH-2.5}" text-anchor="end">`+
+             `<title>${esc(d.depto)}</title>${esc(trunc(d.depto))}</text>`;
+      svg += `<path class="bar" d="${barPath(x0,yb,w,barH,4)}" fill="${s.color}" `+
+             `data-tip="${tip}"><title>${tip}</title></path>`;
+      /* Etiqueta directa SOLO en el peor de cada panel: el resto lo lleva el eje, el
+         tooltip y la tabla de abajo. Antes se dibujaban 45 numeros. */
+      if(i===0) svg += `<text class="val-label" x="${x0+w+6}" y="${yb+barH-2.5}">${fmtPct(val)}</text>`;
+      /* area de hover generosa: la barra fina no puede ser el blanco */
+      svg += `<rect class="hit" x="${x0}" y="${yb-gapRow/2}" width="${plotW}" `+
+             `height="${barH+gapRow}" data-tip="${tip}"/>`;
+    });
+
+    const notas = [];
+    if(p.ocultos)  notas.push(`${p.ocultos} departamento(s) más en la tabla de abajo`);
+    if(p.sinDatos) notas.push(`${p.sinDatos} sin datos suficientes`);
+    if(notas.length)
+      svg += `<text class="panel-note" x="${x0}" y="${yFin+12}">${esc(notas.join(' · '))}</text>`;
+
+    y = yFin + notaH + panelGap;
+  });
+
+  svg += `</svg>`;
+  return svg;
+}
+
+/** Cobertura de los datos de entrada, que NO es lo mismo que cumplimiento.
+ *  Las tres proporciones van sobre el MISMO denominador (las personas en pantalla)
+ *  justamente para poder enfrentarlas: si "con turno" y "con marcaciones" no coinciden,
+ *  la diferencia es un hueco de datos, no gente incumpliendo. La tercera es la unica
+ *  poblacion sobre la que un indicador de cumplimiento significa algo. */
+function renderCobertura(rows){
+  const n = rows.length;
+  const conTurno = rows.filter(r=>r.conTurno).length;
+  const conMarca = rows.filter(r=>r.conMarca).length;
+  const ambas    = rows.filter(r=>r.conTurno && r.conMarca).length;
+  const nivel = p => p>=95 ? 'm-ok' : p>=75 ? 'm-warn' : 'm-err';
+  const tile = (etq, v, tip, faltaTxt) => {
+    const p = n>0 ? v/n*100 : 0;
+    const falta = n - v;
+    return `<div data-tip="${esc(tip)}">
+      <div class="k">${esc(etq)}</div>
+      <div class="v">${v}<small>de ${n} · ${n>0?p.toFixed(1):'—'}%</small></div>
+      <div class="meter ${nivel(p)}"><span style="width:${n>0?p.toFixed(1):0}%"></span></div>
+      <div class="falta">${falta>0 ? esc(faltaTxt.replace('{n}', falta)) : 'cobertura completa'}</div>
+    </div>`;
+  };
+  $('#kpiCober').innerHTML = n===0 ? '' : [
+    tile('Personas con turno programado', conTurno,
+      'Cuantas de las personas en pantalla tienen alguna asignacion de turno que toque el ciclo. '+
+      'Sin turno no hay contra que medir: esos dias no son incumplimiento, son programacion faltante.',
+      '{n} sin ninguna programacion de turno'),
+    tile('Personas con marcaciones', conMarca,
+      'Cuantas registraron al menos una marcacion en el ciclo. Se compara contra la barra de arriba: '+
+      'si las dos no coinciden, la diferencia es un hueco de datos de una de las dos fuentes.',
+      '{n} sin ninguna marcacion'),
+    tile('Medibles: turno y marcaciones', ambas,
+      'Personas que tienen las DOS cosas. Es la unica poblacion sobre la que un indicador de '+
+      'cumplimiento significa algo; el resto primero necesita que se corrijan los datos de origen.',
+      '{n} fuera de medicion por datos incompletos'),
+  ].join('');
+}
+
+function renderKpi(){
+  if(!RESULT || !ASISTENCIA) return;
+  const rows = kpiCalcular();
+  renderCobertura(rows);
+  $('#fInfoExclKpi').textContent = KPI_EXCLUIDOS_ULTIMO
+    ? `${KPI_EXCLUIDOS_ULTIMO} excluidos` : '';
+  const tot = rows.reduce((s,r)=>({sinMarca:s.sinMarca+r.sinMarca, incompleto:s.incompleto+r.incompleto,
+    sinTurno:s.sinTurno+r.sinTurno, diasProgramados:s.diasProgramados+r.diasProgramados,
+    diasEvaluables:s.diasEvaluables+r.diasEvaluables}),
+    {sinMarca:0,incompleto:0,sinTurno:0,diasProgramados:0,diasEvaluables:0});
+  const pctSinMarcaTot   = pct(tot.sinMarca,   tot.diasProgramados);
+  const pctIncompletoTot = pct(tot.incompleto, tot.diasProgramados);
+  const pctSinTurnoTot   = pct(tot.sinTurno,   tot.diasEvaluables);
+  const afectados = rows.filter(r=>r.total>0).length;
+  const conMarca = rows.filter(r=>r.conMarca).length;
+  const conTurno = rows.filter(r=>r.conTurno).length;
+
+  const avisos = [];
+  if(rows.length && conMarca < rows.length)
+    avisos.push(`solo <b>${conMarca} de ${rows.length}</b> empleados tienen alguna marcación cargada en este
+      ciclo — los que no tienen ninguna aparecen con 100% de «turno sin marcaciones» porque su archivo de
+      marcaciones no fue importado, no porque hayan faltado`);
+  if(rows.length && conTurno < rows.length)
+    avisos.push(`solo <b>${conTurno} de ${rows.length}</b> empleados tienen alguna programación de turno
+      cargada que cubra este ciclo — los que no tienen ninguna aparecen con 100% de «marcó sin turno»
+      porque el archivo de Horario no cubre estas fechas para ellos, no porque nunca les asignen turno`);
+  $('#kpiCobertura').hidden = !avisos.length;
+  if(avisos.length) $('#kpiCobertura').innerHTML =
+    `<b>Cobertura de datos:</b> ${avisos.join('; además, ')}. Revise las columnas «Con marca» y
+     «Con turno» antes de actuar sobre alguien.`;
+
+  $('#kpiTot').innerHTML =
+    `<div data-tip="Del total de días con turno programado en el filtro activo, qué porcentaje quedó sin ninguna marcación. El primer sospechoso: probablemente no vino, o falta confirmar.">
+       <div class="k">Turno sin marca</div><div class="v">${fmtPct(pctSinMarcaTot)}</div>
+       <div class="muted" style="font-size:10px">${fmtN(tot.sinMarca)} de ${fmtN(tot.diasProgramados)} días programados</div></div>
+     <div data-tip="Del total de días con turno programado, qué porcentaje se marcó con número impar de marcaciones: entró o salió sin registrar el otro lado.">
+       <div class="k">Turno incompleto</div><div class="v">${fmtPct(pctIncompletoTot)}</div>
+       <div class="muted" style="font-size:10px">${fmtN(tot.incompleto)} de ${fmtN(tot.diasProgramados)} días programados</div></div>
+     <div data-tip="Del total de días con marcación o turno (evaluables), qué porcentaje se trabajó sin ningún turno asignado. A esta gente hay que cargarle turno.">
+       <div class="k">Marcó sin turno</div><div class="v">${fmtPct(pctSinTurnoTot)}</div>
+       <div class="muted" style="font-size:10px">${fmtN(tot.sinTurno)} de ${fmtN(tot.diasEvaluables)} días evaluables</div></div>
+     <div data-tip="Empleados con al menos una de las tres incidencias, dentro del filtro activo.">
+       <div class="k">Empleados afectados</div><div class="v">${fmtPct(pct(afectados,rows.length))}</div>
+       <div class="muted" style="font-size:10px">${fmtN(afectados)} de ${fmtN(rows.length)} empleados</div></div>`;
+
+  const deps = kpiPorDepto(rows);
+  $('#kpiChart').innerHTML = deps.length ? svgKpiChart(deps) : '';
+
+  /* Contexto para la hoja impresa: sin esto el PDF no dice de que ciclo ni filtro salio. */
+  const fCia = $('#fCiaKpi').value, fDep = $('#fDeptoKpi').value;
+  $('#kpiPrintHead').innerHTML =
+    `<h2>KPI de cumplimiento — ciclo ${esc(RESULT.cfg.ini)} a ${esc(RESULT.cfg.fin)}</h2>` +
+    `<div class="muted" style="font-size:11px">` +
+    `${esc(fCia || 'Todas las compañías')} · ${esc(fDep || 'Todos los departamentos')} · ` +
+    `${rows.length} empleados · generado ${new Date().toLocaleString('es-CO')}</div>`;
+
+  $('#tKpiDep thead').innerHTML = `<tr><th>Departamento</th><th class="num">Empleados</th>
+    <th class="num" data-tip="Empleados con al menos una marcación cargada en este ciclo. Si es bajo, «Turno sin marca» de esta fila no es confiable.">Con marca</th>
+    <th class="num" data-tip="Empleados con alguna programación de turno cargada que cubra este ciclo. Si es bajo, «Marcó sin turno» de esta fila no es confiable.">Con turno</th>
+    <th class="num" data-tip="Empleados con al menos una incidencia.">Afectados</th>
+    <th class="num" data-tip="Cuenta cruda y % sobre los días con turno programado (asistió + no asistió).">Turno sin marca</th>
+    <th class="num" data-tip="Cuenta cruda y % sobre los días con turno programado.">Turno incompleto</th>
+    <th class="num" data-tip="Cuenta cruda y % sobre los días evaluables (con turno o con marca).">Marcó sin turno</th>
+    <th class="num">Total incidencias</th></tr>`;
+  $('#tKpiDep tbody').innerHTML = deps.map(d=>{
+    const totd = d.sinMarca+d.incompleto+d.sinTurno;
+    const bajaMarca = d.conMarca < d.empleados, bajaTurno = d.conTurno < d.empleados;
+    const celda = (n,p) => n ? `${fmtN(n)} <span class="muted">(${fmtPct(p)})</span>` : '';
+    return `<tr class="clickable" data-dep="${esc(d.depto)}">
+      <td>${esc(d.depto)}</td><td class="num">${d.empleados}</td>
+      <td class="num ${bajaMarca?'dev':''}" data-tip="${bajaMarca?'Cobertura de marcaciones incompleta en este departamento.':''}">${d.conMarca}</td>
+      <td class="num ${bajaTurno?'dev':''}" data-tip="${bajaTurno?'Cobertura de programación de turnos incompleta en este departamento.':''}">${d.conTurno}</td>
+      <td class="num">${d.afectados}</td>
+      <td class="num">${celda(d.sinMarca,d.pctSinMarca)}</td>
+      <td class="num">${celda(d.incompleto,d.pctIncompleto)}</td>
+      <td class="num">${celda(d.sinTurno,d.pctSinTurno)}</td>
+      <td class="num"><b>${totd||''}</b></td></tr>`;
+  }).join('') || `<tr><td colspan="9" class="muted" style="padding:18px">Sin datos.</td></tr>`;
+  $$('#tKpiDep tbody tr[data-dep]').forEach(tr=>tr.onclick=()=>{
+    $('#fDeptoKpi').value = tr.dataset.dep==='(sin departamento)' ? '' : tr.dataset.dep;
+    renderKpi();
+  });
+
+  const empRows = kpiFiltrarEmpleados(rows);
+  $('#tKpiEmp thead').innerHTML = `<tr><th>Código</th><th>Nombre</th><th>Departamento</th>
+    <th data-tip="¿Tiene alguna marcación cargada en este ciclo? Si dice NO, «Turno sin marca» no es evidencia de incumplimiento — es falta de datos.">Con marca</th>
+    <th data-tip="¿Tiene alguna programación de turno cargada que cubra este ciclo? Si dice NO, «Marcó sin turno» no es evidencia — es que el Horario no llega hasta aquí.">Con turno</th>
+    <th class="num" data-tip="Cuenta cruda y % sobre sus días con turno programado.">Turno sin marca</th>
+    <th class="num" data-tip="Cuenta cruda y % sobre sus días con turno programado.">Turno incompleto</th>
+    <th class="num" data-tip="Cuenta cruda y % sobre sus días evaluables (con turno o con marca).">Marcó sin turno</th>
+    <th class="num">Total</th></tr>`;
+  $('#tKpiEmp tbody').innerHTML = empRows.map(r=>{
+    const celda = (n,p) => n ? `${fmtN(n)} <span class="muted">(${fmtPct(p)})</span>` : '';
+    return `<tr class="clickable" data-id="${esc(r.emp.id)}">
+      <td class="mono">${esc(r.emp.id)}</td><td>${esc(r.emp.nombre)}</td><td>${esc(r.emp.depto||'—')}</td>
+      <td>${r.conMarca?'<span class="tag t-ok">Sí</span>':'<span class="tag t-mut">No</span>'}</td>
+      <td>${r.conTurno?'<span class="tag t-ok">Sí</span>':'<span class="tag t-mut">No</span>'}</td>
+      <td class="num">${celda(r.sinMarca,r.pctSinMarca)}</td>
+      <td class="num">${celda(r.incompleto,r.pctIncompleto)}</td>
+      <td class="num">${celda(r.sinTurno,r.pctSinTurno)}</td>
+      <td class="num"><b>${r.total}</b></td></tr>`;
+  }).join('')
+    || `<tr><td colspan="9" class="muted" style="padding:18px">Nadie coincide con el filtro, o nadie llega al mínimo de incidencias.</td></tr>`;
+  $$('#tKpiEmp tbody tr[data-id]').forEach(tr=>tr.onclick=()=>{
+    CUR_EMP = tr.dataset.id; $('#selEmp').value = CUR_EMP;
+    $('#selPerfil').value = PERFILES[CUR_EMP]||'';
+    showTab('det'); renderDet();
+  });
+}
+function aoaKpiDep(deps){
+  const p = v => v==null?'':+v.toFixed(1);
+  return [['DEPARTAMENTO','EMPLEADOS','CON MARCA CARGADA','CON TURNO CARGADO','EMPLEADOS AFECTADOS',
+           'DÍAS PROGRAMADOS','DÍAS EVALUABLES',
+           'TURNO SIN MARCA','% SIN MARCA','TURNO INCOMPLETO','% INCOMPLETO','MARCÓ SIN TURNO','% SIN TURNO',
+           'TOTAL INCIDENCIAS'],
+    ...deps.map(d=>[d.depto,d.empleados,d.conMarca,d.conTurno,d.afectados,d.diasProgramados,d.diasEvaluables,
+      d.sinMarca,p(d.pctSinMarca),d.incompleto,p(d.pctIncompleto),d.sinTurno,p(d.pctSinTurno),
+      d.sinMarca+d.incompleto+d.sinTurno])];
+}
+function aoaKpiEmp(rows){
+  const p = v => v==null?'':+v.toFixed(1);
+  return [['COD_EMPLEADO','NOMBRE','DEPARTAMENTO','COMPAÑÍA','CON MARCA CARGADA','CON TURNO CARGADO',
+           'DÍAS PROGRAMADOS','DÍAS EVALUABLES',
+           'TURNO SIN MARCA','% SIN MARCA','TURNO INCOMPLETO','% INCOMPLETO','MARCÓ SIN TURNO','% SIN TURNO','TOTAL'],
+    ...rows.map(r=>[r.emp.id,r.emp.nombre,r.emp.depto||'',r.emp.empresa||'',r.conMarca?'SI':'NO',r.conTurno?'SI':'NO',
+      r.diasProgramados,r.diasEvaluables,
+      r.sinMarca,p(r.pctSinMarca),r.incompleto,p(r.pctIncompleto),r.sinTurno,p(r.pctSinTurno),r.total])];
+}
+
 function toast(m){ const t=$('#toast'); t.textContent=m; t.classList.add('on');
   clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove('on'),2600); }
 
@@ -2043,6 +2471,7 @@ function fillFiltros(){
   RESULT.byEmp.forEach(e=>{ if(e.emp.empresa) cias.add(e.emp.empresa);
                             if(e.emp.depto)   deps.add(e.emp.depto); });
   const keep = (sel, vals, todos)=>{
+    if(!sel) return;                 // la pestana de ese filtro no existe en esta version
     const prev = sel.value;
     sel.innerHTML = `<option value="">${todos}</option>` +
       [...vals].sort((a,b)=>a.localeCompare(b,'es')).map(v=>`<option>${esc(v)}</option>`).join('');
@@ -2053,6 +2482,8 @@ function fillFiltros(){
   keep($('#fExcDep'),deps, 'Todos los departamentos');
   keep($('#fCiaAs'), cias, 'Todas las compañías');
   keep($('#fDeptoAs'),deps,'Todos los departamentos');
+  keep($('#fCiaKpi'), cias, 'Todas las compañías');
+  keep($('#fDeptoKpi'),deps,'Todos los departamentos');
 }
 
 function renderCons(){
@@ -2312,6 +2743,7 @@ function renderDet(){
 }
 
 function renderExc(){
+  if(!$('#tExc')) return;            // la version RRHH no tiene pestana de Excepciones
   const f = $('#fExc').value, q = $('#qExc').value.trim().toLowerCase();
   const dep = $('#fExcDep').value;
   const list = RESULT.exc
@@ -2603,7 +3035,7 @@ function runCalc(){
     ASISTENCIA = computeAsistencia(MODEL, cfg);
     renderDisp();
     fillSelects(); fillFiltros(); renderCons(); renderDet(); renderExc(); renderCal();
-    renderAsistencia();
+    renderAsistencia(); renderKpi();
     const b = RESULT.exc.filter(x=>x.sev==='BLOQ').length;
     $('#status').innerHTML = `${RESULT.cons.length} empleados con conceptos · ` +
       (b?`<b style="color:#fca5a5">${b} bloqueantes</b>`:'sin bloqueantes');
@@ -2634,11 +3066,13 @@ document.addEventListener('DOMContentLoaded',()=>{
     localStorage.setItem('mb_dispositivos','{}'); renderDisp(); };
   $('#btnDispOk').onclick   = ()=>{ guardarDisp(); $('#dlgDisp').close(); if(MODEL) runCalc(); };
   $('#fSinConc').onchange = ()=>RESULT&&renderCons();
-  $('#fExcDep').onchange = ()=>RESULT&&renderExc();
+  if($('#tab-exc')) $('#fExcDep').onchange = ()=>RESULT&&renderExc();
   $('#fClear').onclick   = ()=>{ $('#fCia').value=''; $('#fDepto').value='';
     $('#fPerfil').value=''; $('#qCons').value=''; $('#fSinConc').checked=false; RESULT&&renderCons(); };
-  $('#fExc').onchange = ()=>RESULT&&renderExc();
-  $('#qExc').oninput   = ()=>RESULT&&renderExc();
+  if($('#tab-exc')){
+    $('#fExc').onchange = ()=>RESULT&&renderExc();
+    $('#qExc').oninput  = ()=>RESULT&&renderExc();
+  }
   $('#selEmp').onchange = e=>{ CUR_EMP=e.target.value;
     $('#selPerfil').value = PERFILES[CUR_EMP]||'';
     $('#chkConfianza').checked = CONFIANZA.has(CUR_EMP); renderDet(); };
@@ -2685,13 +3119,43 @@ document.addEventListener('DOMContentLoaded',()=>{
     save({Consolidado:aoaCons(), Detalle:[head,...body],
           Excepciones:aoaExc(filtroHay()?ids:null)},
          `Reporte_Horas_${stamp()}.xlsx`); };
-  $('#expExc').onclick  = ()=>RESULT&&save({Excepciones:aoaExc()},`Excepciones_${stamp()}.xlsx`);
+  if($('#expExc'))
+    $('#expExc').onclick = ()=>RESULT&&save({Excepciones:aoaExc()},`Excepciones_${stamp()}.xlsx`);
   $('#fCiaAs').onchange   = ()=>ASISTENCIA&&renderAsistencia();
   $('#fDeptoAs').onchange = ()=>ASISTENCIA&&renderAsistencia();
   $('#qAs').oninput       = ()=>ASISTENCIA&&renderAsistencia();
   $('#fClearAs').onclick  = ()=>{ $('#fCiaAs').value=''; $('#fDeptoAs').value=''; $('#qAs').value='';
     ASISTENCIA&&renderAsistencia(); };
   $('#expAsis').onclick   = ()=>ASISTENCIA&&save({Asistencia:aoaAsistencia()},`Asistencia_${stamp()}.xlsx`);
+  ['fCiaKpi','fDeptoKpi','fTipoKpi','fMinKpi'].forEach(id=>
+    $('#'+id).addEventListener('change', ()=>ASISTENCIA&&renderKpi()));
+  $('#qKpi').oninput = ()=>ASISTENCIA&&renderKpi();
+  $('#fExclDeptos').value = [...KPI_EXCL].join(', ');
+  $('#fExclDeptos').addEventListener('change', e=>{
+    KPI_EXCL = new Set(e.target.value.split(',').map(s=>s.trim().toUpperCase()).filter(Boolean));
+    localStorage.setItem('mb_kpi_excl', JSON.stringify([...KPI_EXCL]));
+    ASISTENCIA && renderKpi();
+  });
+  $('#fClearKpi').onclick = ()=>{
+    $('#fCiaKpi').value=''; $('#fDeptoKpi').value=''; $('#fTipoKpi').value='';
+    $('#fMinKpi').value='1'; $('#qKpi').value=''; ASISTENCIA&&renderKpi();
+  };
+  $('#pdfKpi').onclick = ()=>{
+    if(!RESULT || !ASISTENCIA){ toast('Primero calcule el ciclo.'); return; }
+    /* Se imprime con el motor del navegador en vez de una libreria: el SVG sale
+       vectorial y nitido, no hay dependencia nueva, y funciona sin internet. */
+    document.body.classList.add('print-kpi');
+    const limpiar = ()=>document.body.classList.remove('print-kpi');
+    window.addEventListener('afterprint', limpiar, {once:true});
+    setTimeout(limpiar, 1500);          // respaldo si el navegador no emite afterprint
+    window.print();
+  };
+  $('#expKpi').onclick = ()=>{
+    if(!ASISTENCIA) return;
+    const rows = kpiCalcular();
+    save({ 'Resumen departamento':aoaKpiDep(kpiPorDepto(rows)),
+           'Detalle empleado':aoaKpiEmp(kpiFiltrarEmpleados(rows)) }, `KPI_Cumplimiento_${stamp()}.xlsx`);
+  };
   $('#expCal').onclick  = ()=>{ if(!RESULT) return;
     const id=$('#selEmpCal').value, m=$('#selMes').value;
     save({Calendario:aoaCal(id,m)},`Calendario_${id}_${m}.xlsx`); };
