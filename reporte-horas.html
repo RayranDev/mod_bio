@@ -997,14 +997,26 @@ function buildModel(){
     if(p.origen) dispositivos.set(p.origen, (dispositivos.get(p.origen)||0)+1);
     const e = employees.get(id);
     if(!e){ orphan.push(p); return; }                        // A-10
-    /* La columna "Branch" de las marcaciones ES la Compania del maestro: verificado
-       contra los 1.039 activos con marcacion, 1.039 coincidencias exactas y ningun
-       empleado con dos valores distintos. Es la unica forma de saber si un retirado
-       era PLASTITECSA o GRANSERVICIOS, porque el archivo de Renuncia no lo trae y esa
-       distincion importa (GRANSERVICIOS son los temporales, E-06). */
+    /* La marcacion trae los datos del empleado, y coinciden EXACTO con el maestro:
+         Branch       -> Compania     1.039 de 1.039, sin discrepancias ni ambiguedad
+         Departamento -> Departamento 1.036 de 1.036
+         Position     -> Cargo        1.036 de 1.036
+       Se usan solo para rellenar lo que falte, nunca para pisar al maestro. Es lo que
+       permite que un retirado tenga departamento aunque no se cargue el archivo de
+       Renuncia: sin esto quedaba con el filtro de departamento vacio, o sea invisible.
+       Ojo con los anclajes del regex: la marcacion trae ademas "ID de Departamento" e
+       "ID del Cargo", y el ^ es lo que evita agarrar el codigo en vez del nombre. */
     if(!e.empresa){
-      const br = String(pick(r,'^branch$','^branch')||'').trim();
-      if(br) e.empresa = br;
+      const v = String(pick(r,'^branch$','^branch')||'').trim();
+      if(v) e.empresa = v;
+    }
+    if(!e.depto){
+      const v = String(pick(r,'^departamento')||'').trim();
+      if(v) e.depto = v;
+    }
+    if(!e.cargo){
+      const v = String(pick(r,'^position','^cargo')||'').trim();
+      if(v) e.cargo = v;
     }
     if(!punches.has(id)) punches.set(id,[]);
     punches.get(id).push(p);
@@ -1035,6 +1047,21 @@ function marcarIngresosMasivos(M, cfg){
   const cnt = new Map();
   M.employees.forEach(emp=>{ if(emp.ingreso) cnt.set(emp.ingreso, (cnt.get(emp.ingreso)||0)+1); });
   M.ingresoMasivo = new Map([...cnt.entries()].filter(([,n])=>n>cfg.ingMasivo));
+}
+
+/** ¿Esta persona tuvo vinculo activo DENTRO del ciclo consultado?
+ *
+ *  El universo del reporte son los empleados y los renunciados, acotados por el rango:
+ *  quien no marco ni tuvo turno en esas fechas no pertenece a ese periodo. En agosto
+ *  2026 son 31 personas — 16 que ingresaron en septiembre y 15 que renunciaron en julio.
+ *  No les falta ningun dato (las 31 tienen departamento y cargo); simplemente no
+ *  trabajaron ese mes. Incluirlas no cambiaba ni un dia de asistencia ni una hora de
+ *  nomina, pero ensuciaba el denominador de la cobertura: 91,1% contra el 93,7% real. */
+function activoEnCiclo(M, id, cfg){
+  const ps = M.punches.get(id);
+  if(ps && ps.some(p=>p.iso>=cfg.ini && p.iso<=cfg.fin)) return true;
+  const sc = M.sched.get(id);
+  return !!(sc && sc.some(s=>s.ini<=cfg.fin && s.fin>=cfg.ini));
 }
 
 /* ══════════════════════════════════════════════════════════════════
@@ -1274,7 +1301,7 @@ function compute(M, cfg){
 
   for(const [id,emp] of M.employees){
     const punches = (M.punches.get(id)||[]);
-    if(!punches.length && !M.sched.has(id)) continue;
+    if(!activoEnCiclo(M, id, cfg)) continue;
 
     /* ── A-05/A-06/A-07: depurar marcaciones ── */
     const {clean, removidas} = limpiarMarcaciones(punches, cfg);
@@ -1730,7 +1757,7 @@ function computeAsistencia(M, cfg){
 
   M.employees.forEach((emp, id)=>{
     const rawPunches = (M.punches.get(id)||[]).filter(p=>p.iso>=extIni && p.iso<=cfg.fin);
-    if(!rawPunches.length && !M.sched.has(id)) return;
+    if(!activoEnCiclo(M, id, cfg)) return;
 
     const {clean} = limpiarMarcaciones(rawPunches, cfg);
 
