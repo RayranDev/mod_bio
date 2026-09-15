@@ -70,6 +70,7 @@ KPI_EXCL, KPI_EXCLUIDOS_ULTIMO                          (estado del KPI)
 kpiCalcular, pct, kpiPorDepto, kpiFiltrarEmpleados      (KPI de cumplimiento)
 barPath, fmtPct, fmtN, svgKpiChart, renderCobertura, renderKpi, aoaKpiDep, aoaKpiEmp
 esTurnoExtra, pasoExtra                                 (turnos de solo extras, T-EXTRA)
+semanaDeTs, inicioSemanaTs, partirPorSemana            (semana del umbral por instante)
 activoEnCiclo                                           (universo del reporte segun el rango)
 modo, irADetalle, marcarCol, aplicarCols, renderCols     (interfaz: modos, salto y columnas)
 tipHTML, chip, initPop                                  (sistema de tooltips — ver nota abajo)
@@ -554,6 +555,22 @@ después (70.662,5 h). Si un cambio futuro en esta zona mueve esa suma, es un bu
 El `festivo` por fecha se memoiza en un `Map` por fila (`fesPorDia`): un día son pocos tramos, pero el
 ciclo entero son decenas de miles.
 
+**La semana del umbral arranca con el primer turno, no a medianoche (regla del usuario, sept-2026).**
+Para los rotativos la semana empieza el **domingo a las 22:00**, cuando entra el turno 3; lo trabajado
+el domingo antes de esa hora cuenta en la bolsa de la semana que termina. Antes el motor asignaba la
+semana por la **fecha de la jornada** (`weekStart(r.iso)`), así que un domingo de tarde caía en la
+semana nueva. Ahora se asigna **por tramo y por instante** (`semanaDeTs(t.ini, cfg)`), y los tramos
+que cruzan el borde se parten con `partirPorSemana()` antes de acumular (conserva I-01/I-02).
+
+Caso sintético que distingue la regla: lunes a sábado 7 h diarias (42 h) más un domingo de 14:00 a
+21:00 → **antes 49 ordinarias y 0 extra; ahora 42 ordinarias y 7 extra**. El turno 3 que arranca el
+domingo 22:00 abre la semana nueva igual que antes (control: 42 + 6 en ambos casos).
+
+Sobre agosto 2026 (datos del 11-09) el impacto es **cero**: los únicos turnos programados en domingo
+(`T_NORMAL3`, `T3_AGO`) arrancan justo a las 22:00, y `T_EXTRAS` es todo sobretiempo, que no entra a
+la bolsa. La regla protege los turnos que se programen a futuro. Día y hora son parámetros
+(`cSemIni` + `cSemHora`).
+
 **Segmentación temporal (`atomize`).** Parte un intervalo `[a,b)` en tramos atómicos cortando en cada
 medianoche, en el inicio/fin de la franja nocturna, y en cualquier frontera adicional que se le pase
 (típicamente el inicio/fin de la jornada programada, para separar "dentro de turno" de "fuera de
@@ -598,6 +615,7 @@ engranaje), con un botón explícito "Aplicar y recalcular" en vez de recalcular
 | `cEscPrimer` | Minutos después del fin de turno para la primera media hora (default 25) | D-10/D-11 |
 | `cEscGracia` | Minutos de gracia antes de cada media hora siguiente (default 10) | D-12/D-13 |
 | `cSemIni` | Día en que arranca la semana del umbral: domingo (default) o lunes | D-17 |
+| `cSemHora` | Hora en que arranca esa semana (default 22:00, entrada del turno 3) | D-17 |
 | `cAnclaje` | Anclaje de redondeo: relativo/absoluto | D-14 — **ver nota de gap abajo** |
 | `cDoble` | Ventana de agrupación de marcaciones consecutivas, minutos | A-07 |
 | `cImpar` | Resolución de marcaciones impares: sugerir / no resolver | A-04 |

@@ -388,6 +388,8 @@
         <option value="0">Domingo</option>
         <option value="1">Lunes</option>
       </select></div>
+    <div><label class="f">…a la hora del primer turno de la semana</label>
+      <input type="time" id="cSemHora" value="22:00"></div>
     <div><label class="f">Fecha de ingreso masiva si la comparten más de (empleados)</label>
       <input type="number" id="cIngMasivo" value="15" min="0"></div>
     <div><label class="f">Extras sin autorizacion registrada <span class="muted">(F-09)</span></label>
@@ -875,6 +877,25 @@ function weekStart(iso, cfg){
   const w = dow(iso);                                   // 0=Dom .. 6=Sab
   const ini = (cfg && cfg.semIni!=null) ? cfg.semIni : 1;
   return addDays(iso, -(((w - ini) % 7 + 7) % 7));
+}
+
+/** Semana del umbral a la que pertenece un INSTANTE (ts = dnum*1440 + minuto).
+ *  La semana de los rotativos no arranca a medianoche: arranca con el primer turno, el
+ *  domingo a cfg.semHora (22:00, entrada del turno 3). Lo trabajado el domingo antes de esa
+ *  hora es de la semana que termina. La clave devuelta es la fecha del dia de arranque. */
+function semanaDeTs(ts, cfg){
+  const h = (cfg && cfg.semHora) || 0;
+  return weekStart(numd(Math.floor((ts - h) / 1440)), cfg);
+}
+/** Instante exacto en que empieza la semana de clave `k`. */
+function inicioSemanaTs(k, cfg){ return dnum(k)*1440 + ((cfg && cfg.semHora) || 0); }
+/** Parte un tramo que cruza el inicio de semana, para que cada parte caiga en su bolsa.
+ *  Conserva la suma de minutos y no genera solapes (I-01/I-02). */
+function partirPorSemana(t, cfg){
+  const k0 = semanaDeTs(t.ini, cfg), k1 = semanaDeTs(t.fin - 1, cfg);
+  if(k0 === k1) return [t];
+  const c = inicioSemanaTs(k1, cfg);
+  return [{...t, fin:c, min:c-t.ini}, {...t, ini:c, min:t.fin-c}];
 }
 
 /* ── Festivos de Colombia (Ley Emiliani + Pascua) ─────────────────── */
@@ -1385,7 +1406,7 @@ function readConfig(){
     transAviso: +v('cTransAviso')||0,
     extraPref: (v('cExtraPref')||'').trim(), extraPaso: +v('cExtraPaso')||30,
     minDias: +v('cMinDias')||60,
-    semIni: +v('cSemIni')||0
+    semIni: +v('cSemIni')||0, semHora: toMin(v('cSemHora')||'00:00')||0
   };
   cfg.corteOn = cfg.corte && cfg.fin >= cfg.corte;      // H-06
   return cfg;
@@ -1716,11 +1737,19 @@ function compute(M, cfg){
        un turno como T_12H_NOCHE (que declara su fin temprano justamente para que las
        ultimas horas salgan como extra diaria) mostraria 55/42 sin haber pasado el umbral. ── */
     const accW = new Map();
+    /* Cada tramo suma en la semana de SU hora, no en la de la fecha de la jornada: lo
+       trabajado el domingo antes de cfg.semHora cierra la semana que termina, y una misma
+       jornada puede repartirse entre dos semanas. Primero se parten los tramos en el borde. */
+    rows.forEach(r=>{ if(r.tramos) r.tramos = r.tramos.flatMap(t=>t.extra ? [t] : partirPorSemana(t, cfg)); });
+    const hSem = cfg.semHora || 0;
     rows.forEach(r=>{
-      const propias = (r.tramos||[]).filter(t=>!t.extra).reduce((s,t)=>s+t.min,0);
-      const k = weekStart(r.iso, cfg), prev = accW.get(k)||0, now = prev + propias;
-      accW.set(k, now);
-      r.semIni = k; r.semFin = addDays(k,6);
+      const propios = (r.tramos||[]).filter(t=>!t.extra);
+      const ref = propios.length ? propios[0].ini : r.W ? r.W.ini : dnum(r.iso)*1440 + 720;
+      const k = semanaDeTs(ref, cfg), prev = accW.get(k)||0;
+      propios.forEach(t=>{ const kt = semanaDeTs(t.ini, cfg); accW.set(kt, (accW.get(kt)||0) + t.min); });
+      const now = accW.get(k)||0;
+      r.semIni = k; r.semFin = addDays(k, hSem ? 7 : 6);
+      r.semRotulo = hSem ? `${k} ${hhmm(hSem)} a ${r.semFin} ${hhmm(hSem-1)}` : `${k} a ${r.semFin}`;
       r.accPrevH = prev/60; r.accH = now/60;
     });
     rows.forEach(r=>{ r.semTotH = (accW.get(r.semIni)||0)/60; });
@@ -1730,10 +1759,17 @@ function compute(M, cfg){
        NO entra al pool: esa media hora ya se ganó por pasar el fin de turno, y se suma
        aparte (las dos reglas conviven, decisión del usuario). ── */
     if(perfil==='ROTATIVO' && !esConfianza){                        // D-17..D-22
+      /* La bolsa se arma por TRAMO y en orden cronologico: la semana arranca el domingo a
+         cfg.semHora, asi que una jornada puede aportar a dos semanas. */
       const weeks = new Map();
-      rows.forEach(r=>{ if(!r.tramos || !r.tramos.length) return;
-        const k = weekStart(r.iso, cfg); if(!weeks.has(k)) weeks.set(k,[]); weeks.get(k).push(r); });
-      weeks.forEach((rs,wk)=>{
+      rows.forEach(r=>(r.tramos||[]).forEach(t=>{
+        const k = semanaDeTs(t.ini, cfg);
+        if(!weeks.has(k)) weeks.set(k, []);
+        weeks.get(k).push({r, t});
+      }));
+      const reemplazo = new Map();
+      weeks.forEach((items,wk)=>{
+        const rs = [...new Set(items.map(x=>x.r))];
         const wEnd = addDays(wk,6);
         if(wk < cfg.ini || wEnd > cfg.fin){                          // D-21
           const anyIn = rs.some(r=>r.inCiclo);
@@ -1742,20 +1778,13 @@ function compute(M, cfg){
         }
         let acc = 0;
         const lim = cfg.umbral*60;
-        rs.sort((a,b)=>a.iso<b.iso?-1:1).forEach(r=>{
-          const nuevos = [];
-          r.tramos.forEach(t=>{
-            if(t.extra){ nuevos.push(t); return; }   // ya es extra por la escalera
-            const ini = acc, fin = acc + t.min; acc = fin;
-            if(fin<=lim) nuevos.push(t);
-            else if(ini>=lim) nuevos.push({...t, extra:true});
-            else {                                   // parte ordinaria + parte extra
-              const corte = t.ini + (lim-ini);
-              nuevos.push({...t, fin:corte, min:corte-t.ini});
-              nuevos.push({...t, ini:corte, min:t.fin-corte, extra:true});
-            }
-          });
-          r.tramos = nuevos;
+        items.sort((a,b)=>a.t.ini-b.t.ini).forEach(({t})=>{
+          if(t.extra) return;                        // ya es extra por la escalera
+          const ini = acc, fin = acc + t.min; acc = fin;
+          if(fin<=lim) return;
+          if(ini>=lim){ reemplazo.set(t, [{...t, extra:true}]); return; }
+          const corte = t.ini + (lim-ini);           // parte ordinaria + parte extra
+          reemplazo.set(t, [{...t, fin:corte, min:corte-t.ini}, {...t, ini:corte, min:t.fin-corte, extra:true}]);
         });
         const excesoSemH = Math.max(0, (acc-lim)/60);
         if(excesoSemH>12){                                          // D-19
@@ -1763,6 +1792,9 @@ function compute(M, cfg){
           if(anyIn) add('ADV','D-19',id,emp.nombre,wk,
             `Semana con ${excesoSemH.toFixed(2)} h por encima del umbral (>12 h). Requiere justificación obligatoria.`);
         }
+      });
+      if(reemplazo.size) rows.forEach(r=>{
+        if(r.tramos) r.tramos = r.tramos.flatMap(t=>reemplazo.get(t) || [t]);
       });
     }
 
@@ -2988,7 +3020,7 @@ function celdaSemana(r){
   const pasa  = u!=null && r.accH > u;
   const txt = u!=null ? `${r.accH.toFixed(2)} / ${u}` : r.accH.toFixed(2);
   const tip = u!=null
-    ? `Semana ${r.semIni} a ${r.semFin}. Al cierre de este dia lleva ${r.accH.toFixed(2)} h de jornada fija, de ${u} h. `+
+    ? `Semana ${r.semRotulo || (r.semIni+' a '+r.semFin)}. Al cierre de este dia lleva ${r.accH.toFixed(2)} h de jornada fija, de ${u} h. `+
       (pasa ? `Ya paso el umbral: lo que exceda se paga como extra (D-18).`
             : `Faltan ${(u-r.accH).toFixed(2)} h para el umbral; por ahora todo es ordinario (D-17).`)+
       ` Total de la semana: ${r.semTotH.toFixed(2)} h.`
