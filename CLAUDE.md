@@ -15,8 +15,8 @@ qué convención seguir al modificarlo.
 
 | Archivo | Qué es |
 |---|---|
-| `reporte-horas.html` | Herramienta completa: 7 pestañas (Consolidado, Detalle, Calendario, Excepciones, Asistencia, KPI Cumplimiento, Glosario). Para análisis, auditoría de datos y seguimiento del proceso de implementación. |
-| `reporte-horas-rrhh.html` | Versión lite para RRHH: 5 pestañas (Consolidado, Detalle, Calendario, Asistencia, KPI Cumplimiento). Sin Excepciones ni Glosario. Parametrización avanzada detrás de un botón de engranaje (`⚙`) en vez de siempre visible. |
+| `reporte-horas.html` | Herramienta completa: 9 pestañas (Consolidado, Detalle, Calendario, Excepciones, Asistencia, KPI Cumplimiento, Calidad de marcación, Cobertura y calidad, Glosario). Para análisis, auditoría de datos y seguimiento del proceso de implementación. |
+| `reporte-horas-rrhh.html` | Versión lite para RRHH: 7 pestañas (Consolidado, Detalle, Calendario, Asistencia, KPI Cumplimiento, Calidad de marcación, Cobertura y calidad). Sin Excepciones ni Glosario. Parametrización avanzada detrás de un botón de engranaje (`⚙`) en vez de siempre visible. |
 | `CATALOGO-CONDICIONES.md` | Las 137 condiciones de diseño original, con sus códigos (A-01, D-14, I-03, etc.) usados como referencia cruzada en el código. |
 | `CLAUDE.md` | Este archivo. |
 | `.gitignore` | Excluye `*.xlsx`, `*.xls` y `.atl/` — los datos de empleados **nunca** se suben al repo. |
@@ -71,7 +71,9 @@ kpiCalcular, pct, kpiPorDepto, kpiFiltrarEmpleados      (KPI de cumplimiento)
 barPath, fmtPct, fmtN, svgKpiChart, renderCobertura, renderKpi, aoaKpiDep, aoaKpiEmp
 esTurnoExtra, pasoExtra                                 (turnos de solo extras, T-EXTRA)
 semanaDeTs, inicioSemanaTs, partirPorSemana            (semana del umbral por instante)
-activoEnCiclo                                           (universo del reporte segun el rango)
+activoEnCiclo                                           (universo del reporte segun el rango, recortado a la vigencia)
+estadoCob, computeCobertura, cobFiltrado, cobAgregar, nivelCob   (Cobertura y calidad)
+renderCob, aoaCobertura, aoaCoberturaDep
 modo, irADetalle, marcarCol, aplicarCols, renderCols     (interfaz: modos, salto y columnas)
 tipHTML, chip, initPop                                  (sistema de tooltips — ver nota abajo)
 toast, conceptCols, renderMatriz
@@ -597,6 +599,33 @@ B-06 cuando se usa. **Decisión del usuario (sept-2026): se queda con el prefijo
   decenas (`OPERARIA AREA FARMACEUTICA`: 442 en planta contra 1 en T_ADM). Queda como el camino
   natural si algún día se quiere resolver B-06 de verdad, pero requiere que RRHH clasifique los 78
   cargos una vez. El nombre del cargo ya se lee bien desde el fix de columnas duplicadas.
+
+---
+
+**Reporte Cobertura y calidad (pestaña `cob`, en los dos archivos).** Tres porcentajes por empleado,
+departamento y empresa, **prorrateados por la vigencia de cada persona**: los días antes de su ingreso
+real (las fechas de ingreso masivas no cuentan como límite) y después de `vigFin` no entran al
+denominador, así que quien entró o se fue a mitad de ciclo no queda penalizado.
+
+- `% asignación` = días con turno asignado / días vigentes.
+- `% marcó` = (jornadas programadas − faltas) / jornadas programadas.
+- `% calidad` = días con marcación limpia / días en que marcó (los sugeridos A-04 y los dudosos restan).
+
+Cada celda de la matriz calendario tiene un estado (`ok`, `dud`, `falta`, `sinturno`, `sinasig`,
+`desc`, `fuera`) calculado por `estadoCob()` y lleva a Detalle con `irADetalle`. Exporta a Excel dos
+hojas: por empleado y por departamento con fila TOTAL.
+
+> **Ojo con el nombre: `renderCob()` ≠ `renderCobertura(rows)`.** La segunda ya existía: es el aviso de
+> cobertura de datos del KPI (`#kpiCobertura`). Una segunda `function renderCobertura` la habría pisado
+> en silencio (en JS la última declaración gana) y el KPI habría dejado de pintar su aviso sin lanzar
+> error. Por eso la pestaña nueva usa `renderCob`.
+
+**`activoEnCiclo()` respeta la vigencia (sept-2026).** Antes miraba si había un turno asignado en el
+ciclo sin recortarlo a ingreso/`vigFin`. Como en BioTime nadie le quita la asignación de turno a quien
+renuncia, en agosto 2026 entraban **14 retirados de julio con 0 marcaciones y 0 días vigentes**: filas
+vacías en Asistencia y en Cobertura. Ahora el rango se recorta a la vigencia de la persona antes de
+buscar marcaciones o turnos. **Nómina idéntica:** el Consolidado es igual byte a byte que el anterior
+(132.218,5 ordinarias y 14.066,5 extra en agosto); el universo pasa de 1.107 a 1.093 empleados.
 
 ---
 

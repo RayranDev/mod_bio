@@ -182,6 +182,28 @@
   .qbar{display:inline-block;width:62px;height:7px;border-radius:4px;background:var(--line);
     overflow:hidden;vertical-align:middle;margin-right:7px}
   .qbar>span{display:block;height:100%;border-radius:4px}
+  /* ── Cobertura y calidad ─────────────────────────────────────────────────────── */
+  #tCob th.stick1,#tCob td.stick1{position:sticky;left:0;min-width:56px;max-width:56px;background:#fff}
+  #tCob th.stick2,#tCob td.stick2{position:sticky;left:56px;min-width:190px;max-width:190px;
+    background:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #tCob td.stick1,#tCob td.stick2{z-index:1}
+  #tCob th.stick1,#tCob th.stick2{z-index:3}
+  #tCob th.cday{min-width:30px;max-width:30px;text-align:center;padding:4px 2px;line-height:1.15}
+  #tCob th.cday b{display:block;font-size:11px}
+  #tCob th.cday i{display:block;font-style:normal;font-size:8px;color:var(--muted);font-weight:600}
+  #tCob th.cday.fes{background:#fff7ed}
+  #tCob th.cday.dom{background:#eff6ff}
+  #tCob td.ccell{text-align:center;font-weight:700;font-size:11px;cursor:help;
+    min-width:30px;max-width:30px;padding:4px 2px}
+  #tCob td.c-ok{background:var(--ok-soft);color:var(--ok)}
+  #tCob td.c-dud{background:var(--warn-soft);color:var(--warn)}
+  #tCob td.c-falta{background:var(--err-soft);color:var(--err)}
+  #tCob td.c-sinturno{background:#f3e8ff;color:#7e22ce}
+  #tCob td.c-desc{color:var(--line)}
+  #tCob td.c-fuera{background:repeating-linear-gradient(45deg,#fafbfc,#fafbfc 3px,#f0f2f5 3px,#f0f2f5 6px)}
+  .cobleg{display:flex;flex-wrap:wrap;gap:12px;font-size:11px;color:var(--muted);margin-top:8px}
+  .cobleg span b{display:inline-block;width:16px;height:16px;border-radius:3px;text-align:center;
+    line-height:16px;font-size:10px;margin-right:4px;vertical-align:middle}
   /* Cobertura de datos: tres proporciones sobre el mismo denominador, para poder
      compararlas de un vistazo. Meter con track del mismo ramp (ver dataviz). */
   .cober{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px;margin-bottom:12px}
@@ -231,6 +253,14 @@
     body.print-q .scroll{ max-height:none!important; overflow:visible!important; border:0 }
     body.print-q table{ font-size:9px }
     body.print-q .hero, body.print-q .duenos>div{ break-inside:avoid }
+    body.print-cob #tab-cob, body.print-cob #tab-cob *{ visibility:visible }
+    body.print-cob #tab-cob{ position:absolute; left:0; top:0; width:100%; display:block!important }
+    body.print-cob #cobPrintHead{ display:block; margin-bottom:10px }
+    body.print-cob #cobPrintHead h2{ margin:0 0 2px; font-size:15px }
+    body.print-cob .bar-noprint{ display:none!important }
+    body.print-cob .scroll{ max-height:none!important; overflow:visible!important; border:0 }
+    body.print-cob table{ font-size:8px }
+    body.print-cob .cober>div{ break-inside:avoid }
     body.print-kpi .cober{ break-inside:avoid }
     body.print-kpi #kpiChartWrap{ break-inside:avoid }
   }
@@ -429,6 +459,7 @@
   <button data-tab="asis">Asistencia</button>
   <button data-tab="kpi">KPI Cumplimiento</button>
   <button data-tab="cal2">Calidad de marcación</button>
+  <button data-tab="cob">Cobertura y calidad</button>
   <button data-tab="glo">Glosario</button>
 </div>
 
@@ -650,6 +681,47 @@
   <h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin:14px 0 8px">
     Calidad por departamento</h3>
   <div class="scroll" style="max-height:44vh"><table id="tQ"><thead></thead><tbody></tbody></table></div>
+</section>
+
+<section id="tab-cob" class="tabwrap">
+  <div class="note bar-noprint">
+    Dos preguntas distintas con dueños distintos: <b>¿se le asignó turno?</b> lo resuelve quien programa
+    en BioTime, y <b>¿marcó bien?</b> lo resuelve el jefe con su gente. Todo se mide contra los días en
+    que la persona estuvo <b>vigente</b> —desde su ingreso y hasta su retiro o su última marcación— para
+    que quien entró o salió a mitad del ciclo no aparezca castigado por días que no le correspondían.
+  </div>
+  <div class="bar bar-noprint">
+    <select id="fCiaCob" style="max-width:170px"><option value="">Todas las compañías</option></select>
+    <select id="fDeptoCob" style="max-width:250px"><option value="">Todos los departamentos</option></select>
+    <select id="fOrdCob" style="max-width:230px">
+      <option value="turno">Peor asignación de turno primero</option>
+      <option value="calidad">Peor calidad de marcación primero</option>
+      <option value="nombre">Por nombre</option>
+    </select>
+    <input type="text" id="qCob" placeholder="Código o nombre…" style="max-width:190px">
+    <button id="fClearCob">Limpiar</button>
+    <span id="fInfoCob" class="muted"></span>
+    <span class="sp"></span>
+    <button id="expCob">Exportar cobertura (Excel)</button>
+    <button id="pdfCob">Exportar cobertura (PDF)</button>
+  </div>
+  <div id="cobPrintHead"></div>
+  <div class="cober" id="cobTiles"></div>
+  <h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin:14px 0 8px">
+    Por departamento</h3>
+  <div class="scroll" style="max-height:34vh"><table id="tCobDep"><thead></thead><tbody></tbody></table></div>
+  <h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin:14px 0 8px">
+    Día por día, por empleado</h3>
+  <div class="scroll" style="max-height:60vh"><table id="tCob"><thead></thead><tbody></tbody></table></div>
+  <div class="cobleg">
+    <span><b class="c-ok" style="background:var(--ok-soft);color:var(--ok)">✓</b>marcó y la marcación es inequívoca</span>
+    <span><b class="c-dud" style="background:var(--warn-soft);color:var(--warn)">!</b>marcó pero hubo que interpretar</span>
+    <span><b class="c-falta" style="background:var(--err-soft);color:var(--err)">F</b>tenía jornada y no marcó</span>
+    <span><b class="c-sinturno" style="background:#f3e8ff;color:#7e22ce">S</b>marcó sin turno asignado</span>
+    <span><b style="background:#fff;border:1px solid var(--line);color:var(--muted)">×</b><b style="width:auto;background:none"></b>sin asignación de turno cargada</span>
+    <span><b style="background:#fff;border:1px solid var(--line);color:var(--line)">·</b><b style="width:auto;background:none"></b>descanso programado</span>
+    <span><b class="c-fuera" style="background:#f0f2f5"></b>fuera de vigencia: no cuenta en ningún porcentaje</span>
+  </div>
 </section>
 
 </div><!-- /#reportes -->
@@ -1183,10 +1255,22 @@ function marcarIngresosMasivos(M, cfg){
  *  trabajaron ese mes. Incluirlas no cambiaba ni un dia de asistencia ni una hora de
  *  nomina, pero ensuciaba el denominador de la cobertura: 91,1% contra el 93,7% real. */
 function activoEnCiclo(M, id, cfg){
+  /* La actividad cuenta solo DENTRO de la vigencia de la persona. Un turno asignado
+     despues de que alguien se retiro no es actividad: es un Horario que nadie limpio en
+     BioTime (corre hasta 2027). En agosto 2026 eran 13 retirados de julio, con cero
+     marcaciones en agosto, que entraban al reporte solo por esa asignacion vieja. */
+  const e = M.employees.get(id);
+  let ini = cfg.ini, fin = cfg.fin;
+  if(e){
+    const masivo = M.ingresoMasivo && M.ingresoMasivo.has(e.ingreso);
+    if(e.ingreso && !masivo && e.ingreso > ini) ini = e.ingreso;
+    if(e.vigFin && e.vigFin < fin) fin = e.vigFin;
+  }
+  if(ini > fin) return false;                 // su vigencia no toca el ciclo
   const ps = M.punches.get(id);
-  if(ps && ps.some(p=>p.iso>=cfg.ini && p.iso<=cfg.fin)) return true;
+  if(ps && ps.some(p=>p.iso>=ini && p.iso<=fin)) return true;
   const sc = M.sched.get(id);
-  return !!(sc && sc.some(s=>s.ini<=cfg.fin && s.fin>=cfg.ini));
+  return !!(sc && sc.some(s=>s.ini<=fin && s.fin>=ini));
 }
 
 /* ══════════════════════════════════════════════════════════════════
@@ -2755,6 +2839,206 @@ function aoaCalidad(){
   return [head, ...Q.deps.map(fila), fila({...Q.total, dep:'TOTAL'})];
 }
 
+/* ══════════════════════════════════════════════════════════════════
+   COBERTURA Y CALIDAD, PRORRATEADA POR VIGENCIA
+   ══════════════════════════════════════════════════════════════════ */
+
+/** Estado de cobertura de un dia-persona. Separa el hueco de PROGRAMACION (sin
+ *  asignacion cargada) del descanso legitimo (asignado, pero ese dia no trabaja). */
+function estadoCob(M, R, cfg, id, iso, filaPorIso, marcasPorIso){
+  const sf = shiftFor(M, id, iso);
+  const asignado = !!sf.code;
+  const seg = asignado ? segmentFor(M, sf.code, iso) : null;
+  const marco = marcasPorIso.has(iso);
+  const r = filaPorIso.get(iso);
+  const f = (r && r.flags) || [];
+  const dudoso = f.includes('SUGERIDO') || f.includes('A-17') || f.includes('A-04') || (r && r.inferido);
+  if(marco) return { k: dudoso ? 'dud' : (asignado ? 'ok' : 'sinturno'), asignado, jornada:!!seg, marco, dudoso:!!dudoso, turno:sf.code };
+  if(seg)   return { k:'falta',    asignado, jornada:true,  marco:false, dudoso:false, turno:sf.code };
+  if(asignado) return { k:'desc',  asignado, jornada:false, marco:false, dudoso:false, turno:sf.code };
+  return { k:'sinasig', asignado:false, jornada:false, marco:false, dudoso:false, turno:null };
+}
+
+/** Recorre el ciclo dia por dia y persona por persona, contando SOLO los dias vigentes. */
+function computeCobertura(M, R, cfg){
+  const dates = rangeDays(cfg.ini, cfg.fin);
+  const filas = [];
+  R.byEmp.forEach((e, id)=>{
+    const emp = e.emp;
+    const filaPorIso = new Map((e.rows||[]).map(r=>[r.iso, r]));
+    const marcasPorIso = new Set((M.punches.get(id)||[]).map(p=>p.iso));
+    const o = { id, emp, dias:new Map(), vig:0, asig:0, jornada:0, marco:0,
+                limpio:0, dudoso:0, falta:0, sinturno:0, sinasig:0, desc:0, fuera:0,
+                ini:null, fin:null };
+    dates.forEach(iso=>{
+      /* Vigencia: antes del ingreso individual no existia, despues de vigFin ya no esta.
+         Las fechas de ingreso masivas son la migracion del sistema, no contratacion. */
+      const antes = emp.ingreso && iso < emp.ingreso && !M.ingresoMasivo.has(emp.ingreso);
+      const despues = emp.vigFin && iso > emp.vigFin;
+      if(antes || despues){ o.fuera++; o.dias.set(iso, {k:'fuera'}); return; }
+      o.vig++;
+      if(o.ini===null) o.ini = iso;
+      o.fin = iso;
+      const st = estadoCob(M, R, cfg, id, iso, filaPorIso, marcasPorIso);
+      o.dias.set(iso, st);
+      if(st.asignado) o.asig++;
+      if(st.jornada)  o.jornada++;
+      if(st.marco)    o.marco++;
+      o[st.k === 'ok' ? 'limpio' : st.k]++;
+    });
+    /* Los tres porcentajes responden preguntas distintas y por eso llevan denominadores
+       distintos. Mezclarlos es lo que vuelve el reporte inaccionable. */
+    o.pctAsig    = o.vig ? o.asig/o.vig*100 : null;                 // ¿le cargaron turno?
+    o.pctMarca   = o.jornada ? (o.jornada - o.falta)/o.jornada*100 : null;  // ¿marcó cuando debía?
+    o.pctCalidad = o.marco ? o.limpio/o.marco*100 : null;           // cuando marcó, ¿marcó bien?
+    filas.push(o);
+  });
+  return { dates, filas };
+}
+
+function cobFiltrado(C){
+  const cia = $('#fCiaCob').value, dep = $('#fDeptoCob').value;
+  const q = $('#qCob').value.trim().toLowerCase();
+  const ord = $('#fOrdCob').value;
+  const nn = v => v==null ? 999 : v;
+  return C.filas.filter(o=>
+       (!cia || o.emp.empresa===cia) && (!dep || o.emp.depto===dep)
+    && (!q || o.id.includes(q) || String(o.emp.nombre).toLowerCase().includes(q)))
+    .sort(ord==='calidad' ? (a,b)=>nn(a.pctCalidad)-nn(b.pctCalidad)
+        : ord==='nombre'  ? (a,b)=>String(a.emp.nombre).localeCompare(String(b.emp.nombre),'es')
+        : (a,b)=>nn(a.pctAsig)-nn(b.pctAsig));
+}
+
+function cobAgregar(lista){
+  const t = { vig:0, asig:0, jornada:0, marco:0, limpio:0, falta:0, sinasig:0, sinturno:0, emp:lista.length };
+  lista.forEach(o=>{ ['vig','asig','jornada','marco','limpio','falta','sinasig','sinturno']
+    .forEach(k=>t[k]+=o[k]); });
+  t.pctAsig    = t.vig ? t.asig/t.vig*100 : null;
+  t.pctMarca   = t.jornada ? (t.jornada-t.falta)/t.jornada*100 : null;
+  t.pctCalidad = t.marco ? t.limpio/t.marco*100 : null;
+  return t;
+}
+
+const nivelCob = p => p==null ? 'err' : p>=95 ? 'ok' : p>=80 ? 'warn' : 'err';
+
+function renderCob(){
+  if(!RESULT || !$('#cobTiles')) return;
+  const C = computeCobertura(MODEL, RESULT, RESULT.cfg);
+  const lista = cobFiltrado(C), T = cobAgregar(lista);
+  const col = n => n==='ok' ? 'var(--ok)' : n==='warn' ? 'var(--warn)' : 'var(--err)';
+  $('#fInfoCob').textContent = lista.length===C.filas.length ? '' : `${lista.length} de ${C.filas.length}`;
+
+  const tile = (etq, p, num, den, tip, pie) => {
+    const n = nivelCob(p);
+    return `<div data-tip="${esc(tip)}">
+      <div class="k">${esc(etq)}</div>
+      <div class="v">${p==null?'—':p.toFixed(1)+'%'}<small>${fmtN(num)} de ${fmtN(den)}</small></div>
+      <div class="meter m-${n}"><span style="width:${p==null?0:p.toFixed(1)}%;background:${col(n)}"></span></div>
+      <div class="falta">${esc(pie)}</div></div>`;
+  };
+  $('#cobTiles').innerHTML =
+    tile('Asignación de turno', T.pctAsig, T.asig, T.vig,
+      'Días vigentes con una asignación de turno cargada en el Horario. Denominador: los días en que la persona estuvo vigente, no el ciclo completo.',
+      `${fmtN(T.sinasig)} día-persona sin turno cargado`) +
+    tile('Marcó cuando tenía jornada', T.pctMarca, T.jornada-T.falta, T.jornada,
+      'De los días con jornada programada, en cuántos hubo al menos una marcación.',
+      `${fmtN(T.falta)} días con jornada y sin marcar`) +
+    tile('Calidad de la marcación', T.pctCalidad, T.limpio, T.marco,
+      'De los días en que sí marcó, en cuántos la marcación fue inequívoca (par y sin necesidad de interpretar).',
+      `${fmtN(T.marco - T.limpio)} días que hubo que interpretar`) +
+    tile('Empleados en pantalla', null, T.emp, T.emp,
+      'Cada uno medido contra su propia vigencia.',
+      `${fmtN(T.vig)} días-persona vigentes`);
+
+  /* ── por departamento ── */
+  const porDep = new Map();
+  lista.forEach(o=>{ const k = o.emp.depto || '(sin departamento)';
+    if(!porDep.has(k)) porDep.set(k, []); porDep.get(k).push(o); });
+  const deps = [...porDep.entries()].map(([dep,ls])=>({dep, ...cobAgregar(ls)}))
+    .sort((a,b)=>(a.pctAsig==null?999:a.pctAsig)-(b.pctAsig==null?999:b.pctAsig));
+  const barra = p => `<span class="qbar"><span style="width:${p==null?0:p.toFixed(1)}%;background:${
+    col(nivelCob(p))}"></span></span>${p==null?'—':p.toFixed(1)+'%'}`;
+  $('#tCobDep thead').innerHTML = `<tr><th>Departamento</th><th class="num">Empleados</th>
+    <th class="num" data-tip="Suma de los días vigentes de cada persona del departamento.">Días vigentes</th>
+    <th>Asignación de turno</th><th class="num">Días sin turno</th>
+    <th>Marcó con jornada</th><th class="num">Jornadas sin marcar</th>
+    <th>Calidad</th><th class="num">Días interpretados</th></tr>`;
+  $('#tCobDep tbody').innerHTML = deps.map(d=>
+    `<tr><td>${esc(d.dep)}</td><td class="num">${fmtN(d.emp)}</td><td class="num">${fmtN(d.vig)}</td>
+     <td>${barra(d.pctAsig)}</td><td class="num${d.sinasig?' dev':''}">${fmtN(d.sinasig)}</td>
+     <td>${barra(d.pctMarca)}</td><td class="num">${fmtN(d.falta)}</td>
+     <td>${barra(d.pctCalidad)}</td><td class="num">${fmtN(d.marco-d.limpio)}</td></tr>`
+  ).join('') || `<tr><td colspan="9" class="muted" style="padding:18px">Sin datos para el filtro activo.</td></tr>`;
+
+  /* ── matriz día por día ── */
+  const SIG = {ok:'✓', dud:'!', falta:'F', sinturno:'S', sinasig:'×', desc:'·', fuera:''};
+  const TIP = {
+    ok:'Marcó y la marcación es inequívoca.',
+    dud:'Marcó, pero el número de marcaciones obligó a interpretar el día.',
+    falta:'Tenía jornada programada y no marcó.',
+    sinturno:'Marcó un día sin turno asignado: falta programación.',
+    sinasig:'No tiene ninguna asignación de turno cargada para ese día.',
+    desc:'Descanso programado: tiene turno asignado, pero ese día no trabaja.',
+    fuera:'Fuera de su vigencia: no cuenta en ningún porcentaje.'};
+  $('#tCob thead').innerHTML = `<tr><th class="stick1">Código</th><th class="stick2">Nombre</th>` +
+    C.dates.map(iso=>{
+      const fes = isHoliday(iso), dw = dow(iso);
+      return `<th class="cday ${fes?'fes':dw===0?'dom':''}" data-tip="${esc(iso+(fes?' — '+fes:''))}">`+
+             `<b>${+iso.slice(-2)}</b><i>${DOW_ES[dw][0]}</i></th>`;
+    }).join('') + `</tr>`;
+  $('#tCob tbody').innerHTML = lista.map(o=>
+    `<tr><td class="mono stick1">${esc(o.id)}</td><td class="stick2">${esc(o.emp.nombre)}</td>` +
+    C.dates.map(iso=>{
+      const st = o.dias.get(iso) || {k:'fuera'};
+      const tip = `${iso} · ${esc(o.emp.nombre)} — ${TIP[st.k]}` +
+                  (st.turno ? ` Turno ${esc(st.turno)}.` : '');
+      return `<td class="ccell c-${st.k}" data-id="${esc(o.id)}" data-iso="${iso}" `+
+             `data-tip="${esc(tip)}">${SIG[st.k]}</td>`;
+    }).join('') + `</tr>`
+  ).join('') || `<tr><td colspan="${2+C.dates.length}" class="muted" style="padding:18px">Sin empleados que coincidan con el filtro.</td></tr>`;
+  $$('#tCob td.ccell').forEach(td=>td.onclick=()=>irADetalle(td.dataset.id, td.dataset.iso));
+
+  const fCia = $('#fCiaCob').value, fDep = $('#fDeptoCob').value;
+  $('#cobPrintHead').innerHTML =
+    `<h2>Cobertura y calidad — ciclo ${esc(RESULT.cfg.ini)} a ${esc(RESULT.cfg.fin)}</h2>` +
+    `<div class="muted" style="font-size:11px">${esc(fCia||'Todas las compañías')} · ` +
+    `${esc(fDep||'Todos los departamentos')} · ${fmtN(T.emp)} empleados · ` +
+    `${fmtN(T.vig)} días-persona vigentes · generado ${new Date().toLocaleString('es-CO')}</div>`;
+}
+
+function aoaCobertura(){
+  const C = computeCobertura(MODEL, RESULT, RESULT.cfg);
+  const lista = cobFiltrado(C);
+  const head = ['COD_EMPLEADO','NOMBRE','DEPARTAMENTO','COMPANIA','VINCULO','INGRESO','FIN VIGENCIA',
+    'PRIMER DIA VIGENTE','ULTIMO DIA VIGENTE','DIAS DEL CICLO','DIAS VIGENTES','DIAS FUERA DE VIGENCIA',
+    'DIAS CON TURNO','% ASIGNACION','DIAS SIN TURNO','DIAS CON JORNADA','JORNADAS SIN MARCAR',
+    '% MARCO','DIAS QUE MARCO','DIAS LIMPIOS','DIAS INTERPRETADOS','% CALIDAD','MARCO SIN TURNO'];
+  const body = lista.map(o=>[o.id, o.emp.nombre, o.emp.depto||'', o.emp.empresa||'',
+    o.emp.vinculo||'ACTIVO', o.emp.ingreso||'', o.emp.vigFin||'', o.ini||'', o.fin||'',
+    C.dates.length, o.vig, o.fuera,
+    o.asig, o.pctAsig==null?'':+o.pctAsig.toFixed(1), o.sinasig,
+    o.jornada, o.falta, o.pctMarca==null?'':+o.pctMarca.toFixed(1),
+    o.marco, o.limpio, o.marco-o.limpio, o.pctCalidad==null?'':+o.pctCalidad.toFixed(1), o.sinturno]);
+  return [head, ...body];
+}
+
+function aoaCoberturaDep(){
+  const C = computeCobertura(MODEL, RESULT, RESULT.cfg);
+  const lista = cobFiltrado(C);
+  const porDep = new Map();
+  lista.forEach(o=>{ const k=o.emp.depto||'(sin departamento)';
+    if(!porDep.has(k)) porDep.set(k,[]); porDep.get(k).push(o); });
+  const head = ['DEPARTAMENTO','EMPLEADOS','DIAS VIGENTES','DIAS CON TURNO','% ASIGNACION',
+    'DIAS SIN TURNO','DIAS CON JORNADA','JORNADAS SIN MARCAR','% MARCO','DIAS QUE MARCO',
+    'DIAS LIMPIOS','% CALIDAD'];
+  const fila = (dep,t)=>[dep, t.emp, t.vig, t.asig, t.pctAsig==null?'':+t.pctAsig.toFixed(1),
+    t.sinasig, t.jornada, t.falta, t.pctMarca==null?'':+t.pctMarca.toFixed(1),
+    t.marco, t.limpio, t.pctCalidad==null?'':+t.pctCalidad.toFixed(1)];
+  const body = [...porDep.entries()].map(([dep,ls])=>fila(dep, cobAgregar(ls)))
+    .sort((a,b)=>(a[4]===''?999:a[4])-(b[4]===''?999:b[4]));
+  return [head, ...body, fila('TOTAL', cobAgregar(lista))];
+}
+
 function toast(m){ const t=$('#toast'); t.textContent=m; t.classList.add('on');
   clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove('on'),2600); }
 
@@ -2858,6 +3142,8 @@ function fillFiltros(){
   keep($('#fDeptoKpi'),deps,'Todos los departamentos');
   keep($('#fCiaQ'),  cias, 'Todas las compañías');
   keep($('#fDeptoQ'),deps, 'Todos los departamentos');
+  keep($('#fCiaCob'),  cias, 'Todas las compañías');
+  keep($('#fDeptoCob'),deps, 'Todos los departamentos');
 }
 
 function renderCons(){
@@ -3409,7 +3695,7 @@ function runCalc(){
     ASISTENCIA = computeAsistencia(MODEL, cfg);
     renderDisp();
     fillSelects(); fillFiltros(); renderCons(); renderDet(); renderExc(); renderCal();
-    renderGlosario(); renderAsistencia(); renderKpi(); renderCalidad();
+    renderGlosario(); renderAsistencia(); renderKpi(); renderCalidad(); renderCob();
     const b = RESULT.exc.filter(x=>x.sev==='BLOQ').length;
     $('#status').innerHTML = `${RESULT.cons.length} empleados con conceptos · ` +
       (b?`<b style="color:#fca5a5">${b} bloqueantes</b>`:'sin bloqueantes');
@@ -3536,6 +3822,21 @@ document.addEventListener('DOMContentLoaded',()=>{
     if(!RESULT){ toast('Primero calcule el ciclo.'); return; }
     document.body.classList.add('print-q');
     const limpiar = ()=>document.body.classList.remove('print-q');
+    window.addEventListener('afterprint', limpiar, {once:true});
+    setTimeout(limpiar, 1500);
+    window.print();
+  };
+  ['fCiaCob','fDeptoCob','fOrdCob'].forEach(id=>
+    $('#'+id).onchange = ()=>RESULT&&renderCob());
+  $('#qCob').oninput     = ()=>RESULT&&renderCob();
+  $('#fClearCob').onclick= ()=>{ $('#fCiaCob').value=''; $('#fDeptoCob').value='';
+    $('#fOrdCob').value='turno'; $('#qCob').value=''; RESULT&&renderCob(); };
+  $('#expCob').onclick = ()=>RESULT&&save({'Por empleado':aoaCobertura(),
+    'Por departamento':aoaCoberturaDep()}, `Cobertura_${stamp()}.xlsx`);
+  $('#pdfCob').onclick = ()=>{
+    if(!RESULT){ toast('Primero calcule el ciclo.'); return; }
+    document.body.classList.add('print-cob');
+    const limpiar = ()=>document.body.classList.remove('print-cob');
     window.addEventListener('afterprint', limpiar, {once:true});
     setTimeout(limpiar, 1500);
     window.print();
