@@ -6,10 +6,12 @@ internet salvo la librería de Excel (SheetJS, cargada desde `cdnjs.cloudflare.c
 corre en el navegador del usuario, sobre los cinco archivos Excel que él mismo carga (cuatro
 obligatorios más `Renuncia_*.xlsx`, que es opcional).
 
-El diseño de negocio completo (137 condiciones, bloques A a J) está en
-**[CATALOGO-CONDICIONES.md](CATALOGO-CONDICIONES.md)**. Ese documento es la intención original; este
-archivo (`CLAUDE.md`) es el estado real de lo que existe en código, y la única fuente de verdad sobre
-qué convención seguir al modificarlo.
+El catálogo de condiciones de negocio (166 condiciones, bloques A a K, v2.0) está en
+**[CATALOGO-CONDICIONES.md](CATALOGO-CONDICIONES.md)**. Ese documento es hoy el catálogo de
+condiciones **vigente**: cada condición trae su estado real de implementación (Implementada / Parcial
+/ Decisión de diseño / Reemplazada / No implementada), verificado contra el código. Este archivo
+(`CLAUDE.md`) sigue siendo la fuente sobre el razonamiento de ingeniería — por qué se tomó cada
+decisión, qué se probó y se descartó, qué convención seguir al modificar el código.
 
 ## Archivos del proyecto
 
@@ -73,6 +75,7 @@ esTurnoExtra, pasoExtra                                 (turnos de solo extras, 
 semanaDeTs, inicioSemanaTs, partirPorSemana            (semana del umbral por instante)
 activoEnCiclo                                           (universo del reporte segun el rango, recortado a la vigencia)
 estadoCob, computeCobertura, cobFiltrado, cobAgregar, nivelCob   (Cobertura y calidad)
+COB_EMP, COB_PERD, COB_SIG, COB_TIP, cobOrden, cobConcentra      (navegación general → detalle)
 renderCob, aoaCobertura, aoaCoberturaDep
 modo, irADetalle, marcarCol, aplicarCols, renderCols     (interfaz: modos, salto y columnas)
 tipHTML, chip, initPop                                  (sistema de tooltips — ver nota abajo)
@@ -610,6 +613,23 @@ denominador, así que quien entró o se fue a mitad de ciclo no queda penalizado
 - `% asignación` = días con turno asignado / días vigentes.
 - `% marcó` = (jornadas programadas − faltas) / jornadas programadas.
 - `% calidad` = días con marcación limpia / días en que marcó (los sugeridos A-04 y los dudosos restan).
+  **Un día bien marcado sin turno cuenta como limpio**: ese problema ya es de programación y cae en
+  `% asignación`. Contarlo dos veces mezclaba problemas con dueños distintos (el empleado 379 marcaba
+  bien 15 días sin turno y salía con 0% de calidad).
+- Los días perdidos de asignación son `vig − asig` (**10.222** en agosto), no `sinasig` (8.110): a
+  `sinasig` le faltaban los días en que la persona marcó sin tener turno.
+
+**Navegación de lo general al detalle.** Empresa → departamento → empleado → día → Detalle. El
+nivel se deriva del estado, no se guarda aparte: `COB_EMP` (empleado abierto) o si no `#fDeptoCob`
+(departamento) o si no la empresa. La tabla del medio cambia según el nivel (departamentos,
+empleados, o los días a revisar con sus marcaciones reales), y una ruta (`#cobRuta`) permite
+subir. Se ordena por **días perdidos**, no por porcentaje (un 50% en un área de 2 personas pesa menos
+que un 90% en una de 574), y clic en un indicador ordena por esa métrica. Cada indicador dice
+cuántas unidades concentran el 80% del problema (`cobConcentra`): en agosto el 80% de los días sin
+turno está en 5 de 23 departamentos, pero dentro de Producción Farmacéutica está en 394 de 574
+personas, o sea que es un problema de proceso y no de individuos. Al abrir un día en Detalle aparece
+`#btnDetVolver`, que regresa a la pestaña de origen sin perder nivel ni filtros (sirve también para
+Calendario y Asistencia, porque vive en `irADetalle`).
 
 Cada celda de la matriz calendario tiene un estado (`ok`, `dud`, `falta`, `sinturno`, `sinasig`,
 `desc`, `fuera`) calculado por `estadoCob()` y lleva a Detalle con `irADetalle`. Exporta a Excel dos
