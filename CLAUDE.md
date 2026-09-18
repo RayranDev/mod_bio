@@ -747,6 +747,93 @@ que ya debería funcionar.
 
 ---
 
+## Exportación a Sinergy — diseño acordado, PENDIENTE de implementar (sept-2026)
+
+**Este es el objetivo final de toda la herramienta.** Todo lo demás (Consolidado, Detalle, KPI,
+Cobertura) existe para que RRHH valide el cálculo y dé el OK. Después de ese OK se exporta el TXT
+plano que se sube a **Sinergy**, el programa que liquida la nómina. Junto con el TXT se entrega un
+consolidado de las horas reportadas. El usuario confirmó que esto **se va a implementar**; esta sección
+es el insumo para cuando lo pida.
+
+### Antecedente: la herramienta anterior
+
+El usuario ya había construido `Consolidado_SINERGY_offline_8.html` (una sola página, SheetJS
+incrustado). Tomaba las horas **ya calculadas por BioTime** (una columna por concepto), las cruzaba
+con un catálogo de empleados y generaba el TXT, un Excel para Sinergy y una tabla por empleado.
+**Nunca salió a producción, porque el cálculo de horas de BioTime estaba mal**: no aplica la jornada
+fija, la escalera, el café, la bolsa semanal ni el resto de lo que hace este motor. De esa herramienta
+se reutilizan la **idea del catálogo** y los **chequeos previos a la exportación**, no el cálculo.
+
+Lecciones de esa herramienta que siguen valiendo:
+
+- Localizar las columnas del Excel **por nombre, nunca por posición**.
+- Dos normalizaciones distintas. El **id de empleado** pierde los ceros a la izquierda (y un `.0`
+  final), pero solo si es 100% numérico. El **código de concepto** nunca se toca: `0200` sigue siendo
+  `0200` (H-05). Si el código viene como celda numérica de Excel, el cero ya se perdió en el origen.
+- Una columna que llega **completamente vacía** apunta al sistema de origen, no al cruce: BioTime
+  dejaba vacío un concepto cuyo nombre tenía un punto (`1.25%`).
+- Si algo no cruza, **no lanzar un error duro**: mostrarlo y bloquear el botón con un mensaje concreto.
+
+### Hallazgos verificados contra los datos reales
+
+- **El código de BioTime NO es la cédula.** Los 1.064 `Empleado ID` tienen entre 1 y 4 dígitos. La
+  cédula aparece en la columna `Código de nómina` del maestro, pero solo en 329 de 1.064 personas: no
+  sirve como llave.
+- **La llave correcta es el código de BioTime.** El catálogo de prueba (`DATOS EMPLEADOS.xlsx`:
+  `CC | COD_EMPLEADO | COD_SINER | NOMBRE`) usa `COD_EMPLEADO` = `Empleado ID`. Cruce limpio: 0
+  duplicados, 0 nombres que no coinciden con BioTime.
+- **Ese catálogo era solo una PRUEBA parcial** (437 personas, todas de GRANSERVICIOS), no el
+  definitivo. En esa muestra `COD_SINER` es la cédula seguida de un dígito; **no asumir que la regla
+  valga para todos**: el código sale del catálogo, nunca se construye.
+- **Hay DOS nóminas separadas: PLASTITECSA y GRANSERVICIOS.** Hoy `sinergyTxt()` genera un solo
+  archivo con todos, salvo que alguien filtre la compañía a mano en el Consolidado; si se olvida, a
+  Sinergy le llega un archivo mezclado. La compañía está bien resuelta para todos, incluidos los
+  retirados (sale del `Branch` de las marcaciones; ver Fuentes de datos).
+
+### Diferencias abiertas — resolver ANTES de tocar el código
+
+1. **El orden de las columnas no coincide.** Ninguno de los dos está validado contra Sinergy, y
+   H-03 a H-10 del catálogo no fijan posiciones.
+
+   | | 1 | 2 | 3 | 4 | 5 | 6 | 7–12 |
+   |---|---|---|---|---|---|---|---|
+   | herramienta anterior | COD_SINER | concepto | `+` | **fecha inicio** | **horas** | fecha fin | vacías |
+   | MOD_BIO hoy (`sinergyTxt`) | Empleado ID | concepto | `+` | **horas** | **fecha inicio** | fecha fin | vacías |
+
+   **Se necesita un TXT que Sinergy haya aceptado de verdad** para decidir cuál es el correcto.
+2. **Hoy se imprime el `Empleado ID` de BioTime, no el `COD_SINER`.** Tal como está, el archivo
+   cargaría horas a códigos que Sinergy no conoce, o a otra persona.
+
+### Diseño acordado
+
+1. **Un archivo más, el catálogo Sinergy, opcional para calcular y obligatorio para exportar.** Mismo
+   trato que Renuncia: sin él se calcula y se valida igual, solo el botón de Sinergy lo exige. Puede
+   venir en uno o dos archivos (uno por nómina); cada persona se ubica por su compañía.
+2. **Cruce por `Empleado ID` → `COD_SINER`.** La cédula queda solo como dato de control.
+3. **Un archivo por compañía**: `FINAL_SINER_<COMPANIA>_<inicio>_<fin>.txt`, más su consolidado.
+4. **Chequeos que bloquean la exportación** (un error aquí paga horas a otra persona):
+   - alguien con conceptos de nómina y **sin `COD_SINER`** → lista y bloqueo;
+   - **un `COD_SINER` en dos personas, o una persona con dos códigos** (E-09) → bloqueo;
+   - **el nombre del catálogo no coincide con el de BioTime** → aviso: es la mejor alarma de un cruce
+     mal hecho.
+5. **El catálogo no se guarda en el navegador.** Lo mantiene nómina y cambia con cada ingreso: se carga
+   en cada corrida, como los demás archivos.
+6. **El rango del ciclo debe ser el corte de nómina**, que puede no coincidir con el mes calendario
+   (por ejemplo, del 10 al 11). Aquí el rango sí filtra, porque se calcula desde las marcaciones; en la
+   herramienta anterior era solo un rótulo porque BioTime ya entregaba el período cortado.
+
+### Insumos que hay que pedir antes de implementar
+
+- El **catálogo completo** con `COD_SINER` de las dos compañías.
+- **Un TXT aceptado por Sinergy**, para cerrar el orden de las columnas.
+
+### Oportunidad aparte (no es parte de esta tarea)
+
+El export `Horas Trabajadas` de BioTime permite comparar su cálculo contra el nuestro, empleado por
+empleado: eso es el **bloque J** (conciliación), que hoy no está implementado.
+
+---
+
 ## Cómo validar un cambio (no hay navegador ni captura de pantalla en este entorno)
 
 El patrón usado en toda la sesión, y el que hay que seguir para cualquier cambio futuro al motor:
