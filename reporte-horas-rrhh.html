@@ -3470,6 +3470,7 @@ function renderDet(){
         e.perfil!==e.perfilAuto?' · Forzado manualmente; el sistema detectó '+e.perfilAuto+'.':''}"
       ><div class="k">Perfil${e.perfil!==e.perfilAuto?' *':''}</div>
        <div class="v" style="font-size:13px">${e.perfil}</div></div>
+     <div data-tip="Compañía que liquida la nómina de esta persona. GRANSERVICIOS son los temporales, que van a otro archivo de nómina."><div class="k">Compañía</div><div class="v" style="font-size:12px">${esc(e.emp.empresa||'—')}</div></div>
      <div><div class="k">Cargo</div><div class="v" style="font-size:12px">${esc(e.emp.cargo||'—')}</div></div>
      <div><div class="k">Horas ciclo</div><div class="v">${e.horas.toFixed(2)}</div></div>
      <div data-tip="Horas ordinarias del ciclo, redondeadas en pasos de 0,5 h."><div class="k">Ordinarias</div><div class="v">${fmt(e.ordH)||0}</div></div>
@@ -3710,14 +3711,14 @@ function aoaCons(){
 }
 function aoaDet(e){
   const cols = conceptCols(RESULT.cfg);
-  const head = ['COD_EMPLEADO','NOMBRE','FECHA','DIA','TIPO DE DIA','TURNO','PROGRAMADO',
+  const head = ['COD_EMPLEADO','NOMBRE','COMPANIA','FECHA','DIA','TIPO DE DIA','TURNO','PROGRAMADO',
                 'MARCACIONES','MARCACIONES DESCARTADAS','ENTRO','SALIO',
                 'MIN TARDE ENTRADA','MIN ANTES SALIDA','ALMUERZO',
                 'HORAS TRABAJADAS','JORNADA FIJA','MIN CAFE RECONOCIDO','MIN LACTANCIA RECONOCIDO','MIN TRANSITO INTERIOR','MIN AUSENCIA POR PORTERIA','VENTANA REDONDEADA (T-EXTRA)','HORAS PENDIENTES','HORAS EXTRA','EXTRA NO AUTORIZADA',
                 'PERFIL','ACUMULADO SEMANA','TOTAL SEMANA','UMBRAL SEMANA','AUTORIZACION',
                 ...cols.map(c=>c.head), 'INFERIDO','NOVEDADES','EXPLICACION'];
   const body = e.ciclo.map(r=>[
-    e.emp.id, e.emp.nombre, r.iso, r.dow, r.tipoLabel, r.turno, r.prog, r.marcas,
+    e.emp.id, e.emp.nombre, e.emp.empresa||'', r.iso, r.dow, r.tipoLabel, r.turno, r.prog, r.marcas,
     (r.descartadas||[]).join(' '),
     r.entTs!=null?hhmm(r.entTs):'', r.salTs!=null?hhmm(r.salTs):'',
     r.entDelta>0?Math.round(r.entDelta):'', r.salDelta<0?Math.round(-r.salDelta):'',
