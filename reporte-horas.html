@@ -782,14 +782,17 @@
 /* ══════════════════════════════════════════════════════════════════
    CONCEPTOS
    ══════════════════════════════════════════════════════════════════ */
+/* `label` es el nombre legal del concepto (va al Excel y al tooltip) y `short` es el
+   rotulo corto de la cabecera: sin el, cuatro columnas distintas se leian "HORA EXTRA"
+   y no habia forma de saber cual era cual sin saberse los codigos de memoria. */
 const CONCEPTS = [
-  { key:'EXT_D',  code:()=>'0200', label:'HORA EXTRA DIURNA ORDINARIA' },
-  { key:'EXT_N',  code:()=>'0210', label:'HORA EXTRA NOCTURNA ORDINARIA' },
-  { key:'EXT_FD', code:()=>'0250', label:'HORA EXTRA FESTIVA DIURNA' },
-  { key:'EXT_FN', code:()=>'0260', label:'HORA EXTRA FESTIVA NOCTURNA' },
-  { key:'REC_N',  code:()=>'0220', label:'RECARGO NOCTURNO' },
-  { key:'REC_F',  code:c=>c.corteOn?'0252':'0253', label:'RECARGO DOMINICAL / FESTIVO' },
-  { key:'REC_FN', code:c=>c.corteOn?'0258':'0259', label:'RECARGO NOCTURNO FESTIVO' }
+  { key:'EXT_D',  code:()=>'0200', label:'HORA EXTRA DIURNA ORDINARIA',   short:'Extra diurna' },
+  { key:'EXT_N',  code:()=>'0210', label:'HORA EXTRA NOCTURNA ORDINARIA', short:'Extra nocturna' },
+  { key:'EXT_FD', code:()=>'0250', label:'HORA EXTRA FESTIVA DIURNA',     short:'Extra festiva diurna' },
+  { key:'EXT_FN', code:()=>'0260', label:'HORA EXTRA FESTIVA NOCTURNA',   short:'Extra festiva nocturna' },
+  { key:'REC_N',  code:()=>'0220', label:'RECARGO NOCTURNO',              short:'Recargo nocturno' },
+  { key:'REC_F',  code:c=>c.corteOn?'0252':'0253', label:'RECARGO DOMINICAL / FESTIVO', short:'Recargo dom./fest.' },
+  { key:'REC_FN', code:c=>c.corteOn?'0258':'0259', label:'RECARGO NOCTURNO FESTIVO',    short:'Rec. nocturno festivo' }
 ];
 const CKEYS = CONCEPTS.map(c=>c.key);
 const DOW_ES = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
@@ -3365,7 +3368,7 @@ function guardarDisp(){
   localStorage.setItem('mb_dispositivos', JSON.stringify(DISPOSITIVOS));
 }
 function conceptCols(cfg){
-  return CONCEPTS.map(c=>({key:c.key, code:c.code(cfg), label:c.label,
+  return CONCEPTS.map(c=>({key:c.key, code:c.code(cfg), label:c.label, short:c.short||c.label,
     tip:`${c.code(cfg)} — ${c.label}. ${CONC_DESC[c.key]}`,
     head:`${c.code(cfg)} - ${c.label}`}));
 }
@@ -3432,7 +3435,7 @@ function renderCons(){
   $('#fInfo').textContent = filtroHay() ? `${list.length} de ${R.cons.length}` : '';
 
   $('#tCons thead').innerHTML = `<tr><th>COD_EMPLEADO</th><th>NOMBRE</th><th>DEPARTAMENTO</th><th>COMPAÑÍA</th>` +
-    cols.map(c=>`<th class="num cw" data-tip="${esc(c.tip)}"><b>${esc(c.code)}</b><i>${esc(c.label)}</i></th>`).join('') +
+    cols.map(c=>`<th class="num cw" data-tip="${esc(c.tip)}"><b>${esc(c.code)}</b><i>${esc(c.short)}</i></th>`).join('') +
     `<th class="num cw" data-tip="Horas trabajadas reales del ciclo, sin redondear."><b>Horas</b><i>trabajadas</i></th>
      <th class="num cw" data-tip="Suma de las horas fijas de los turnos del ciclo. Se acreditan completas aunque algun dia haya trabajado de menos; ese faltante esta en la columna Pendientes."><b>Ordin.</b><i>jornada fija</i></th>
      <th class="num cw" data-tip="Horas que le faltaron para completar sus turnos en el ciclo y aun asi se le pagaron. Es el sustento para un reclamo, no un descuento."><b>Pend.</b><i>no cumplidas</i></th>
@@ -3494,7 +3497,7 @@ function renderCons(){
      <div><div class="k">Ordinarias</div><div class="v">${fmt(list.reduce((s,e)=>s+e.ordH,0))||0}</div></div>
      <div><div class="k">Extras</div><div class="v">${fmt(list.reduce((s,e)=>s+e.extraH,0))||0}</div></div>` +
     cols.filter(c=>tots[c.key]>0).map(c=>
-      `<div data-tip="${esc(c.tip)}"><div class="k">${esc(c.code)}</div>
+      `<div data-tip="${esc(c.tip)}"><div class="k">${esc(c.code)} · ${esc(c.short)}</div>
        <div class="v">${fmt(tots[c.key])}</div></div>`).join('') +
     `<div><div class="k">Excepciones</div><div class="v">${
        filtroHay() ? R.exc.filter(x=>ids.has(x.id)).length : R.exc.length}</div></div>`;
@@ -3641,7 +3644,7 @@ function renderDet(){
      <div data-tip="Horas que le faltaron para completar sus turnos y aun asi se le pagaron."><div class="k">Pendientes</div><div class="v">${fmt(e.pendH)||0}</div></div>
      <div data-nov="TARDE"><div class="k">Dias con desvio</div><div class="v">${e.tardes}</div></div>` +
     cols.filter(c=>e.tot[c.key]>0).map(c=>
-      `<div data-tip="${esc(c.tip)}"><div class="k">${esc(c.code)}</div>
+      `<div data-tip="${esc(c.tip)}"><div class="k">${esc(c.code)} · ${esc(c.short)}</div>
        <div class="v">${fmt(e.tot[c.key])}</div></div>`).join('');
 
   $('#tDet thead').innerHTML = `<tr>
@@ -3656,7 +3659,7 @@ function renderDet(){
     <th class="num" data-col="pend" data-tip="Horas pendientes: lo que le falto para completar su turno y aun asi se le pago. Sirve para sustentar un reclamo sin dejar de pagarle la jornada.">Pend.</th>
     <th class="num" data-col="extra" data-tip="Sobretiempo del dia, contado desde el FIN DEL TURNO con la escalera: la primera media hora exige 25 minutos y cada media hora siguiente se acredita 10 minutos antes de completarse. Tachado si no esta autorizado.">Extra</th>
     <th class="num" data-col="acum" data-tip="Acumulado corrido de la semana al cierre de este dia, contando solo las horas que compiten contra el umbral (la jornada fija de cada turno). El sobretiempo del mismo dia no entra: ya es extra por la escalera. En verde el dia en que se cruza el umbral: desde ahi lo demas se paga como extra (D-17 y D-18). El personal administrativo no usa umbral: se compara cada dia contra su jornada (D-23).">Acum. semana</th>` +
-    cols.map(c=>`<th class="num cw" data-col="c-${esc(c.code)}" data-tip="${esc(c.tip)}"><b>${esc(c.code)}</b><i>${esc(c.label.split(' ').slice(0,2).join(' '))}</i></th>`).join('') +
+    cols.map(c=>`<th class="num cw" data-col="c-${esc(c.code)}" data-tip="${esc(c.tip)}"><b>${esc(c.code)}</b><i>${esc(c.short)}</i></th>`).join('') +
     `<th data-col="nov">Novedades</th></tr>`;
 
   $('#tDet tbody').innerHTML = e.ciclo.map(r=>{
