@@ -202,6 +202,15 @@
   #tCob td.c-desc{color:var(--line)}
   #tCob td.c-fuera{background:repeating-linear-gradient(45deg,#fafbfc,#fafbfc 3px,#f0f2f5 3px,#f0f2f5 6px)}
   .cobleg{display:flex;flex-wrap:wrap;gap:12px;font-size:11px;color:var(--muted);margin-top:8px}
+  /* Conmutador de vista y resumen de asistencia */
+  .vista{display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+  .vista button{border:0;background:#fff;padding:5px 11px;font:inherit;font-size:12px;cursor:pointer;color:var(--muted)}
+  .vista button.on{background:var(--accent,#2a78d6);color:#fff;font-weight:600}
+  #tAsisRes tbody tr{cursor:pointer}
+  #tAsisRes tbody tr:hover td{background:#f5f8fc}
+  #tAsisRes td.r-ok{background:var(--ok-soft);color:var(--ok);font-weight:600}
+  #tAsisRes td.r-warn{background:var(--warn-soft);color:var(--warn);font-weight:600}
+  #tAsisRes td.r-err{background:var(--err-soft);color:var(--err);font-weight:600}
   /* Navegacion de lo general al detalle */
   .ruta{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:4px 0 10px;font-size:13px}
   .ruta button{background:none;border:0;padding:2px 4px;color:var(--accent,#2a78d6);cursor:pointer;font:inherit}
@@ -572,10 +581,24 @@
     <input type="text" id="qAs" placeholder="Código, nombre o apellido…" style="max-width:190px">
     <button id="fClearAs">Limpiar</button>
     <span id="fInfoAs" class="muted"></span>
+    <div class="vista" id="asisVista">
+      <button data-vista="cal" class="on">Calendario</button>
+      <button data-vista="res">Resumen por empleado</button>
+    </div>
     <span class="sp"></span>
     <button id="expAsis">Exportar asistencia (Excel)</button>
+    <button id="expAsisColor" data-tip="Exporta la vista que está en pantalla con sus colores. Excel avisa que la extensión no coincide con el formato: se acepta y abre normal.">Exportar con colores (Excel)</button>
   </div>
   <div class="kpi" id="kpiAsis"></div>
+  <div id="asisRes" hidden>
+    <div class="scroll" style="max-height:75vh"><table id="tAsisRes"><thead></thead><tbody></tbody></table></div>
+    <p class="muted" style="font-size:11px;margin-top:8px">
+      Ordenado por quién lleva más días hábiles sin marcar. <b>Clic en una fila</b> para abrir a esa
+      persona en el Detalle, en su última marcación. Los días hábiles descuentan festivos y van de
+      lunes a sábado para los rotativos, de lunes a viernes para los administrativos.
+    </p>
+  </div>
+  <div id="asisCal">
   <div class="scroll" style="max-height:75vh"><table id="tAsis"><thead></thead><tbody></tbody></table></div>
   <p class="muted" style="font-size:11px;margin-top:8px">
     <span class="tag t-ok">A</span> asistió con turno &middot;
@@ -586,6 +609,7 @@
     Una jornada nocturna sin turno asignado (entrada de noche, salida de madrugada) cuenta como un solo día:
     el día en que empezó.
   </p>
+  </div>
 </section>
 
 <section id="tab-kpi" class="tabwrap">
@@ -2241,8 +2265,16 @@ function asisFiltrado(){
              && coincideEmp(e.emp, q))
     .sort((a,b)=>a.emp.nombre.localeCompare(b.emp.nombre,'es'));
 }
+let AS_VISTA = 'cal';          // 'cal' = calendario dia por dia · 'res' = resumen por empleado
+
 function renderAsistencia(){
   if(!RESULT || !ASISTENCIA) return;
+  if($('#asisRes')){
+    $('#asisRes').hidden = AS_VISTA !== 'res';
+    $('#asisCal').hidden = AS_VISTA === 'res';
+    $$('#asisVista button').forEach(b=>b.classList.toggle('on', b.dataset.vista===AS_VISTA));
+    if(AS_VISTA === 'res'){ renderAsisResumen(); }
+  }
   const dates = rangeDays(RESULT.cfg.ini, RESULT.cfg.fin);
   const list  = asisFiltrado();
   const activo = $('#fCiaAs').value || $('#fDeptoAs').value || $('#qAs').value.trim();
@@ -2302,23 +2334,101 @@ function habilesEntre(desde, hasta, perfil){
   return n;
 }
 
-/** Resumen por persona: cuanto marco contra cuanto debia, y hace cuanto no aparece. */
-function aoaAsisResumen(){
+/** Resumen por persona: cuanto marco contra cuanto debia, y hace cuanto no aparece.
+ *  Una sola fuente para la pantalla y para el Excel, para que no puedan divergir.
+ *  Ordena por quien lleva mas dias habiles sin marcar: eso es lo accionable. */
+function asisResumenFilas(){
   const hoy = toISO(new Date());
-  const head = [...AS_IDENT,'PERFIL','VÍNCULO','MARCACIONES','DÍAS QUE MARCÓ','DÍAS PROGRAMADOS',
-    'ASISTENCIA','% ASISTENCIA','DÍAS SIN ASISTIR','DÍAS QUE MARCÓ SIN TURNO',
-    'ÚLTIMA MARCACIÓN','DÍAS HÁBILES SIN MARCAR'];
-  const body = asisFiltrado().map(e=>{
+  return asisFiltrado().map(e=>{
     const r = e.resumen;
     const perfil = (RESULT.byEmp.get(e.emp.id)||{}).perfil || 'ROTATIVO';
-    const marco = r.A + r.S;
-    return [...asIdent(e.emp), perfil, e.emp.vinculo||'ACTIVO',
-      e.marcas, marco, r.P, `${r.A}/${r.P}`,
-      r.P ? +(r.A/r.P*100).toFixed(1) : '',
-      r.F, r.S, e.ultima||'',
-      e.ultima ? habilesEntre(e.ultima, hoy, perfil) : ''];
-  });
-  return [head, ...body];
+    return { emp:e.emp, perfil, marcas:e.marcas, marco:r.A + r.S, prog:r.P,
+             A:r.A, S:r.S, F:r.F,
+             pct: r.P ? +(r.A/r.P*100).toFixed(1) : null,
+             ultima: e.ultima || null,
+             sinMarcar: e.ultima ? habilesEntre(e.ultima, hoy, perfil) : null };
+  }).sort((a,b)=>(b.sinMarcar==null?-1:b.sinMarcar)-(a.sinMarcar==null?-1:a.sinMarcar)
+               || (a.pct==null?101:a.pct)-(b.pct==null?101:b.pct)
+               || String(a.emp.nombre).localeCompare(String(b.emp.nombre),'es'));
+}
+
+const AS_RES_HEAD = [...AS_IDENT,'PERFIL','VÍNCULO','MARCACIONES','DÍAS QUE MARCÓ','DÍAS PROGRAMADOS',
+  'ASISTENCIA','% ASISTENCIA','DÍAS SIN ASISTIR','DÍAS QUE MARCÓ SIN TURNO',
+  'ÚLTIMA MARCACIÓN','DÍAS HÁBILES SIN MARCAR'];
+const asisResFila = o => [...asIdent(o.emp), o.perfil, o.emp.vinculo||'ACTIVO',
+  o.marcas, o.marco, o.prog, `${o.A}/${o.prog}`, o.pct==null?'':o.pct,
+  o.F, o.S, o.ultima||'', o.sinMarcar==null?'':o.sinMarcar];
+
+function aoaAsisResumen(){ return [AS_RES_HEAD, ...asisResumenFilas().map(asisResFila)]; }
+
+/** Nivel de alarma de las dos columnas que se leen primero. */
+const nivelPct = p => p==null ? '' : p>=95 ? 'ok' : p>=80 ? 'warn' : 'err';
+const nivelSil = d => d==null || d<=0 ? '' : d>=3 ? 'err' : 'warn';
+
+function renderAsisResumen(){
+  if(!$('#tAsisRes')) return;
+  const filas = asisResumenFilas();
+  $('#tAsisRes thead').innerHTML = `<tr>
+    <th>Código</th><th>Nombres</th><th>Apellidos</th><th>Compañía</th><th>Departamento</th><th>Cargo</th>
+    <th>Perfil</th><th class="num" data-tip="Marcaciones del rango, ya depuradas (A-06/A-07).">Marcaciones</th>
+    <th class="num" data-tip="Días con turno programado en los que sí marcó, sobre los días programados.">Asistencia</th>
+    <th class="num">% asistencia</th><th class="num">Días sin asistir</th>
+    <th class="num" data-tip="Días que marcó sin tener turno asignado.">Marcó sin turno</th>
+    <th>Última marcación</th>
+    <th class="num" data-tip="Días hábiles transcurridos desde su última marcación hasta hoy, sin contar festivos.">Días hábiles sin marcar</th></tr>`;
+  $('#tAsisRes tbody').innerHTML = filas.map(o=>
+    `<tr data-id="${esc(o.emp.id)}" data-iso="${esc(o.ultima||RESULT.cfg.ini)}">
+      <td class="mono">${esc(o.emp.id)}</td><td>${esc(o.emp.nombres||o.emp.nombre||'')}</td>
+      <td>${esc(o.emp.apellidos||'')}${tagRetiro(o.emp)}</td><td>${esc(o.emp.empresa||'')}</td>
+      <td>${esc(o.emp.depto||'')}</td><td>${esc(o.emp.cargo||'')}</td>
+      <td>${esc(o.perfil)}</td><td class="num">${fmtN(o.marcas)}</td>
+      <td class="num">${o.A}/${o.prog}</td>
+      <td class="num ${nivelPct(o.pct)?'r-'+nivelPct(o.pct):''}">${o.pct==null?'—':o.pct.toFixed(1)+'%'}</td>
+      <td class="num${o.F?' dev':''}">${o.F}</td><td class="num">${o.S}</td>
+      <td class="mono">${esc(o.ultima||'—')}</td>
+      <td class="num ${nivelSil(o.sinMarcar)?'r-'+nivelSil(o.sinMarcar):''}">${o.sinMarcar==null?'—':o.sinMarcar}</td></tr>`
+  ).join('') || `<tr><td colspan="14" class="muted" style="padding:18px">Sin empleados que coincidan con el filtro.</td></tr>`;
+  $$('#tAsisRes tbody tr[data-id]').forEach(tr=>tr.onclick=()=>irADetalle(tr.dataset.id, tr.dataset.iso));
+}
+
+/** Exporta una tabla con los MISMOS colores de la pantalla. Va en un HTML que Excel abre
+ *  (avisa que la extension no coincide con el formato) porque la version libre de SheetJS
+ *  no escribe color de celda en .xlsx: solo datos y ancho de columna. */
+function guardarXLS(nombre, titulo, aoa, claseDe){
+  const EST = { ok:'background:#e7f7ef;color:#127a52;font-weight:bold',
+                warn:'background:#fdf3e2;color:#9a6100;font-weight:bold',
+                err:'background:#fdeceb;color:#b3261e;font-weight:bold',
+                info:'background:#eef4ff;color:#2a4d8f', mut:'color:#98a2b3' };
+  const filas = aoa.slice(1).map((row,r)=>'<tr>' + row.map((v,c)=>{
+      const k = claseDe ? claseDe(v, r, c) : '';
+      return `<td style="${EST[k]||''}">${esc(v==null?'':v)}</td>`;
+    }).join('') + '</tr>').join('');
+  const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel">
+<head><meta charset="utf-8"><style>
+ table{border-collapse:collapse;font:11px Calibri,Arial,sans-serif}
+ td,th{border:1px solid #d7dce5;padding:2px 6px;white-space:nowrap;vertical-align:middle}
+ th{background:#eef2f7;font-weight:bold;text-align:left}
+</style></head><body><h3 style="font:bold 13px Calibri,Arial">${esc(titulo)}</h3>
+<table><thead><tr>${aoa[0].map(h=>`<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${filas}</tbody></table>
+</body></html>`;
+  const blob = new Blob(['\ufeff'+html], {type:'application/vnd.ms-excel;charset=utf-8'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = nombre;
+  a.click(); URL.revokeObjectURL(a.href);
+  toast('Archivo generado: '+nombre+' · Excel avisa que el formato no coincide: acepte y abre normal.');
+}
+
+/** Colores de la exportacion, calcados de la pantalla. */
+function colorAsisCal(v, r, c){
+  if(c < AS_IDENT.length + 3) return '';                 // datos del empleado y totales
+  return v==='A' ? 'ok' : v==='S' ? 'info' : v==='F' ? 'err' : 'mut';
+}
+function colorAsisRes(v, r, c){
+  const h = AS_RES_HEAD[c];
+  if(h === '% ASISTENCIA') return nivelPct(v===''?null:+v);
+  if(h === 'DÍAS HÁBILES SIN MARCAR') return nivelSil(v===''?null:+v);
+  if(h === 'DÍAS SIN ASISTIR') return +v>0 ? 'warn' : '';
+  return '';
 }
 /** Une los tres indicadores de cumplimiento por empleado, a partir de lo que ya calculó Asistencia. */
 let KPI_EXCLUIDOS_ULTIMO = 0;
@@ -3962,6 +4072,18 @@ document.addEventListener('DOMContentLoaded',()=>{
   $('#expAsis').onclick   = ()=>ASISTENCIA&&save(
     {Asistencia:aoaAsistencia(), 'Resumen por empleado':aoaAsisResumen()},
     `Asistencia_${stamp()}.xlsx`);
+  $$('#asisVista button').forEach(b=>b.onclick = ()=>{
+    AS_VISTA = b.dataset.vista; if(ASISTENCIA) renderAsistencia(); });
+  $('#expAsisColor').onclick = ()=>{
+    if(!ASISTENCIA) return;
+    const rango = `${RESULT.cfg.ini} a ${RESULT.cfg.fin}`;
+    if(AS_VISTA === 'res')
+      guardarXLS(`Asistencia_resumen_${stamp()}.xls`, `Resumen de asistencia por empleado — ${rango}`,
+                 aoaAsisResumen(), colorAsisRes);
+    else
+      guardarXLS(`Asistencia_calendario_${stamp()}.xls`, `Asistencia día por día — ${rango}`,
+                 aoaAsistencia(), colorAsisCal);
+  };
 
   ['fCiaKpi','fDeptoKpi','fTipoKpi','fMinKpi'].forEach(id=>
     $('#'+id).addEventListener('change', ()=>ASISTENCIA&&renderKpi()));

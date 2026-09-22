@@ -68,6 +68,10 @@ celdaPendiente                                          (celda de horas no cumpl
 tagRetiro                                               (marca de empleado retirado, A-16)
 AS_LABEL, ASISTENCIA (global)                           (reporte de asistencia general)
 computeAsistencia, asisFiltrado, renderAsistencia, aoaAsistencia
+sinTildes, coincideEmp                                  (busqueda de empleados en todos los filtros)
+AS_VISTA, AS_IDENT, AS_RES_HEAD, asIdent, asisResFila    (resumen de asistencia)
+asisResumenFilas, aoaAsisResumen, renderAsisResumen, habilesEntre
+guardarXLS, colorAsisCal, colorAsisRes, nivelPct, nivelSil (exportacion con colores)
 KPI_EXCL, KPI_EXCLUIDOS_ULTIMO                          (estado del KPI)
 kpiCalcular, pct, kpiPorDepto, kpiFiltrarEmpleados      (KPI de cumplimiento)
 barPath, fmtPct, fmtN, svgKpiChart, renderCobertura, renderKpi, aoaKpiDep, aoaKpiEmp
@@ -646,6 +650,31 @@ renuncia, en agosto 2026 entraban **14 retirados de julio con 0 marcaciones y 0 
 vacías en Asistencia y en Cobertura. Ahora el rango se recorta a la vigencia de la persona antes de
 buscar marcaciones o turnos. **Nómina idéntica:** el Consolidado es igual byte a byte que el anterior
 (132.218,5 ordinarias y 14.066,5 extra en agosto); el universo pasa de 1.107 a 1.093 empleados.
+
+**Resumen de asistencia por empleado (pestaña Asistencia, conmutador `#asisVista`).** La pestaña
+tiene dos vistas sobre los mismos filtros: el **calendario** día por día y el **resumen por
+empleado**, que responde "¿cuánto marcó contra cuánto debía?" y "¿hace cuánto no aparece?":
+marcaciones del rango, `días que marcó / días programados`, % de asistencia, días sin asistir, días
+que marcó sin turno, última marcación y **días hábiles sin marcar** hasta hoy. Los días hábiles
+descuentan festivos y van de lunes a sábado para los rotativos y de lunes a viernes para los
+administrativos (`habilesEntre`), porque el mismo silencio pesa distinto según el perfil. Se ordena
+por quien lleva más días sin marcar —lo accionable— y **pantalla y Excel salen de la misma función**
+(`asisResumenFilas`), para que no puedan divergir. Clic en una fila abre a esa persona en el Detalle,
+en su última marcación, con el botón de volver.
+
+**Búsqueda de empleados (`coincideEmp`).** El nombre se guarda como `APELLIDOS NOMBRES`, así que
+comparar la frase completa hacía fallar "juan perez" contra "PEREZ JUAN" — el usuario lo reportó como
+"no deja buscar por apellido". Ahora se compara **por palabras sueltas, en cualquier orden y sin
+tildes**, contra el código y el nombre. Lo usan Consolidado, Asistencia, KPI, Cobertura y Excepciones.
+
+**Los `.xlsx` NO pueden llevar color: es un límite de la librería, no una omisión.** La versión libre
+de SheetJS (0.18.5, la que carga el HTML) escribe datos y ancho de columna, nunca formato de celda;
+el estilo es de la versión paga. Por eso existe `guardarXLS()`, que genera un **HTML con extensión
+`.xls`** que Excel abre con los mismos colores de la pantalla. Excel avisa que el formato no coincide
+con la extensión; se acepta y abre normal, y desde ahí se puede guardar como `.xlsx`. Está probado
+solo en la pestaña Asistencia (botón *Exportar con colores*, exporta la vista activa): **el usuario lo
+está evaluando** antes de decidir si se extiende a los demás reportes o se descarta. No propagarlo
+hasta que lo confirme.
 
 ---
 
