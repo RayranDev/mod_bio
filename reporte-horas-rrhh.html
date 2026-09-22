@@ -539,7 +539,7 @@
       <option value="ACTIVO">Solo activos</option><option value="RETIRADO">Solo retirados</option></select>
     <label style="display:flex;align-items:center;gap:5px;font-size:12px;white-space:nowrap;color:var(--muted)">
       <input type="checkbox" id="fSinConc" style="width:auto">Ver sin conceptos</label>
-    <input type="text" id="qCons" placeholder="Código o nombre…" style="max-width:190px">
+    <input type="text" id="qCons" placeholder="Código, nombre o apellido…" style="max-width:190px">
     <button id="fClear">Limpiar</button>
     <span id="fInfo" class="muted"></span>
     <span class="sp"></span>
@@ -601,7 +601,7 @@
   <div class="bar">
     <select id="fCiaAs" style="max-width:170px"><option value="">Todas las compañías</option></select>
     <select id="fDeptoAs" style="max-width:250px"><option value="">Todos los departamentos</option></select>
-    <input type="text" id="qAs" placeholder="Código o nombre…" style="max-width:190px">
+    <input type="text" id="qAs" placeholder="Código, nombre o apellido…" style="max-width:190px">
     <button id="fClearAs">Limpiar</button>
     <span id="fInfoAs" class="muted"></span>
     <span class="sp"></span>
@@ -639,7 +639,7 @@
     </select>
     <input type="number" id="fMinKpi" value="1" min="1" style="max-width:70px" title="Mínimo de incidencias">
     <label class="f" style="margin:0">mín. incidencias</label>
-    <input type="text" id="qKpi" placeholder="Código o nombre…" style="max-width:180px">
+    <input type="text" id="qKpi" placeholder="Código, nombre o apellido…" style="max-width:180px">
     <button id="fClearKpi">Limpiar</button>
     <span class="sp"></span>
     <button id="expKpi">Exportar KPI (Excel)</button>
@@ -730,7 +730,7 @@
       <option value="calidad">Más días interpretados primero</option>
       <option value="nombre">Por nombre</option>
     </select>
-    <input type="text" id="qCob" placeholder="Código o nombre…" style="max-width:190px">
+    <input type="text" id="qCob" placeholder="Código, nombre o apellido…" style="max-width:190px">
     <button id="fClearCob">Limpiar</button>
     <span id="fInfoCob" class="muted"></span>
     <span class="sp"></span>
@@ -2066,6 +2066,11 @@ function computeAsistencia(M, cfg){
     if(!activoEnCiclo(M, id, cfg)) return;
 
     const {clean} = limpiarMarcaciones(rawPunches, cfg);
+    /* Marcaciones del rango (las del dia anterior solo sirven para cerrar una jornada
+       nocturna) y ultima marcacion de TODA la historia cargada: eso es lo que dice si
+       una persona dejo de venir, aunque haya sido antes del ciclo. */
+    const marcasRango = clean.filter(p=>p.iso>=cfg.ini && p.iso<=cfg.fin).length;
+    const ultima = (M.punches.get(id)||[]).reduce((a,p)=>!a||p.iso>a?p.iso:a, null);
 
     /* ventanas programadas del rango extendido (respeta OVERRIDES vía shiftFor) */
     const windows = [];
@@ -2122,7 +2127,7 @@ function computeAsistencia(M, cfg){
     });
 
     const dias = new Map();
-    const resumen = { A:0, S:0, F:0, incompleto:0 };
+    const resumen = { A:0, S:0, F:0, P:0, incompleto:0 };   // P = dias con jornada programada
     dates.forEach(iso=>{
       const sf  = shiftFor(M, id, iso);
       const seg = sf.code ? segmentFor(M, sf.code, iso) : null;
@@ -2164,12 +2169,13 @@ function computeAsistencia(M, cfg){
       } else {
         tip = 'Sin turno programado y sin marcaciones.';
       }
+      if(seg && !fueraVigencia) resumen.P++;
       if(estado) resumen[estado]++;
       if(incompleto) resumen.incompleto++;
       dias.set(iso, {estado, tip, turno: sf.code||null, incompleto});
     });
 
-    out.set(id, { emp, dias, resumen });
+    out.set(id, { emp, dias, resumen, marcas:marcasRango, ultima });
   });
 
   return out;
@@ -2226,11 +2232,24 @@ function initPop(){
   });
 }
 
+/** Busqueda de empleados tolerante, usada por todos los filtros de las pestañas.
+ *  El nombre se guarda como "APELLIDOS NOMBRES", asi que comparar la frase completa
+ *  hacia fallar "juan perez" contra "PEREZ JUAN". Se compara por palabras sueltas, en
+ *  cualquier orden, sin tildes y contra el codigo tambien. */
+function sinTildes(s){
+  return String(s==null?'':s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+}
+function coincideEmp(emp, q){
+  if(!q) return true;
+  const campo = sinTildes(`${emp.id} ${emp.nombre}`);
+  return sinTildes(q).split(/\s+/).filter(Boolean).every(t=>campo.includes(t));
+}
+
 function asisFiltrado(){
   const cia = $('#fCiaAs').value, dep = $('#fDeptoAs').value, q = $('#qAs').value.trim().toLowerCase();
   return [...ASISTENCIA.values()]
     .filter(e=> (!cia||e.emp.empresa===cia) && (!dep||e.emp.depto===dep)
-             && (!q || e.emp.id.includes(q) || e.emp.nombre.toLowerCase().includes(q)))
+             && coincideEmp(e.emp, q))
     .sort((a,b)=>a.emp.nombre.localeCompare(b.emp.nombre,'es'));
 }
 function renderAsistencia(){
@@ -2267,14 +2286,49 @@ function renderAsistencia(){
      <div data-tip="Suma de días-persona sin turno programado pero con marcaciones."><div class="k">Sin turno (S)</div><div class="v">${tot.S}</div></div>
      <div data-tip="Suma de días-persona con turno programado y CERO marcaciones."><div class="k">No asistió (F)</div><div class="v">${tot.F}</div></div>`;
 }
+const AS_IDENT = ['COD_EMPLEADO','NOMBRES','APELLIDOS','COMPAÑÍA','DEPARTAMENTO','CARGO'];
+const asIdent = emp => [emp.id, emp.nombres||emp.nombre||'', emp.apellidos||'',
+                        emp.empresa||'', emp.depto||'', emp.cargo||''];
+
 function aoaAsistencia(){
   const dates = rangeDays(RESULT.cfg.ini, RESULT.cfg.fin);
-  const head = ['COD_EMPLEADO','NOMBRE','DEPARTAMENTO','COMPAÑÍA','DÍAS ASISTIÓ','DÍAS SIN TURNO','DÍAS NO ASISTIÓ',
-                ...dates];
+  const head = [...AS_IDENT,'DÍAS ASISTIÓ','DÍAS SIN TURNO','DÍAS NO ASISTIÓ', ...dates];
   const body = asisFiltrado().map(e=>[
-    e.emp.id, e.emp.nombre, e.emp.depto||'', e.emp.empresa||'',
-    e.resumen.A, e.resumen.S, e.resumen.F,
+    ...asIdent(e.emp), e.resumen.A, e.resumen.S, e.resumen.F,
     ...dates.map(iso=>(e.dias.get(iso)||{}).estado||'') ]);
+  return [head, ...body];
+}
+
+/** Dias habiles entre dos fechas, sin contar festivos. Un rotativo trabaja de lunes a
+ *  sabado y un administrativo de lunes a viernes, asi que el mismo silencio pesa
+ *  distinto segun el perfil. Cuenta desde el dia SIGUIENTE a `desde` hasta `hasta`. */
+function habilesEntre(desde, hasta, perfil){
+  if(!desde || !hasta || desde >= hasta) return 0;
+  const tope = perfil === 'ADMINISTRATIVO' ? 5 : 6;      // 1=Lun .. 6=Sab
+  let n = 0;
+  for(let iso = addDays(desde,1); iso <= hasta; iso = addDays(iso,1)){
+    const d = dow(iso);
+    if(d >= 1 && d <= tope && !isHoliday(iso)) n++;
+  }
+  return n;
+}
+
+/** Resumen por persona: cuanto marco contra cuanto debia, y hace cuanto no aparece. */
+function aoaAsisResumen(){
+  const hoy = toISO(new Date());
+  const head = [...AS_IDENT,'PERFIL','VÍNCULO','MARCACIONES','DÍAS QUE MARCÓ','DÍAS PROGRAMADOS',
+    'ASISTENCIA','% ASISTENCIA','DÍAS SIN ASISTIR','DÍAS QUE MARCÓ SIN TURNO',
+    'ÚLTIMA MARCACIÓN','DÍAS HÁBILES SIN MARCAR'];
+  const body = asisFiltrado().map(e=>{
+    const r = e.resumen;
+    const perfil = (RESULT.byEmp.get(e.emp.id)||{}).perfil || 'ROTATIVO';
+    const marco = r.A + r.S;
+    return [...asIdent(e.emp), perfil, e.emp.vinculo||'ACTIVO',
+      e.marcas, marco, r.P, `${r.A}/${r.P}`,
+      r.P ? +(r.A/r.P*100).toFixed(1) : '',
+      r.F, r.S, e.ultima||'',
+      e.ultima ? habilesEntre(e.ultima, hoy, perfil) : ''];
+  });
   return [head, ...body];
 }
 let KPI_EXCLUIDOS_ULTIMO = 0;
@@ -2286,7 +2340,7 @@ function kpiCalcular(){
     if(cia && e.emp.empresa!==cia) return;
     if(dep && e.emp.depto!==dep) return;
     if(KPI_EXCL.has((e.emp.depto||'').toUpperCase())){ KPI_EXCLUIDOS_ULTIMO++; return; }
-    if(q && !e.emp.id.includes(q) && !e.emp.nombre.toLowerCase().includes(q)) return;
+    if(!coincideEmp(e.emp, q)) return;
     const sinMarca = e.resumen.F, incompleto = e.resumen.incompleto, sinTurno = e.resumen.S, asistio = e.resumen.A;
     const conMarca = (MODEL.punches.get(e.emp.id)||[]).length>0;
     const conTurno = (MODEL.sched.get(e.emp.id)||[]).some(s=>s.ini<=RESULT.cfg.fin && s.fin>=RESULT.cfg.ini);
@@ -2955,7 +3009,7 @@ function cobFiltrado(C){
   const q = $('#qCob').value.trim().toLowerCase();
   return C.filas.filter(o=>
        (!cia || o.emp.empresa===cia) && (!dep || o.emp.depto===dep)
-    && (!q || o.id.includes(q) || String(o.emp.nombre).toLowerCase().includes(q)))
+    && coincideEmp(o.emp, q))
     .sort(cobOrden($('#fOrdCob').value));
 }
 
@@ -3236,7 +3290,7 @@ function consFiltrado(){
     && (!f.depto  || e.emp.depto===f.depto)
     && (!f.perfil || e.perfil===f.perfil)
     && (!f.vinc   || (e.emp.vinculo||'ACTIVO')===f.vinc)
-    && (!f.q      || e.emp.id.includes(f.q) || e.emp.nombre.toLowerCase().includes(f.q)));
+    && coincideEmp(e.emp, f.q));
 }
 /** Puebla los desplegables con los valores presentes en los datos cargados. */
 function fillFiltros(){
@@ -3527,8 +3581,7 @@ function renderExc(){
   const list = RESULT.exc
     .filter(x=>!f||x.sev===f)
     .filter(x=>!dep || (RESULT.byEmp.get(x.id)||{}).emp?.depto===dep)
-    .filter(x=>!q || x.code.toLowerCase().includes(q) || x.id.toLowerCase().includes(q)
-             || x.nombre.toLowerCase().includes(q))
+    .filter(x=>!q || x.code.toLowerCase().includes(q) || coincideEmp({id:x.id, nombre:x.nombre}, q))
     .sort((a,b)=>(a.id+a.fecha).localeCompare(b.id+b.fecha));
   $('#tExc thead').innerHTML =
     `<tr><th>Severidad</th><th>Cond.</th><th>Código</th><th>Nombre</th><th>Fecha</th><th>Descripción</th></tr>`;
@@ -3913,7 +3966,9 @@ document.addEventListener('DOMContentLoaded',()=>{
   $('#qAs').oninput       = ()=>ASISTENCIA&&renderAsistencia();
   $('#fClearAs').onclick  = ()=>{ $('#fCiaAs').value=''; $('#fDeptoAs').value=''; $('#qAs').value='';
     ASISTENCIA&&renderAsistencia(); };
-  $('#expAsis').onclick   = ()=>ASISTENCIA&&save({Asistencia:aoaAsistencia()},`Asistencia_${stamp()}.xlsx`);
+  $('#expAsis').onclick   = ()=>ASISTENCIA&&save(
+    {Asistencia:aoaAsistencia(), 'Resumen por empleado':aoaAsisResumen()},
+    `Asistencia_${stamp()}.xlsx`);
   ['fCiaKpi','fDeptoKpi','fTipoKpi','fMinKpi'].forEach(id=>
     $('#'+id).addEventListener('change', ()=>ASISTENCIA&&renderKpi()));
   $('#qKpi').oninput = ()=>ASISTENCIA&&renderKpi();
