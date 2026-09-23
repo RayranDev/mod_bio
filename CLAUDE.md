@@ -716,6 +716,28 @@ puede leer**: trae `"1 "` como empleado y el literal `"Departamento"` como depar
 que se coló como dato, igual que en `Centro de costos`. Son 482 renuncias reales. Antes esa fila se
 ignoraba en silencio.
 
+**BUG REAL encontrado así (sept-2026): `readSheet()` perdía TODO el archivo de Renuncia.**
+Las exportaciones de BioTime traen una **fila de título** antes del encabezado (`Renuncia`,
+`Empleado`, `Horario`…). La detección de encabezado buscaba `empleado id`, `employee id` o
+`código`, y **la llave del archivo de Renuncia se llama solo `Empleado`**: no coincidía con ningún
+patrón, así que se tomaba el título como encabezado y las 480 filas quedaban sin ninguna columna
+reconocible. Efecto: **cero retirados, todos los que ya salieron reaparecen como ACTIVOS con turno y
+sin marcar**, y 2.954 excepciones bloqueantes de más. El aviso nuevo del encabezado fue el que lo
+delató: *"Renuncias: 480 (480 sin id legible) · retirados: 0"*.
+
+Corregido con dos reglas: se acepta también `^empleado$` como llave, y **una fila de título nunca
+puede ser encabezado porque trae una sola celda** (sin esa segunda condición se rompía el maestro,
+cuyo título dice literalmente "Empleado"). Si ningún patrón coincide, se usa la primera fila con dos
+o más celdas con texto. Con los archivos del 2026-09-22: 478 retirados reconocidos, y los casos que
+el usuario reportó (8977, 9087) salen del reporte porque su vigencia terminó antes del rango,
+mientras 8924 aparece correctamente como `Retirado`.
+
+> **La lección de método, que es la más importante:** este bug vivió oculto porque **las pruebas
+> alimentaban el motor con JSON ya parseado**, saltándose `readSheet()` por completo. La capa de
+> parseo nunca se ejecutó en una prueba. Desde ahora, al tocar parseo hay que construir el `aoa`
+> **con la fila de título incluida** y llamar `readSheet()` de verdad, apilando un `XLSX` falso:
+> `global.XLSX = {read:()=>({SheetNames:['s'],Sheets:{s:{}}}), utils:{sheet_to_json:()=>aoa}}`.
+
 **Lo que ya estaba bien y se verificó al revisar esto:** 57 retirados tienen turno programado dentro
 del ciclo (en BioTime nadie les quita la asignación al irse) y suman 122 días-persona de turno
 posteriores a su vigencia; el motor **no cuenta ni uno solo como ausencia**, porque `vigFin` ya corta

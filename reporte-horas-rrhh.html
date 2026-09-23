@@ -1143,11 +1143,26 @@ function readSheet(buf){
   const wb = XLSX.read(buf,{type:'array',cellDates:true});
   const ws = wb.Sheets[wb.SheetNames[0]];
   const aoa = XLSX.utils.sheet_to_json(ws,{header:1,defval:'',raw:false,blankrows:false});
-  // localizar fila de encabezado: la que trae la columna de identificación
-  let hi = 0;
+  /* Localizar la fila de encabezado. TODAS las exportaciones de BioTime traen una fila de
+     titulo antes ("Renuncia", "Horario", "Turno"...), asi que hay que saltarla.
+     El archivo de Renuncia llamaba a su llave solo "Empleado" —sin "ID"— y no entraba por
+     ninguno de los patrones: se tomaba el titulo como encabezado y se perdian las 480
+     filas EN SILENCIO (todos los retirados volvian a aparecer como activos sin marcar).
+     Por eso hay ademas un respaldo: si ningun patron coincide, se usa la primera fila con
+     dos o mas celdas con texto, que es un encabezado y nunca un titulo. */
+  let hi = -1;
+  const celdas = r => r.filter(c=>String(c).trim()!=='').length;
   for(let i=0;i<Math.min(8,aoa.length);i++){
-    const row = aoa[i].map(c=>String(c).toLowerCase());
-    if(row.some(c=>/empleado id|employee id|c[oó]digo$/.test(c))){ hi=i; break; }
+    /* Una fila de titulo trae UNA sola celda ("Empleado", "Renuncia"): un encabezado
+       siempre trae varias. Sin esta condicion, el titulo del maestro —que dice
+       justamente "Empleado"— se tomaba como encabezado y se perdian los 1.086 empleados. */
+    if(celdas(aoa[i]) < 2) continue;
+    const row = aoa[i].map(c=>String(c).trim().toLowerCase());
+    if(row.some(c=>/^empleado( id)?$|^employee id$|^c[oó]digo$|empleado id|employee id/.test(c))){ hi=i; break; }
+  }
+  if(hi < 0){
+    hi = aoa.findIndex(r=>celdas(r) >= 2);
+    if(hi < 0) hi = 0;
   }
   /* El maestro de Empleados trae DOS columnas llamadas "Cargo": la primera es el nombre
      del cargo y la segunda un codigo numerico. Sin desambiguar, la segunda pisaba a la
