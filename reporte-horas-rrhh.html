@@ -465,6 +465,10 @@
         <select id="cInfer"><option value="0">No (excepción, 0 h)</option><option value="1">Sí, marcar INFERIDO</option></select></div>
       <div><label class="f">Tolerancia de puntualidad (min)</label>
         <input type="number" id="cTolPunt" value="5" min="0"></div>
+      <div><label class="f">Días hábiles sin marcar para <b>revisar</b> <span class="muted">(asistencia)</span></label>
+        <input type="number" id="cAusAviso" value="3" min="1"></div>
+      <div><label class="f">Días hábiles sin marcar para <b>alertar</b> <span class="muted">(asistencia)</span></label>
+        <input type="number" id="cAusGrave" value="6" min="1"></div>
       <div><label class="f">Café para turnos que no lo declaran (min) <span class="muted">(B-12)</span></label>
         <input type="number" id="cCafeAdm" value="20" min="0"></div>
       <div><label class="f">Prefijo de turnos de lactancia <span class="muted">(E-04)</span></label>
@@ -644,7 +648,14 @@
     <p class="muted" style="font-size:11px;margin-top:8px">
       Ordenado por quién lleva más días hábiles sin marcar. <b>Clic en una fila</b> para abrir a esa
       persona en el Detalle, en su última marcación. Los días hábiles descuentan festivos y van de
-      lunes a sábado para los rotativos, de lunes a viernes para los administrativos.
+      lunes a sábado para los rotativos, de lunes a viernes para los administrativos, y se cuentan
+      <b>hasta el último día del rango consultado</b>, no hasta hoy.<br>
+      <span class="tag t-mut">Retirado</span> ya no está: su período termina en su última marcación &middot;
+      <span class="tag t-mut">Sin turno</span> no tenía nada programado &middot;
+      <span class="tag t-ok">Al día</span> marcó hasta el cierre &middot;
+      <span class="tag t-info">1-2 días</span> silencio corto &middot;
+      <span class="tag t-warn">Revisar</span> y <span class="tag t-err">Alerta</span> según los umbrales
+      de los parámetros: <b>puede ser incapacidad, calamidad o permiso</b>, hay que verificarlo antes de actuar.
     </p>
   </div>
   <div id="asisCal">
@@ -1560,6 +1571,7 @@ function readConfig(){
     domRecargo: v('cDom')==='1', descRecargo: v('cDescRec')==='1',
     inferir: v('cInfer')==='1', redondeo: v('cRedon'),
     tolPunt: +v('cTolPunt')||0, autor: v('cAutor'),
+    ausAviso: +v('cAusAviso')||3, ausGrave: +v('cAusGrave')||6,
     ingMasivo: +v('cIngMasivo')||0,
     escPrimer: +v('cEscPrimer')||0, escGracia: +v('cEscGracia')||0,
     cafeAdm: +v('cCafeAdm')||0,
@@ -2371,38 +2383,82 @@ function habilesEntre(desde, hasta, perfil){
 /** Resumen por persona: cuanto marco contra cuanto debia, y hace cuanto no aparece.
  *  Una sola fuente para la pantalla y para el Excel, para que no puedan divergir.
  *  Ordena por quien lleva mas dias habiles sin marcar: eso es lo accionable. */
+/** Estado de una persona frente a la asistencia. Es lo que decide el color, y separa
+ *  tres cosas que se leen igual en una tabla y NO son lo mismo:
+ *   · un retirado no marca porque ya no esta — nunca es una alarma;
+ *   · alguien sin turno programado no tiene nada que incumplir;
+ *   · un ACTIVO con turno que dejo de venir si hay que ir a buscarlo, y el color dice
+ *     con cuanta urgencia. Puede ser incapacidad, calamidad o permiso: la herramienta
+ *     avisa, no juzga. */
+function estadoAsis(o, cfg){
+  if(o.retirado) return {k:'ret', cls:'mut', txt:'Retirado',
+    tip:`Ya no está en la empresa. Su período laborado termina en su última marcación`+
+        `${o.ultima?' ('+o.ultima+')':''}: que no marque después no es ausentismo.`};
+  if(!o.prog && !o.marco) return {k:'sint', cls:'mut', txt:'Sin turno',
+    tip:'No tiene turno programado ni marcaciones en el rango: no hay asistencia que exigir. Es un hueco de programación, no de la persona.'};
+  if(!o.marco) return {k:'nunca', cls:'err', txt:'Sin marcar en el rango',
+    tip:`Tenía ${o.prog} día(s) de jornada programada y ningún día del rango contó como asistencia`+
+        `${o.ultima?`. Su última marcación (${o.ultima}) fue el cierre de una jornada que empezó antes o quedó fuera de la tolerancia del turno`:''}.`+
+        ` Verifique incapacidad, permiso, o si el turno está mal asignado.`};
+  const d = o.sinMarcar || 0;
+  const cola = ` Sigue ACTIVO y con turno: puede ser incapacidad, calamidad o permiso — o que ya no esté viniendo. Hay que verificarlo antes de actuar.`;
+  if(d <= 0) return {k:'ok', cls:'ok', txt:'Al día',
+    tip:'Marcó hasta el final del rango consultado.'};
+  if(d < (cfg.ausAviso||3)) return {k:'leve', cls:'info', txt:`${d} día(s) sin venir`,
+    tip:`Lleva ${d} día(s) hábil(es) sin marcar al cierre del rango.`+cola};
+  if(d < (cfg.ausGrave||6)) return {k:'aviso', cls:'warn', txt:`Revisar · ${d} días`,
+    tip:`Lleva ${d} días hábiles sin marcar al cierre del rango.`+cola};
+  return {k:'grave', cls:'err', txt:`Alerta · ${d} días`,
+    tip:`Lleva ${d} días hábiles sin marcar al cierre del rango.`+cola};
+}
+
 function asisResumenFilas(){
-  const hoy = toISO(new Date());
+  const cfg = RESULT.cfg, hoy = toISO(new Date());
+  /* El silencio se mide contra el FIN DEL RANGO consultado, nunca contra hoy: si se
+     consulta agosto en septiembre, todo el mundo aparecia con semanas de silencio que
+     solo eran el tiempo transcurrido desde el corte. Y nunca contra dias que aun no
+     pasaron, por eso se topa con hoy. */
+  const corte = cfg.fin < hoy ? cfg.fin : hoy;
   return asisFiltrado().map(e=>{
     const r = e.resumen;
     const perfil = (RESULT.byEmp.get(e.emp.id)||{}).perfil || 'ROTATIVO';
-    return { emp:e.emp, perfil, marcas:e.marcas, marco:r.A + r.S, prog:r.P,
-             A:r.A, S:r.S, F:r.F,
-             pct: r.P ? +(r.A/r.P*100).toFixed(1) : null,
-             ultima: e.ultima || null,
-             sinMarcar: e.ultima ? habilesEntre(e.ultima, hoy, perfil) : null };
-  }).sort((a,b)=>(b.sinMarcar==null?-1:b.sinMarcar)-(a.sinMarcar==null?-1:a.sinMarcar)
+    const retirado = (e.emp.vinculo||'ACTIVO') === 'RETIRADO';
+    /* Para un retirado el reloj se detiene en su vigencia, no en el fin del rango. */
+    const fin = retirado && e.emp.vigFin && e.emp.vigFin < corte ? e.emp.vigFin : corte;
+    /* Quien nunca marcó no tiene desde dónde contar: se cuenta desde que empieza a
+       correrle el rango (su ingreso si entró a mitad de ciclo). */
+    const arranque = e.emp.ingreso && e.emp.ingreso > cfg.ini ? e.emp.ingreso : cfg.ini;
+    const desde = e.ultima || addDays(arranque, -1);
+    const sinMarcar = e.ultima && e.ultima >= fin ? 0 : habilesEntre(desde, fin, perfil);
+    const o = { emp:e.emp, perfil, retirado, marcas:e.marcas, marco:r.A + r.S, prog:r.P,
+                A:r.A, S:r.S, F:r.F,
+                pct: r.P ? +(r.A/r.P*100).toFixed(1) : null,
+                ultima: e.ultima || null, sinMarcar };
+    o.estado = estadoAsis(o, cfg);
+    return o;
+  }).sort((a,b)=>(b.retirado?-1:b.sinMarcar)-(a.retirado?-1:a.sinMarcar)
                || (a.pct==null?101:a.pct)-(b.pct==null?101:b.pct)
                || String(a.emp.nombre).localeCompare(String(b.emp.nombre),'es'));
 }
 
-const AS_RES_HEAD = [...AS_IDENT,'PERFIL','VÍNCULO','MARCACIONES','DÍAS QUE MARCÓ','DÍAS PROGRAMADOS',
+const AS_RES_HEAD = [...AS_IDENT,'PERFIL','VÍNCULO','ESTADO','MARCACIONES','DÍAS QUE MARCÓ','DÍAS PROGRAMADOS',
   'ASISTENCIA','% ASISTENCIA','DÍAS SIN ASISTIR','DÍAS QUE MARCÓ SIN TURNO',
   'ÚLTIMA MARCACIÓN','DÍAS HÁBILES SIN MARCAR'];
-const asisResFila = o => [...asIdent(o.emp), o.perfil, o.emp.vinculo||'ACTIVO',
+const asisResFila = o => [...asIdent(o.emp), o.perfil, o.emp.vinculo||'ACTIVO', o.estado.txt,
   o.marcas, o.marco, o.prog, `${o.A}/${o.prog}`, o.pct==null?'':o.pct,
-  o.F, o.S, o.ultima||'', o.sinMarcar==null?'':o.sinMarcar];
+  o.F, o.S, o.ultima||'', o.retirado ? '' : o.sinMarcar];
 
 function aoaAsisResumen(){ return [AS_RES_HEAD, ...asisResumenFilas().map(asisResFila)]; }
 
 /** Nivel de alarma de las dos columnas que se leen primero. */
 const nivelPct = p => p==null ? '' : p>=95 ? 'ok' : p>=80 ? 'warn' : 'err';
-const nivelSil = d => d==null || d<=0 ? '' : d>=3 ? 'err' : 'warn';
+const nivelSil = d => { const c = RESULT ? RESULT.cfg : {};
+  return d==null || d<=0 ? '' : d >= (c.ausGrave||6) ? 'err' : d >= (c.ausAviso||3) ? 'warn' : 'info'; };
 
 /* Columnas ocultables del resumen. El codigo no esta en la lista: identifica la fila y
    sin el no se sabe de quien es. Se guarda por navegador y NO afecta al Excel. */
 const COLS_ASIS = [['nom','Nombres'],['ape','Apellidos'],['cia','Compañía'],['dep','Departamento'],
-  ['cargo','Cargo'],['perfil','Perfil'],['vinc','Vínculo'],['marcas','Marcaciones'],
+  ['cargo','Cargo'],['perfil','Perfil'],['vinc','Vínculo'],['estado','Estado'],['marcas','Marcaciones'],
   ['asist','Asistencia'],['pct','% asistencia'],['faltas','Días sin asistir'],
   ['sinturno','Marcó sin turno'],['ultima','Última marcación'],['sin','Días hábiles sin marcar']];
 let COLS_ASIS_OCULTAS = new Set(JSON.parse(localStorage.getItem('mb_colsAsis')||'[]'));
@@ -2441,6 +2497,7 @@ function renderAsisResumen(){
     <th data-cola="cia">Compañía</th><th data-cola="dep">Departamento</th><th data-cola="cargo">Cargo</th>
     <th data-cola="perfil">Perfil</th>
     <th data-cola="vinc" data-tip="Quien renunció hace meses no marca, y eso no es ausentismo.">Vínculo</th>
+    <th data-cola="estado" data-tip="Estado frente a la asistencia al cierre del rango consultado. Un retirado nunca genera alarma; un activo con turno que dejó de venir, sí.">Estado</th>
     <th class="num" data-cola="marcas" data-tip="Marcaciones del rango, ya depuradas (A-06/A-07).">Marcaciones</th>
     <th class="num" data-cola="asist" data-tip="Días con turno programado en los que sí marcó, sobre los días programados.">Asistencia</th>
     <th class="num" data-cola="pct">% asistencia</th><th class="num" data-cola="faltas">Días sin asistir</th>
@@ -2453,14 +2510,15 @@ function renderAsisResumen(){
       <td data-cola="ape">${esc(o.emp.apellidos||'')}</td><td data-cola="cia">${esc(o.emp.empresa||'')}</td>
       <td data-cola="dep">${esc(o.emp.depto||'')}</td><td data-cola="cargo">${esc(o.emp.cargo||'')}</td>
       <td data-cola="perfil">${esc(o.perfil)}</td><td data-cola="vinc">${tagVinculo(o.emp)}</td>
+      <td data-cola="estado"><span class="tag t-${o.estado.cls==='mut'?'mut':o.estado.cls==='ok'?'ok':o.estado.cls==='info'?'info':o.estado.cls==='warn'?'warn':'err'}" data-tip="${esc(o.estado.tip)}">${esc(o.estado.txt)}</span></td>
       <td class="num" data-cola="marcas">${fmtN(o.marcas)}</td>
       <td class="num" data-cola="asist">${o.A}/${o.prog}</td>
       <td class="num ${nivelPct(o.pct)?'r-'+nivelPct(o.pct):''}" data-cola="pct">${o.pct==null?'—':o.pct.toFixed(1)+'%'}</td>
       <td class="num${o.F?' dev':''}" data-cola="faltas">${o.F}</td>
       <td class="num" data-cola="sinturno">${o.S}</td>
       <td class="mono" data-cola="ultima">${esc(o.ultima||'—')}</td>
-      <td class="num ${nivelSil(o.sinMarcar)?'r-'+nivelSil(o.sinMarcar):''}" data-cola="sin">${o.sinMarcar==null?'—':o.sinMarcar}</td></tr>`
-  ).join('') || `<tr><td colspan="15" class="muted" style="padding:18px">Sin empleados que coincidan con el filtro.</td></tr>`;
+      <td class="num ${o.retirado||!nivelSil(o.sinMarcar)?'':'r-'+nivelSil(o.sinMarcar)}" data-cola="sin">${o.retirado?'—':o.sinMarcar}</td></tr>`
+  ).join('') || `<tr><td colspan="16" class="muted" style="padding:18px">Sin empleados que coincidan con el filtro.</td></tr>`;
   aplicarColsAsis();
   $$('#tAsisRes tbody tr[data-id]').forEach(tr=>tr.onclick=()=>irADetalle(tr.dataset.id, tr.dataset.iso));
 }
@@ -2499,6 +2557,11 @@ function colorAsisCal(v, r, c){
 }
 function colorAsisRes(v, r, c){
   const h = AS_RES_HEAD[c];
+  if(h === 'ESTADO'){
+    const t = String(v||'');
+    return t==='Al día' ? 'ok' : t.startsWith('Alerta') || t.startsWith('Sin marcar') ? 'err'
+         : t.startsWith('Revisar') ? 'warn' : t.includes('sin venir') ? 'info' : 'mut';
+  }
   if(h === '% ASISTENCIA') return nivelPct(v===''?null:+v);
   if(h === 'DÍAS HÁBILES SIN MARCAR') return nivelSil(v===''?null:+v);
   if(h === 'DÍAS SIN ASISTIR') return +v>0 ? 'warn' : '';

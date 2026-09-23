@@ -71,7 +71,7 @@ computeAsistencia, asisFiltrado, renderAsistencia, aoaAsistencia
 sinTildes, coincideEmp                                  (busqueda de empleados en todos los filtros)
 AS_VISTA, AS_IDENT, AS_RES_HEAD, asIdent, asisResFila    (resumen de asistencia)
 asisResumenFilas, aoaAsisResumen, renderAsisResumen, habilesEntre
-COLS_ASIS, COLS_ASIS_OCULTAS, aplicarColsAsis, renderColsAsis, tagVinculo
+COLS_ASIS, COLS_ASIS_OCULTAS, aplicarColsAsis, renderColsAsis, tagVinculo, estadoAsis
 guardarXLS, colorAsisCal, colorAsisRes, nivelPct, nivelSil (exportacion con colores)
 KPI_EXCL, KPI_EXCLUIDOS_ULTIMO                          (estado del KPI)
 kpiCalcular, pct, kpiPorDepto, kpiFiltrarEmpleados      (KPI de cumplimiento)
@@ -672,6 +672,40 @@ ausentismo: es alguien que ya no está. Por eso hay columna `Vínculo` (`tagVinc
 retirado también en el calendario, y filtro `#fVincAs` (activos / retirados / los dos). En agosto 2026
 el reporte trae 1.093 personas: 1.022 activas y 71 retiradas.
 
+**Estado de asistencia con semáforo (`estadoAsis`), y el bug que lo motivó.** El usuario detectó que
+el resumen medía el silencio **contra la fecha de hoy**, no contra el fin del rango consultado:
+mirando agosto en septiembre, todo el mundo arrastraba las tres semanas transcurridas desde el corte
+y **1.086 de 1.093 personas salían en rojo**. Ahora se mide contra `min(cfg.fin, hoy)` —el fin del
+rango, y nunca contra días que todavía no pasaron—. Sobre agosto 2026 el reporte pasa de 1.086
+alarmas a **24 personas que de verdad hay que mirar**: 984 al día, 14 con 1-2 días, 6 a revisar, 11 en
+alerta y 7 sin marcar en todo el rango.
+
+Cada persona recibe un estado, y la distinción es el punto entero del reporte:
+
+| Estado | Cuándo | Color |
+|---|---|---|
+| `Retirado` | ya no está: su período laborado termina en su última marcación | gris, **nunca es alarma** |
+| `Sin turno` | no tenía jornada programada ni marcaciones: no hay asistencia que exigir | gris |
+| `Al día` | marcó hasta el cierre del rango | verde |
+| `N días sin venir` | menos de `cfg.ausAviso` días hábiles | azul |
+| `Revisar · N días` | entre `ausAviso` y `ausGrave` | ámbar |
+| `Alerta · N días` | `ausGrave` o más | rojo |
+| `Sin marcar en el rango` | tenía jornada programada y ningún día contó como asistencia | rojo |
+
+Los dos umbrales son parámetros (`cAusAviso` default 3, `cAusGrave` default 6), no constantes. El
+tooltip de los estados de alarma dice explícitamente que **puede ser incapacidad, calamidad o permiso**:
+la herramienta avisa, no juzga.
+
+**Lo que ya estaba bien y se verificó al revisar esto:** 57 retirados tienen turno programado dentro
+del ciclo (en BioTime nadie les quita la asignación al irse) y suman 122 días-persona de turno
+posteriores a su vigencia; el motor **no cuenta ni uno solo como ausencia**, porque `vigFin` ya corta
+(A-16). El retirado tampoco acumula silencio: su reloj se detiene en `vigFin`, no en el fin del rango.
+
+*Caso encontrado de paso, que no se había considerado:* alguien puede tener una marcación en el rango
+y aun así no tener ni un día de asistencia — la marca fue el **cierre de una jornada que empezó el día
+anterior**, o quedó fuera de la tolerancia del turno. Es el empleado 8709. Por eso el estado se llama
+`Sin marcar en el rango` y no "nunca marcó", y el tooltip lo explica.
+
 **Búsqueda de empleados (`coincideEmp`).** El nombre se guarda como `APELLIDOS NOMBRES`, así que
 comparar la frase completa hacía fallar "juan perez" contra "PEREZ JUAN" — el usuario lo reportó como
 "no deja buscar por apellido". Ahora se compara **por palabras sueltas, en cualquier orden y sin
@@ -722,6 +756,8 @@ guarda en `localStorage.mb_dispositivos`. Es la configuración que más pesa sob
 | `cDescRec` | ¿El descanso propio (no dominical) genera recargo? | — |
 | `cInfer` | ¿Inferir la marcación faltante desde el turno programado? | A-02/A-03 |
 | `cTolPunt` | Tolerancia de puntualidad, minutos | — |
+| `cAusAviso` | Días hábiles sin marcar para marcar **Revisar** en Asistencia (default 3) | — |
+| `cAusGrave` | Días hábiles sin marcar para marcar **Alerta** (default 6) | — |
 | `cIngMasivo` | Umbral de empleados para considerar una fecha de ingreso "masiva" | (hallazgo de esta sesión, no está en el catálogo original) |
 | `cAutor` | Política de extras sin autorización: calcular y marcar / exigir autorización | F-09 |
 | `cRedon` | Redondeo por día y concepto, o solo al total del ciclo | D-10 a D-13 |
