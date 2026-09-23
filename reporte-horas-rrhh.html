@@ -212,6 +212,11 @@
   #tCob td.c-desc{color:var(--line)}
   #tCob td.c-fuera{background:repeating-linear-gradient(45deg,#fafbfc,#fafbfc 3px,#f0f2f5 3px,#f0f2f5 6px)}
   .cobleg{display:flex;flex-wrap:wrap;gap:12px;font-size:11px;color:var(--muted);margin-top:8px}
+  /* Resumen de lo cargado, siempre visible en el encabezado */
+  #hdrCarga{font-size:11px;opacity:.85;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:46vw}
+  #hdrCarga b{font-weight:600}
+  #hdrCarga .alerta{color:#fca5a5;font-weight:600}
+  #hdrCarga .falta{color:#fcd34d;font-weight:600}
   /* Conmutador de vista y resumen de asistencia */
   .vista{display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden}
   .vista button{border:0;background:#fff;padding:5px 11px;font:inherit;font-size:12px;cursor:pointer;color:var(--muted)}
@@ -317,6 +322,7 @@
   <h1>Reporte de Horas &middot; RRHH</h1>
   <span class="sub">SIRH Plastitec &middot; contabilización y seguimiento &middot; procesamiento 100% local</span>
   <span class="sp" style="flex:1"></span>
+  <span id="hdrCarga" class="sub" data-tip="Archivos cargados en esta sesión. Si falta Renuncias, quien ya salió de la empresa aparece como activo y sin marcar."></span>
   <span id="status" class="sub">Sin datos cargados</span>
   <button id="btnVolver" hidden title="Volver a cargar archivos o cambiar parámetros">&#8592; Datos y parámetros</button>
   <button id="btnGear" title="Configuración avanzada" aria-label="Configuración avanzada">&#9881;</button>
@@ -2399,7 +2405,9 @@ function estadoAsis(o, cfg){
   if(!o.marco) return {k:'nunca', cls:'err', txt:'Sin marcar en el rango',
     tip:`Tenía ${o.prog} día(s) de jornada programada y ningún día del rango contó como asistencia`+
         `${o.ultima?`. Su última marcación (${o.ultima}) fue el cierre de una jornada que empezó antes o quedó fuera de la tolerancia del turno`:''}.`+
-        ` Verifique incapacidad, permiso, o si el turno está mal asignado.`};
+        ` Verifique incapacidad, permiso, o si el turno está mal asignado.`+
+        (DATA.ren ? ` NO figura en el archivo de Renuncias cargado (${DATA.ren.rows.length} filas): si ya salió de la empresa, falta en ese archivo.`
+                  : ` No se cargó el archivo de Renuncias: si ya salió de la empresa, el reporte no tiene cómo saberlo.`)};
   const d = o.sinMarcar || 0;
   const cola = ` Sigue ACTIVO y con turno: puede ser incapacidad, calamidad o permiso — o que ya no esté viniendo. Hay que verificarlo antes de actuar.`;
   if(d <= 0) return {k:'ok', cls:'ok', txt:'Al día',
@@ -4085,9 +4093,19 @@ function checkReady(){
   const n = k => DATA[k] ? DATA[k].rows.length : 0;
   /* Renuncias NO entra en `ok`: es opcional a proposito, para que quien no la tenga
      siga calculando exactamente como antes. */
-  $('#loadInfo').textContent =
+  /* Filas de Renuncia que el regex del id no puede leer: se ignoran en silencio, y esa
+     persona vuelve a aparecer como ACTIVA sin marcar. Contarlas es la unica forma de
+     enterarse (la llave viene pegada: "9999 NOMBRE APELLIDO"). */
+  const renMal = DATA.ren ? DATA.ren.rows.filter(r=>
+    !/^\d+\s+\S/.test(String(pick(r,'^empleado$','^empleado ','^empleado id')||'').trim())).length : 0;
+  const texto =
     `Empleados: ${n('emp')} · Turnos: ${n('tur')} · Programación: ${n('hor')} · Marcaciones: ${n('mar')}` +
-    (DATA.ren ? ` · Renuncias: ${n('ren')}` : '');
+    (DATA.ren ? ` · Renuncias: ${n('ren')}` : '') +
+    (renMal ? ` (${renMal} sin id legible)` : '');
+  $('#loadInfo').textContent = texto;
+  if($('#hdrCarga')) $('#hdrCarga').innerHTML = esc(texto)
+    + (DATA.ren ? '' : ' <span class="falta">· sin archivo de Renuncias</span>')
+    + (renMal ? ` <span class="alerta">· ${renMal} renuncia(s) ilegible(s)</span>` : '');
   if(ok && !$('#cIni').value && DATA.mar.rows.length){
     const ds = DATA.mar.rows.map(r=>toISO(pick(r,'^fecha'))).filter(Boolean).sort();
     $('#cIni').value = ds[0]; $('#cFin').value = ds[ds.length-1];
@@ -4115,6 +4133,15 @@ function runCalc(){
     const b = RESULT.exc.filter(x=>x.sev==='BLOQ').length;
     $('#status').innerHTML = `${RESULT.cons.length} empleados con conceptos · ` +
       (b?`<b style="color:#fca5a5">${b} bloqueantes</b>`:'sin bloqueantes');
+    /* Cuantos retirados reconocio de verdad el motor. Si alguien aparece como activo y
+       sin marcar, este numero dice si el archivo de Renuncia lo traia o no. */
+    if($('#hdrCarga')){
+      let ret = 0, retCiclo = 0;
+      MODEL.employees.forEach(e=>{ if((e.vinculo||'ACTIVO')==='RETIRADO'){
+        ret++; if(ASISTENCIA && ASISTENCIA.has(e.id)) retCiclo++; } });
+      $('#hdrCarga').innerHTML += ` · <b data-tip="Personas marcadas como retiradas a partir del archivo de Renuncias. ${retCiclo} de ellas entran en el rango consultado.">`
+        + `retirados: ${fmtN(ret)}</b>`;
+    }
     modo('reportes');          // fuera carga y parametros: una sola barra de scroll
   }catch(err){ console.error(err); toast('Error de cálculo: '+err.message); }
 }

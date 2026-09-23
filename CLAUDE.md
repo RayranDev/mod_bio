@@ -696,6 +696,26 @@ Los dos umbrales son parámetros (`cAusAviso` default 3, `cAusGrave` default 6),
 tooltip de los estados de alarma dice explícitamente que **puede ser incapacidad, calamidad o permiso**:
 la herramienta avisa, no juzga.
 
+**Resumen de lo cargado en el encabezado (`#hdrCarga`), y por qué existe.** El usuario vio 13
+personas ACTIVAS, con turno y sin marcar nunca, y preguntó si no estaban renunciadas. En los datos que
+había aquí, **12 de las 13 sí figuran en el archivo de Renuncia** (retiros de julio). La primera
+hipótesis —que no había cargado el archivo— **era falsa**: él lo había cargado (480 filas). Y el motor
+sí marca `RETIRADO` aunque la persona esté en el maestro y en Renuncia a la vez (`buildModel`: el
+maestro manda para los datos personales, la renuncia aporta el retiro). O sea que la explicación
+queda en el archivo concreto de esa corrida, y **la herramienta no daba forma de saberlo**.
+
+Por eso el encabezado muestra ahora, siempre y también en modo reportes: filas de cada archivo
+cargado, aviso ámbar si **falta** el de Renuncias, aviso rojo si hay **filas de Renuncia sin id
+legible**, y después de calcular, **cuántos retirados reconoció el motor**. Con eso se contesta en un
+vistazo si una persona está o no en el archivo de esa corrida. Además, el estado
+`Sin marcar en el rango` dice en su tooltip que esa persona **no figura en el archivo de Renuncias
+cargado**.
+
+*Hallazgo del propio diagnóstico:* de las 483 filas de Renuncia del archivo de referencia, **una no se
+puede leer**: trae `"1 "` como empleado y el literal `"Departamento"` como departamento — una cabecera
+que se coló como dato, igual que en `Centro de costos`. Son 482 renuncias reales. Antes esa fila se
+ignoraba en silencio.
+
 **Lo que ya estaba bien y se verificó al revisar esto:** 57 retirados tienen turno programado dentro
 del ciclo (en BioTime nadie les quita la asignación al irse) y suman 122 días-persona de turno
 posteriores a su vigencia; el motor **no cuenta ni uno solo como ausencia**, porque `vigFin` ya corta
