@@ -122,9 +122,9 @@
   body[data-modo="reportes"] .setup{display:none}
   body[data-modo="setup"] #reportes{display:none}
   #btnVolver[hidden]{display:none}
-  dialog#dlgDisp,dialog#dlgAutor,dialog#dlgCols{border:1px solid var(--line);border-radius:8px;padding:16px 18px;
+  dialog#dlgDisp,dialog#dlgAutor,dialog#dlgCols,dialog#dlgColsAs{border:1px solid var(--line);border-radius:8px;padding:16px 18px;
     max-width:860px;width:92vw;max-height:86vh;overflow:auto;background:#fff;color:var(--fg)}
-  dialog#dlgDisp::backdrop,dialog#dlgAutor::backdrop,dialog#dlgCols::backdrop{background:rgba(10,14,20,.55)}
+  dialog#dlgDisp::backdrop,dialog#dlgAutor::backdrop,dialog#dlgCols::backdrop,dialog#dlgColsAs::backdrop{background:rgba(10,14,20,.55)}
   dialog#dlgAutor h3{font-size:13px;margin:0 0 4px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted)}
   .aut{background:#fff;border:1px solid var(--line);border-radius:6px;padding:10px 12px;margin-bottom:10px}
   .aut h3{font-size:12px;margin:0 0 8px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted)}
@@ -299,6 +299,7 @@
   #toast.on{opacity:1}
 </style>
 <style id="colDetStyle"></style>
+<style id="colAsisStyle"></style>
 </head>
 <body data-modo="setup">
 
@@ -385,6 +386,19 @@
   <div class="bar" style="margin-top:12px">
     <button id="btnColsAll">Mostrar todas</button>
     <button id="btnColsClose">Cerrar</button>
+  </div>
+</dialog>
+
+<dialog id="dlgColsAs">
+  <h3 style="margin:0 0 4px;font-size:13px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted)">
+    Columnas del resumen de asistencia</h3>
+  <p class="muted" style="margin:0 0 12px;max-width:560px;font-size:12px">
+    Oculte lo que no esté mirando. El código siempre queda visible porque identifica la fila.
+    Se guarda en este navegador y no afecta la exportación a Excel, que sigue completa.</p>
+  <div id="colsAsBox"></div>
+  <div class="bar" style="margin-top:12px">
+    <button id="btnColsAsAll">Mostrar todas</button>
+    <button id="btnColsAsClose">Cerrar</button>
   </div>
 </dialog>
 
@@ -578,6 +592,8 @@
   <div class="bar">
     <select id="fCiaAs" style="max-width:170px"><option value="">Todas las compañías</option></select>
     <select id="fDeptoAs" style="max-width:250px"><option value="">Todos los departamentos</option></select>
+    <select id="fVincAs" style="max-width:170px" data-tip="Quien renunció hace meses no marca, y eso no es ausentismo: sepárelos para no leer un dato como el otro."><option value="">Activos y retirados</option>
+      <option value="ACTIVO">Solo activos</option><option value="RETIRADO">Solo retirados</option></select>
     <input type="text" id="qAs" placeholder="Código, nombre o apellido…" style="max-width:190px">
     <button id="fClearAs">Limpiar</button>
     <span id="fInfoAs" class="muted"></span>
@@ -585,6 +601,7 @@
       <button data-vista="cal" class="on">Calendario</button>
       <button data-vista="res">Resumen por empleado</button>
     </div>
+    <button id="btnColsAs" data-tip="Elige qué columnas ver en el resumen por empleado.">Columnas</button>
     <span class="sp"></span>
     <button id="expAsis">Exportar asistencia (Excel)</button>
     <button id="expAsisColor" data-tip="Exporta la vista que está en pantalla con sus colores. Excel avisa que la extensión no coincide con el formato: se acepta y abre normal.">Exportar con colores (Excel)</button>
@@ -2263,8 +2280,10 @@ function coincideEmp(emp, q){
 
 function asisFiltrado(){
   const cia = $('#fCiaAs').value, dep = $('#fDeptoAs').value, q = $('#qAs').value.trim().toLowerCase();
+  const vinc = $('#fVincAs') ? $('#fVincAs').value : '';
   return [...ASISTENCIA.values()]
     .filter(e=> (!cia||e.emp.empresa===cia) && (!dep||e.emp.depto===dep)
+             && (!vinc || (e.emp.vinculo||'ACTIVO')===vinc)
              && coincideEmp(e.emp, q))
     .sort((a,b)=>a.emp.nombre.localeCompare(b.emp.nombre,'es'));
 }
@@ -2280,7 +2299,8 @@ function renderAsistencia(){
   }
   const dates = rangeDays(RESULT.cfg.ini, RESULT.cfg.fin);
   const list  = asisFiltrado();
-  const activo = $('#fCiaAs').value || $('#fDeptoAs').value || $('#qAs').value.trim();
+  const activo = $('#fCiaAs').value || $('#fDeptoAs').value || $('#qAs').value.trim()
+              || ($('#fVincAs') ? $('#fVincAs').value : '');
   $('#fInfoAs').textContent = activo ? `${list.length} de ${ASISTENCIA.size}` : '';
 
   $('#tAsis thead').innerHTML = `<tr><th class="stick1">Código</th><th class="stick2">Nombre</th>` +
@@ -2292,7 +2312,7 @@ function renderAsistencia(){
     }).join('') + `</tr>`;
 
   $('#tAsis tbody').innerHTML = list.map(e=>
-    `<tr><td class="mono stick1">${esc(e.emp.id)}</td><td class="stick2">${esc(e.emp.nombre)}</td>` +
+    `<tr><td class="mono stick1">${esc(e.emp.id)}</td><td class="stick2">${esc(e.emp.nombre)}${tagRetiro(e.emp)}</td>` +
     dates.map(iso=>{
       const d = e.dias.get(iso) || {estado:'',tip:'Sin datos.'};
       return `<td class="asiscell est-${d.estado||'na'}${d.incompleto?' incompleto':''}"
@@ -2368,29 +2388,69 @@ function aoaAsisResumen(){ return [AS_RES_HEAD, ...asisResumenFilas().map(asisRe
 const nivelPct = p => p==null ? '' : p>=95 ? 'ok' : p>=80 ? 'warn' : 'err';
 const nivelSil = d => d==null || d<=0 ? '' : d>=3 ? 'err' : 'warn';
 
+/* Columnas ocultables del resumen. El codigo no esta en la lista: identifica la fila y
+   sin el no se sabe de quien es. Se guarda por navegador y NO afecta al Excel. */
+const COLS_ASIS = [['nom','Nombres'],['ape','Apellidos'],['cia','Compañía'],['dep','Departamento'],
+  ['cargo','Cargo'],['perfil','Perfil'],['vinc','Vínculo'],['marcas','Marcaciones'],
+  ['asist','Asistencia'],['pct','% asistencia'],['faltas','Días sin asistir'],
+  ['sinturno','Marcó sin turno'],['ultima','Última marcación'],['sin','Días hábiles sin marcar']];
+let COLS_ASIS_OCULTAS = new Set(JSON.parse(localStorage.getItem('mb_colsAsis')||'[]'));
+
+function aplicarColsAsis(){
+  $('#colAsisStyle').textContent = [...COLS_ASIS_OCULTAS]
+    .map(k=>`#tAsisRes [data-cola="${k}"]{display:none}`).join('');
+}
+function renderColsAsis(){
+  if(!$('#colsAsBox')) return;
+  $('#colsAsBox').innerHTML = `<div style="display:flex;flex-wrap:wrap;gap:10px 16px">` +
+    COLS_ASIS.map(([k,l])=>`<label style="display:flex;align-items:center;gap:5px;font-size:12px;white-space:nowrap">
+      <input type="checkbox" data-cola-chk="${esc(k)}" style="width:auto"${COLS_ASIS_OCULTAS.has(k)?'':' checked'}>${esc(l)}</label>`).join('') +
+    `</div>`;
+  $$('#colsAsBox input[data-cola-chk]').forEach(i=>i.onchange = ()=>{
+    const k = i.dataset.colaChk;
+    if(i.checked) COLS_ASIS_OCULTAS.delete(k); else COLS_ASIS_OCULTAS.add(k);
+    localStorage.setItem('mb_colsAsis', JSON.stringify([...COLS_ASIS_OCULTAS]));
+    aplicarColsAsis();
+  });
+}
+
+/** Etiqueta del vinculo: un retirado que no marca no es ausentismo, es alguien que ya no esta. */
+function tagVinculo(emp){
+  const v = emp.vinculo || 'ACTIVO';
+  return v === 'RETIRADO'
+    ? `<span class="tag t-warn" data-tip="${esc(`Retirado el ${emp.retiro||'?'}${emp.tipoRetiro?' ('+emp.tipoRetiro+')':''}.`)}">Retirado</span>`
+    : `<span class="tag t-mut">Activo</span>`;
+}
+
 function renderAsisResumen(){
   if(!$('#tAsisRes')) return;
   const filas = asisResumenFilas();
   $('#tAsisRes thead').innerHTML = `<tr>
-    <th>Código</th><th>Nombres</th><th>Apellidos</th><th>Compañía</th><th>Departamento</th><th>Cargo</th>
-    <th>Perfil</th><th class="num" data-tip="Marcaciones del rango, ya depuradas (A-06/A-07).">Marcaciones</th>
-    <th class="num" data-tip="Días con turno programado en los que sí marcó, sobre los días programados.">Asistencia</th>
-    <th class="num">% asistencia</th><th class="num">Días sin asistir</th>
-    <th class="num" data-tip="Días que marcó sin tener turno asignado.">Marcó sin turno</th>
-    <th>Última marcación</th>
-    <th class="num" data-tip="Días hábiles transcurridos desde su última marcación hasta hoy, sin contar festivos.">Días hábiles sin marcar</th></tr>`;
+    <th>Código</th><th data-cola="nom">Nombres</th><th data-cola="ape">Apellidos</th>
+    <th data-cola="cia">Compañía</th><th data-cola="dep">Departamento</th><th data-cola="cargo">Cargo</th>
+    <th data-cola="perfil">Perfil</th>
+    <th data-cola="vinc" data-tip="Quien renunció hace meses no marca, y eso no es ausentismo.">Vínculo</th>
+    <th class="num" data-cola="marcas" data-tip="Marcaciones del rango, ya depuradas (A-06/A-07).">Marcaciones</th>
+    <th class="num" data-cola="asist" data-tip="Días con turno programado en los que sí marcó, sobre los días programados.">Asistencia</th>
+    <th class="num" data-cola="pct">% asistencia</th><th class="num" data-cola="faltas">Días sin asistir</th>
+    <th class="num" data-cola="sinturno" data-tip="Días que marcó sin tener turno asignado.">Marcó sin turno</th>
+    <th data-cola="ultima">Última marcación</th>
+    <th class="num" data-cola="sin" data-tip="Días hábiles transcurridos desde su última marcación hasta hoy, sin contar festivos.">Días hábiles sin marcar</th></tr>`;
   $('#tAsisRes tbody').innerHTML = filas.map(o=>
     `<tr data-id="${esc(o.emp.id)}" data-iso="${esc(o.ultima||RESULT.cfg.ini)}">
-      <td class="mono">${esc(o.emp.id)}</td><td>${esc(o.emp.nombres||o.emp.nombre||'')}</td>
-      <td>${esc(o.emp.apellidos||'')}${tagRetiro(o.emp)}</td><td>${esc(o.emp.empresa||'')}</td>
-      <td>${esc(o.emp.depto||'')}</td><td>${esc(o.emp.cargo||'')}</td>
-      <td>${esc(o.perfil)}</td><td class="num">${fmtN(o.marcas)}</td>
-      <td class="num">${o.A}/${o.prog}</td>
-      <td class="num ${nivelPct(o.pct)?'r-'+nivelPct(o.pct):''}">${o.pct==null?'—':o.pct.toFixed(1)+'%'}</td>
-      <td class="num${o.F?' dev':''}">${o.F}</td><td class="num">${o.S}</td>
-      <td class="mono">${esc(o.ultima||'—')}</td>
-      <td class="num ${nivelSil(o.sinMarcar)?'r-'+nivelSil(o.sinMarcar):''}">${o.sinMarcar==null?'—':o.sinMarcar}</td></tr>`
-  ).join('') || `<tr><td colspan="14" class="muted" style="padding:18px">Sin empleados que coincidan con el filtro.</td></tr>`;
+      <td class="mono">${esc(o.emp.id)}</td><td data-cola="nom">${esc(o.emp.nombres||o.emp.nombre||'')}</td>
+      <td data-cola="ape">${esc(o.emp.apellidos||'')}</td><td data-cola="cia">${esc(o.emp.empresa||'')}</td>
+      <td data-cola="dep">${esc(o.emp.depto||'')}</td><td data-cola="cargo">${esc(o.emp.cargo||'')}</td>
+      <td data-cola="perfil">${esc(o.perfil)}</td><td data-cola="vinc">${tagVinculo(o.emp)}</td>
+      <td class="num" data-cola="marcas">${fmtN(o.marcas)}</td>
+      <td class="num" data-cola="asist">${o.A}/${o.prog}</td>
+      <td class="num ${nivelPct(o.pct)?'r-'+nivelPct(o.pct):''}" data-cola="pct">${o.pct==null?'—':o.pct.toFixed(1)+'%'}</td>
+      <td class="num${o.F?' dev':''}" data-cola="faltas">${o.F}</td>
+      <td class="num" data-cola="sinturno">${o.S}</td>
+      <td class="mono" data-cola="ultima">${esc(o.ultima||'—')}</td>
+      <td class="num ${nivelSil(o.sinMarcar)?'r-'+nivelSil(o.sinMarcar):''}" data-cola="sin">${o.sinMarcar==null?'—':o.sinMarcar}</td></tr>`
+  ).join('') || `<tr><td colspan="15" class="muted" style="padding:18px">Sin empleados que coincidan con el filtro.</td></tr>`;
+  aplicarColsAsis();
   $$('#tAsisRes tbody tr[data-id]').forEach(tr=>tr.onclick=()=>irADetalle(tr.dataset.id, tr.dataset.iso));
 }
 
@@ -4070,7 +4130,13 @@ document.addEventListener('DOMContentLoaded',()=>{
   $('#fCiaAs').onchange   = ()=>ASISTENCIA&&renderAsistencia();
   $('#fDeptoAs').onchange = ()=>ASISTENCIA&&renderAsistencia();
   $('#qAs').oninput       = ()=>ASISTENCIA&&renderAsistencia();
+  $('#fVincAs').onchange  = ()=>ASISTENCIA&&renderAsistencia();
+  $('#btnColsAs').onclick = ()=>{ renderColsAsis(); $('#dlgColsAs').showModal(); };
+  $('#btnColsAsClose').onclick = ()=>$('#dlgColsAs').close();
+  $('#btnColsAsAll').onclick   = ()=>{ COLS_ASIS_OCULTAS = new Set();
+    localStorage.setItem('mb_colsAsis','[]'); aplicarColsAsis(); renderColsAsis(); };
   $('#fClearAs').onclick  = ()=>{ $('#fCiaAs').value=''; $('#fDeptoAs').value=''; $('#qAs').value='';
+    if($('#fVincAs')) $('#fVincAs').value='';
     ASISTENCIA&&renderAsistencia(); };
   $('#expAsis').onclick   = ()=>ASISTENCIA&&save(
     {Asistencia:aoaAsistencia(), 'Resumen por empleado':aoaAsisResumen()},

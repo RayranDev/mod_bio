@@ -71,6 +71,7 @@ computeAsistencia, asisFiltrado, renderAsistencia, aoaAsistencia
 sinTildes, coincideEmp                                  (busqueda de empleados en todos los filtros)
 AS_VISTA, AS_IDENT, AS_RES_HEAD, asIdent, asisResFila    (resumen de asistencia)
 asisResumenFilas, aoaAsisResumen, renderAsisResumen, habilesEntre
+COLS_ASIS, COLS_ASIS_OCULTAS, aplicarColsAsis, renderColsAsis, tagVinculo
 guardarXLS, colorAsisCal, colorAsisRes, nivelPct, nivelSil (exportacion con colores)
 KPI_EXCL, KPI_EXCLUIDOS_ULTIMO                          (estado del KPI)
 kpiCalcular, pct, kpiPorDepto, kpiFiltrarEmpleados      (KPI de cumplimiento)
@@ -662,6 +663,15 @@ por quien lleva más días sin marcar —lo accionable— y **pantalla y Excel s
 (`asisResumenFilas`), para que no puedan divergir. Clic en una fila abre a esa persona en el Detalle,
 en su última marcación, con el botón de volver.
 
+El resumen tiene **selector de columnas** (botón *Columnas* → `#dlgColsAs`, persistido en
+`localStorage.mb_colsAsis`, aplicado por CSS desde `#colAsisStyle`). El código nunca se puede ocultar:
+identifica la fila. Ocultar columnas **no afecta el Excel**, que sale completo — igual que en Detalle.
+
+**El vínculo es obligatorio para leer este reporte.** Un retirado hace meses no marca, y eso no es
+ausentismo: es alguien que ya no está. Por eso hay columna `Vínculo` (`tagVinculo`), etiqueta de
+retirado también en el calendario, y filtro `#fVincAs` (activos / retirados / los dos). En agosto 2026
+el reporte trae 1.093 personas: 1.022 activas y 71 retiradas.
+
 **Búsqueda de empleados (`coincideEmp`).** El nombre se guarda como `APELLIDOS NOMBRES`, así que
 comparar la frase completa hacía fallar "juan perez" contra "PEREZ JUAN" — el usuario lo reportó como
 "no deja buscar por apellido". Ahora se compara **por palabras sueltas, en cualquier orden y sin
@@ -773,6 +783,102 @@ integraciones externas que una herramienta local de un solo archivo no puede aut
 
 Si una tarea futura toca alguno de estos bloques, es trabajo nuevo genuino, no una corrección de algo
 que ya debería funcionar.
+
+---
+
+## Ajustes, aprobaciones y cierre — diseño acordado, PENDIENTE (sept-2026)
+
+Conversado con el usuario el 2026-09-22/23. **No hay nada de esto en código**; queda escrito para
+cuando se decida hacerlo. El objetivo que él planteó: *poder ajustar horas, aprobar las extras y, solo
+cuando quede bien "sin cometer injusticias ni errores", generar el archivo de Sinergy.*
+
+### El principio que no se debe romper
+
+Hoy el motor es una **función pura**: mismos Excel + mismos parámetros = mismo resultado. Es lo más
+valioso del proyecto. Entonces una base de datos **no guarda las horas calculadas como verdad**:
+guarda insumos, ajustes y una **foto congelada** al cerrar el período.
+
+- **Se guarda:** marcaciones, turnos, horarios, empleados, parámetros del ciclo, ajustes, aprobaciones.
+- **No se guarda como verdad:** las horas. Se recalculan; se congelan solo al cerrar.
+- **Nada se edita encima.** Un ajuste es una fila nueva con autor, fecha y motivo, para poder decir
+  "el motor calculó 4 h y Fulano dejó 3,5 el martes porque tal cosa".
+
+### Modelo de datos (Postgres alcanza: 280.000 marcaciones en 6 meses no es volumen)
+
+```
+empleado       id_biotime, cedula, cod_siner, compania, cargo, depto, ingreso, retiro
+importacion    id, tipo, archivo, hash, cargado_por, cargado_en     ← de dónde salió cada dato
+marcacion      empleado, instante, dispositivo, importacion, origen (biotime|manual)
+turno          codigo, dia_semana, entrada, salida, descanso, vigente_desde/hasta
+horario        empleado, turno, desde, hasta
+parametros     id, valores (jsonb: los ~20 del formulario), vigente_desde
+calculo        id, periodo_ini, periodo_fin, parametros_id, version_motor,
+               estado (borrador|cerrado), cerrado_por, cerrado_en
+ajuste         id, calculo, empleado, fecha, concepto, tipo (agregar|quitar|reemplazar),
+               horas, motivo, creado_por, creado_en,
+               estado (pendiente|aprobado|rechazado), aprobado_por, aprobado_en
+resultado      calculo, empleado, fecha, concepto, horas, origen (motor|ajuste)
+               ← SOLO se escribe al cerrar: es la foto, es inmutable
+exportacion    calculo, compania, archivo, hash, filas, generado_por, generado_en
+```
+
+Las tres decisiones que lo sostienen:
+
+1. **`parametros_id` y `version_motor` viajan con cada cálculo.** Sin eso, agosto no se puede
+   reproducir en diciembre (bloque G, hoy inexistente).
+2. **`ajuste` es un libro contable, no una edición.** Total final = motor + ajustes aprobados. Un
+   ajuste rechazado queda registrado igual.
+3. **`exportacion` guarda el hash del archivo enviado**, y contesta "¿esto ya se subió?" sin adivinar
+   (H-14).
+
+### Qué se aprueba y qué NO
+
+- **Las horas extra sí:** son trabajo suplementario, alguien las autorizó antes de que ocurrieran.
+- **Los recargos NO** (0220, 0252, 0258): no son trabajo adicional, son una **sobretasa sobre tiempo
+  ya trabajado** que la ley reconoce. Ponerlos a esperar aprobación es exponerse a que un olvido le
+  quite a alguien una plata que le corresponde.
+- **Las ordinarias tampoco:** ya están cubiertas por el salario.
+
+### Ciclo de vida de una fila
+
+```
+calculado → pendiente → aprobado                 → sale al archivo
+                      → ajustado (+motivo, quién) → sale con el valor nuevo
+                      → rechazado (+motivo)       → NO sale, pero queda registrado
+```
+
+**Asimetría deliberada: quitarle horas a alguien exige motivo obligatorio; aprobar tal cual, no.**
+El motivo es la defensa de la empresa y del empleado a la vez.
+
+### Las dos puertas antes de exportar
+
+1. **Puerta de datos:** no sale el archivo con excepciones bloqueantes sin resolver (A-02, A-17, A-04
+   sin resolución). Eso no son horas aprobables: son horas **mal medidas**, y aprobar sobre un dato
+   roto es la peor injusticia porque nadie se entera.
+2. **Puerta de aprobación:** solo salen extras aprobadas o ajustadas. Al exportar, el período **se
+   congela** con quién aprobó qué; reabrir es un `calculo_id` nuevo, no una edición del anterior.
+
+**La bandeja debe mostrar las dos direcciones, no solo lo que le cuesta plata a la empresa.** El bug
+del festivo por tramo es la prueba: 235 días habían *perdido* recargo festivo. Una revisión que solo
+busca sobrepagos nunca encuentra ese error.
+
+### Orden de implementación sugerido
+
+1. **Sacar el motor a un módulo con pruebas doradas** (agosto 2026 como caso de referencia). Esto de
+   paso **elimina la convención del motor duplicado**, que es el riesgo número uno del proyecto.
+2. Base de datos e importación de los Excel, con la trazabilidad de arriba.
+3. Ajustes y aprobaciones (bloque F).
+4. Cierre de período y exportación desde la foto, no desde un recálculo en vivo.
+
+**El motor no se reescribe:** es lo único ya validado contra datos reales.
+
+### El límite de la herramienta actual
+
+Una aprobación sin identidad no es una aprobación. Hoy todo vive en `localStorage` del navegador de
+quien la usa: cualquiera puede aprobar como si fuera otro y se pierde al borrar la caché. Eso no se
+arregla con más código en el HTML — es justo el punto donde se necesita backend con usuarios y roles
+(jefe / RRHH / administrador). El usuario tiene pendiente elegir entre una **versión liviana** dentro
+del HTML (fila por fila con motivo, firma por confianza) o **esperar a la app**.
 
 ---
 
