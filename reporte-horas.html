@@ -760,6 +760,15 @@
   <h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin:14px 0 8px">
     Calidad por departamento</h3>
   <div class="scroll" style="max-height:44vh"><table id="tQ"><thead></thead><tbody></tbody></table></div>
+  <div class="bar bar-noprint" style="margin-top:14px">
+    <h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin:0">
+      Calidad por empleado</h3>
+    <input type="text" id="qQEmp" placeholder="Código, nombre o apellido…" style="max-width:190px">
+    <span id="qEmpInfo" class="muted"></span>
+    <span class="sp"></span>
+    <span class="muted" style="font-size:11px">Clic en una fila para abrir su Detalle</span>
+  </div>
+  <div class="scroll" style="max-height:60vh"><table id="tQEmp"><thead></thead><tbody></tbody></table></div>
 </section>
 
 <section id="tab-cob" class="tabwrap">
@@ -2942,15 +2951,26 @@ function renderGlosario(){
  *  marcacion, y cada hallazgo por QUIEN lo resuelve. */
 function computeCalidad(M, R, cfg){
   const dep = new Map();
+  /* DOS calidades, porque tienen DUEÑOS distintos y mezclarlas no deja actuar:
+       · calidad sobre el turno  = de los dias que SI tenia turno asignado, en cuantos la
+         marcacion quedo completa e inequivoca. Es del empleado y su jefe.
+       · programacion            = de los dias que la persona SI vino, en cuantos habia
+         turno cargado. Es de quien programa en BioTime: el empleado marco bien igual. */
   const nuevo = k => ({ dep:k, dias:0, sinMarca:0, bloq:0, sugerido:0, limpio:0,
     hLimpia:0, hDudosa:0, antesMin:0, antesDias:0, sinTurno:0, tarde:0, temprano:0,
-    conTurno:0, emp:new Set(), empDudosos:new Set() });
+    conTurno:0, okTurno:0, sugTurno:0, bloqTurno:0, sinMarcaTurno:0, sinTurnoLimpio:0, sinTurnoDudoso:0,
+    hSinTurno:0, emp:new Set(), empDudosos:new Set() });
   const T = nuevo('TOTAL');
 
+  const emps = [];
   R.byEmp.forEach(e=>{
     const k = e.emp.depto || '(sin departamento)';
     if(!dep.has(k)) dep.set(k, nuevo(k));
     const o = dep.get(k);
+    /* Mismo acumulador por persona: la tabla detallada sale de aqui, no de un segundo
+       recorrido que podria divergir del total. */
+    const P = nuevo(k); P.emp.add(e.emp.id); P.empRef = e.emp; P.perfil = e.perfil;
+    emps.push(P);
     o.emp.add(e.emp.id); T.emp.add(e.emp.id);
 
     e.ciclo.forEach(r=>{
@@ -2964,10 +2984,26 @@ function computeCalidad(M, R, cfg){
       const sinMarca = f.includes('A-18');
       const h = (r.creditMin||0)/60;
 
-      [o,T].forEach(x=>{
+      const dudoso = bloq || sug;
+      /* OJO: `r.W` solo queda puesto en los dias que llegaron al emparejamiento. Un dia
+         con turno y CERO marcaciones (A-18), o uno bloqueado, sale antes y no lo trae:
+         usar `r.W` dejaba las ausencias fuera del denominador y la calidad salia inflada.
+         El turno asignado se lee de `r.turno`, que se estampa siempre. */
+      const tieneTurno = !!r.W || (r.turno && r.turno !== '—');
+      [o,T,P].forEach(x=>{
         x.dias++;
-        if(r.W) x.conTurno++;
-        if(f.includes('A-19')) x.sinTurno++;
+        if(tieneTurno){
+          x.conTurno++;
+          if(sinMarca) x.sinMarcaTurno++;      // A-18 solo existe con turno, pero se cuenta aqui
+          else if(bloq) x.bloqTurno++;
+          else if(sug)  x.sugTurno++;
+          else x.okTurno++;
+        }
+        if(f.includes('A-19')){
+          x.sinTurno++;
+          if(dudoso) x.sinTurnoDudoso++; else x.sinTurnoLimpio++;
+          x.hSinTurno += h;
+        }
         if(sinMarca) x.sinMarca++;
         else if(bloq) x.bloq++;
         else if(sug) x.sugerido++;
@@ -2984,19 +3020,27 @@ function computeCalidad(M, R, cfg){
       if(r.W && r.pares && r.pares.length){
         let antes = 0;
         r.pares.forEach(p=>{ const t = Math.min(p.fin, r.W.ini) - p.ini; if(t>0) antes += t; });
-        if(antes>0){ o.antesMin += antes; o.antesDias++; T.antesMin += antes; T.antesDias++; }
+        if(antes>0){ [o,T,P].forEach(x=>{ x.antesMin += antes; x.antesDias++; }); }
       }
     });
   });
 
   const cerrar = o => { o.empleados = o.emp.size; o.empDudososN = o.empDudosos.size;
     o.calidad = o.dias ? o.limpio / o.dias * 100 : null;
+    /* Calidad del empleado: solo sobre los dias con turno asignado. Un dia sin turno no
+       se le puede cobrar a la persona: no habia nada que cumplir. */
+    o.calidadTurno = o.conTurno ? o.okTurno / o.conTurno * 100 : null;
+    /* Programacion: de los dias que la persona vino, cuantos estaban programados. */
+    o.diasVino    = (o.conTurno - o.sinMarcaTurno) + o.sinTurno;
+    o.vinoConTurno = o.conTurno - o.sinMarcaTurno;
+    o.calidadProg = o.diasVino ? o.vinoConTurno / o.diasVino * 100 : null;
     o.dudosos = o.sugerido + o.bloq;
     o.hTotal = o.hLimpia + o.hDudosa;
     o.pctHDudosa = o.hTotal ? o.hDudosa / o.hTotal * 100 : null;
     delete o.emp; delete o.empDudosos; return o; };
   cerrar(T);
   const deps = [...dep.values()].map(cerrar);
+  emps.forEach(P=>{ const ref = P.empRef; cerrar(P); P.empRef = ref; });
   /* TASA y PESO son dos preguntas distintas y hay que responder las dos.
      La tasa dice que tan bien marca ESE departamento; el peso, cuanto del problema de
      la empresa esta ahi. Un 69,5% sobre 11.507 dias y un 47,4% sobre 19 no se comparan:
@@ -3008,7 +3052,53 @@ function computeCalidad(M, R, cfg){
     d.muestraCorta = d.dias < (cfg.minDias || 60);
     d.diasPorPunto = d.dias / 100;
   });
-  return { total: T, deps: deps.sort((a,b)=>(b.dudosos||0)-(a.dudosos||0)) };
+  emps.forEach(p=>{ p.peso = T.dudosos ? p.dudosos / T.dudosos * 100 : null; });
+  return { total: T, deps: deps.sort((a,b)=>(b.dudosos||0)-(a.dudosos||0)),
+           emps: emps.sort((a,b)=>(b.dudosos||0)-(a.dudosos||0)) };
+}
+
+/** Detalle por persona: es el nivel donde se actua. Se ordena por dias con problema,
+ *  no por porcentaje, para no poner arriba a quien tiene tres dias y uno malo. */
+function renderCalidadEmp(Q){
+  if(!$('#tQEmp')) return;
+  const q = $('#qQEmp') ? sinTildes($('#qQEmp').value.trim()) : '';
+  const col = n => n==='ok' ? 'var(--ok)' : n==='warn' ? 'var(--warn)' : 'var(--err)';
+  const barra = p => { const n = p==null ? 'err' : nivelQ(p);
+    return `<span class="qbar"><span style="width:${p||0}%;background:${col(n)}"></span></span>${
+      p==null?'—':p.toFixed(1)+'%'}`; };
+  const lista = Q.emps.filter(p=>!q || coincideEmp(p.empRef, q))
+    .sort((a,b)=>(b.dudosos + b.sinTurno + b.sinMarca) - (a.dudosos + a.sinTurno + a.sinMarca)
+               || (a.calidadTurno==null?101:a.calidadTurno) - (b.calidadTurno==null?101:b.calidadTurno));
+  $('#qEmpInfo').textContent = `${fmtN(lista.length)} empleados`;
+  $('#tQEmp thead').innerHTML = `<tr>
+    <th>Código</th><th>Empleado</th><th>Departamento</th><th>Perfil</th>
+    <th class="num" data-tip="Días del ciclo con turno asignado.">Días con turno</th>
+    <th data-tip="De sus días con turno, en cuántos la marcación quedó completa e inequívoca.">Cumplió su turno</th>
+    <th class="num" data-tip="Número impar de marcaciones: el motor eligió cuál descartar.">Interpretados</th>
+    <th class="num" data-tip="Impares sin solución o salida anterior a la entrada: no se calculó nada.">Sin calcular</th>
+    <th class="num" data-tip="Turno programado y cero marcaciones.">Sin marcar</th>
+    <th data-tip="De los días que vino, en cuántos había turno cargado.">Tenía turno cargado</th>
+    <th class="num" data-tip="Días que vino y marcó sin tener turno asignado (A-19).">Días sin turno</th>
+    <th class="num" data-tip="Horas acreditadas en días sin turno asignado.">H. sin turno</th>
+    <th class="num">Tarde</th><th class="num">Temprano</th>
+    <th class="num" data-tip="Horas acreditadas que se apoyan en un día que hubo que interpretar.">H. dudosas</th></tr>`;
+  $('#tQEmp tbody').innerHTML = lista.slice(0, 400).map(p=>
+    `<tr class="clickable" data-id="${esc(p.empRef.id)}">
+      <td class="mono">${esc(p.empRef.id)}</td><td>${esc(p.empRef.nombre)}${tagRetiro(p.empRef)}</td>
+      <td>${esc(p.empRef.depto||'')}</td><td>${esc(p.perfil||'')}</td>
+      <td class="num">${fmtN(p.conTurno)}</td>
+      <td>${barra(p.calidadTurno)}</td>
+      <td class="num${p.sugTurno?' dev':''}">${fmtN(p.sugTurno)}</td>
+      <td class="num${p.bloqTurno?' dev':''}">${fmtN(p.bloqTurno)}</td>
+      <td class="num${p.sinMarca?' dev':''}">${fmtN(p.sinMarca)}</td>
+      <td>${barra(p.calidadProg)}</td>
+      <td class="num${p.sinTurno?' dev':''}">${fmtN(p.sinTurno)}</td>
+      <td class="num">${fmt(Math.round(p.hSinTurno*10)/10)||0}</td>
+      <td class="num">${fmtN(p.tarde)}</td><td class="num">${fmtN(p.temprano)}</td>
+      <td class="num">${fmt(Math.round(p.hDudosa*10)/10)||0}</td></tr>`
+  ).join('') || `<tr><td colspan="15" class="muted" style="padding:18px">Sin empleados que coincidan con el filtro.</td></tr>`;
+  if(lista.length > 400) $('#qEmpInfo').textContent += ' · se muestran los 400 con más días con problema';
+  $$('#tQEmp tbody tr[data-id]').forEach(tr=>tr.onclick=()=>irADetalle(tr.dataset.id, RESULT.cfg.ini));
 }
 
 function calidadFiltrada(){
@@ -3034,19 +3124,31 @@ function renderCalidad(){
   const col = n => n==='ok' ? 'var(--ok)' : n==='warn' ? 'var(--warn)' : 'var(--err)';
   const nv = T.calidad==null ? 'err' : nivelQ(T.calidad);
 
+  const nvT = T.calidadTurno==null ? 'err' : nivelQ(T.calidadTurno);
+  const nvP = T.calidadProg==null  ? 'err' : nivelQ(T.calidadProg);
   $('#qHero').innerHTML = `
-    <div style="min-width:210px">
-      <div class="cap">Calidad de marcación</div>
-      <div class="big" style="color:${col(nv)}">${T.calidad==null?'—':T.calidad.toFixed(1)+'%'}</div>
-      <div class="track"><span style="width:${T.calidad||0}%;background:${col(nv)}"></span></div>
+    <div style="min-width:210px" data-tip="De los días en que la persona SÍ tenía turno asignado, en cuántos la marcación quedó completa y sin necesidad de interpretar. Es la calidad que le corresponde al empleado y a su jefe.">
+      <div class="cap">Cumplió su turno</div>
+      <div class="big" style="color:${col(nvT)}">${T.calidadTurno==null?'—':T.calidadTurno.toFixed(1)+'%'}</div>
+      <div class="track"><span style="width:${T.calidadTurno||0}%;background:${col(nvT)}"></span></div>
+      <div class="muted" style="font-size:11px;margin-top:4px">${fmtN(T.okTurno)} de ${fmtN(T.conTurno)} días con turno</div>
+    </div>
+    <div style="min-width:210px" data-tip="De los días en que la persona SÍ vino y marcó, en cuántos había turno cargado. Lo que falta aquí NO es culpa de quien marca: es programación que no se cargó en BioTime.">
+      <div class="cap">Tenía turno cargado</div>
+      <div class="big" style="color:${col(nvP)}">${T.calidadProg==null?'—':T.calidadProg.toFixed(1)+'%'}</div>
+      <div class="track"><span style="width:${T.calidadProg||0}%;background:${col(nvP)}"></span></div>
+      <div class="muted" style="font-size:11px;margin-top:4px">${fmtN(T.sinTurno)} días trabajados sin turno</div>
     </div>
     <div class="det">
-      <b>${fmtN(T.limpio)}</b> de <b>${fmtN(T.dias)}</b> días-persona se calcularon sobre marcaciones
-      que no hubo que interpretar. El resto sí: el motor tuvo que elegir qué marcación descartar,
-      o no había ninguna.<br>
-      Eso sostiene <b>${fmtN(Math.round(T.hDudosa))} h</b> de las
-      <b>${fmtN(Math.round(T.hTotal))} h</b> acreditadas
-      (<b>${T.pctHDudosa==null?'—':T.pctHDudosa.toFixed(1)+'%'}</b>), y toca a
+      <b>Son dos problemas con dueños distintos.</b> Arriba a la izquierda, lo que resuelve el jefe
+      con su gente: de ${fmtN(T.conTurno)} días con turno asignado, ${fmtN(T.sugTurno)} hubo que
+      interpretarlos, ${fmtN(T.bloqTurno)} no se pudieron calcular y ${fmtN(T.sinMarca)} no tienen
+      ninguna marcación. A la derecha, lo que resuelve quien programa: ${fmtN(T.sinTurno)} días en
+      que la gente vino y marcó sin tener turno cargado —${fmtN(T.sinTurnoLimpio)} de ellos con la
+      marcación impecable—, que sostienen ${fmtN(Math.round(T.hSinTurno))} h.<br>
+      En total, los días que hubo que interpretar sostienen <b>${fmtN(Math.round(T.hDudosa))} h</b>
+      de las <b>${fmtN(Math.round(T.hTotal))} h</b> acreditadas
+      (<b>${T.pctHDudosa==null?'—':T.pctHDudosa.toFixed(1)+'%'}</b>) y tocan a
       <b>${fmtN(T.empDudososN)}</b> de ${fmtN(T.empleados)} empleados.
     </div>` + (filtrando ? `
     <div style="min-width:150px;border-left:1px solid var(--line);padding-left:20px">
@@ -3119,7 +3221,10 @@ function renderCalidad(){
     ]);
 
   $('#tQ thead').innerHTML = `<tr><th>Departamento</th><th class="num">Empleados</th>
-    <th class="num">Días</th><th data-tip="Qué tan bien marca ESE departamento, contra sus propios días. No se compara entre departamentos de tamaños distintos sin mirar el peso.">Calidad (tasa propia)</th>
+    <th class="num">Días</th>
+    <th data-tip="De sus días CON turno asignado, en cuántos la marcación quedó completa e inequívoca. Es del empleado y su jefe.">Cumplió su turno</th>
+    <th data-tip="De los días en que su gente vino, en cuántos había turno cargado. Es de quien programa.">Tenía turno cargado</th>
+    <th data-tip="Qué tan bien marca ESE departamento sobre TODOS sus días, con turno o sin él. Se conserva para no perder la comparación histórica.">Calidad (tasa propia)</th>
     <th class="num" data-tip="Días que el motor tuvo que interpretar más los que no pudo calcular.">Dudosos</th>
     <th data-tip="Qué porcentaje de TODOS los días dudosos de la selección está en este departamento. Es lo que dice dónde conviene empezar.">Peso en el total</th>
     <th class="num" data-tip="Días con marcaciones y sin turno asignado. Es programación faltante, no indisciplina.">Sin turno</th>
@@ -3137,8 +3242,13 @@ function renderCalidad(){
       ? ` <span class="tag t-mut" data-tip="Solo ${fmtN(d.dias)} días: un punto porcentual vale ${
           d.diasPorPunto.toFixed(1)} días, así que un día malo mueve la tasa varios puntos. No decida sobre este número solo.">muestra corta</span>`
       : '';
+    const barra = (p, tip) => { const nn = p==null ? 'err' : nivelQ(p);
+      return `<td${tip?` data-tip="${esc(tip)}"`:''}><span class="qbar"><span style="width:${
+        p||0}%;background:${col(nn)}"></span></span>${p==null?'—':p.toFixed(1)+'%'}</td>`; };
     return `<tr><td>${esc(d.dep)}</td><td class="num">${fmtN(d.empleados)}</td>
       <td class="num">${fmtN(d.dias)}</td>
+      ${barra(d.calidadTurno, `${fmtN(d.okTurno)} de ${fmtN(d.conTurno)} días con turno quedaron limpios.`)}
+      ${barra(d.calidadProg, `${fmtN(d.sinTurno)} días trabajados sin turno cargado.`)}
       <td${d.muestraCorta?' style="opacity:.55"':''}><span class="qbar"><span style="width:${
         d.calidad||0}%;background:${col(n)}"></span></span>${
         d.calidad==null?'—':d.calidad.toFixed(1)+'%'}${corta}</td>
@@ -3151,7 +3261,9 @@ function renderCalidad(){
       <td class="num">${fmtN(d.sinMarca)}</td>
       <td class="num">${fmtN(Math.round(d.antesMin/60))}</td>
       <td class="num">${d.pctHDudosa==null?'—':d.pctHDudosa.toFixed(1)+'%'}</td></tr>`;
-  }).join('') || `<tr><td colspan="10" class="muted" style="padding:18px">Sin datos para el filtro activo.</td></tr>`;
+  }).join('') || `<tr><td colspan="12" class="muted" style="padding:18px">Sin datos para el filtro activo.</td></tr>`;
+
+  renderCalidadEmp(Q);
 
   const fCia = $('#fCiaQ').value, fDep = $('#fDeptoQ').value;
   $('#qPrintHead').innerHTML =
@@ -3163,16 +3275,43 @@ function renderCalidad(){
 
 function aoaCalidad(){
   const Q = calidadFiltrada();
-  const head = ['DEPARTAMENTO','EMPLEADOS','DIAS','CALIDAD %','PESO EN EL TOTAL %','MUESTRA CORTA',
+  const head = ['DEPARTAMENTO','EMPLEADOS','DIAS','DIAS CON TURNO','% CUMPLIO SU TURNO',
+    'DIAS CON TURNO LIMPIOS','DIAS INTERPRETADOS CON TURNO','DIAS SIN CALCULAR CON TURNO',
+    'DIAS QUE VINO','% TENIA TURNO CARGADO','DIAS SIN TURNO','DIAS SIN TURNO CON MARCACION LIMPIA',
+    'HORAS EN DIAS SIN TURNO','CALIDAD %','PESO EN EL TOTAL %','MUESTRA CORTA',
     'DIAS LIMPIOS','DIAS INTERPRETADOS',
-    'DIAS SIN CALCULAR','DIAS SIN TURNO','TURNO SIN MARCA','ENTRADAS TARDE','SALIDAS TEMPRANO',
+    'DIAS SIN CALCULAR','TURNO SIN MARCA','ENTRADAS TARDE','SALIDAS TEMPRANO',
     'HORAS ANTES DEL TURNO','HORAS LIMPIAS','HORAS DUDOSAS','% HORAS DUDOSAS'];
-  const fila = d => [d.dep, d.empleados, d.dias, d.calidad==null?'':+d.calidad.toFixed(1),
+  const fila = d => [d.dep, d.empleados, d.dias, d.conTurno,
+    d.calidadTurno==null?'':+d.calidadTurno.toFixed(1),
+    d.okTurno, d.sugTurno, d.bloqTurno,
+    d.diasVino, d.calidadProg==null?'':+d.calidadProg.toFixed(1),
+    d.sinTurno, d.sinTurnoLimpio, +d.hSinTurno.toFixed(1),
+    d.calidad==null?'':+d.calidad.toFixed(1),
     d.peso==null?'':+d.peso.toFixed(1), d.muestraCorta?'SI':'',
-    d.limpio, d.sugerido, d.bloq, d.sinTurno, d.sinMarca, d.tarde, d.temprano,
+    d.limpio, d.sugerido, d.bloq, d.sinMarca, d.tarde, d.temprano,
     +(d.antesMin/60).toFixed(1), +d.hLimpia.toFixed(1), +d.hDudosa.toFixed(1),
     d.pctHDudosa==null?'':+d.pctHDudosa.toFixed(1)];
   return [head, ...Q.deps.map(fila), fila({...Q.total, dep:'TOTAL'})];
+}
+
+/** La misma calidad, persona por persona: es el nivel donde alguien puede actuar. */
+function aoaCalidadEmp(){
+  const Q = calidadFiltrada();
+  const head = ['COD_EMPLEADO','NOMBRES','APELLIDOS','COMPAÑÍA','DEPARTAMENTO','CARGO','PERFIL','VÍNCULO',
+    'DIAS DEL CICLO','DIAS CON TURNO','% CUMPLIO SU TURNO','DIAS CON TURNO LIMPIOS',
+    'DIAS INTERPRETADOS','DIAS SIN CALCULAR','TURNO SIN MARCA',
+    'DIAS QUE VINO','% TENIA TURNO CARGADO','DIAS SIN TURNO','DIAS SIN TURNO CON MARCACION LIMPIA',
+    'HORAS EN DIAS SIN TURNO','ENTRADAS TARDE','SALIDAS TEMPRANO',
+    'HORAS ANTES DEL TURNO','HORAS LIMPIAS','HORAS DUDOSAS','% HORAS DUDOSAS'];
+  const body = Q.emps.map(p=>[...asIdent(p.empRef), p.perfil||'', p.empRef.vinculo||'ACTIVO',
+    p.dias, p.conTurno, p.calidadTurno==null?'':+p.calidadTurno.toFixed(1), p.okTurno,
+    p.sugTurno, p.bloqTurno, p.sinMarca,
+    p.diasVino, p.calidadProg==null?'':+p.calidadProg.toFixed(1), p.sinTurno, p.sinTurnoLimpio,
+    +p.hSinTurno.toFixed(1), p.tarde, p.temprano,
+    +(p.antesMin/60).toFixed(1), +p.hLimpia.toFixed(1), +p.hDudosa.toFixed(1),
+    p.pctHDudosa==null?'':+p.pctHDudosa.toFixed(1)]);
+  return [head, ...body];
 }
 
 /* ══════════════════════════════════════════════════════════════════
@@ -3768,6 +3907,37 @@ function addAutor(ini, fin, estado, motivo){
   runCalc(); showTab('det');
 }
 
+/** Calidad de marcacion de UNA persona, con los mismos criterios de la pestaña Calidad:
+ *  cumplimiento sobre sus dias con turno, y si lo que trabajo estaba programado. */
+function calidadDeEmpleado(e){
+  const c = { conTurno:0, ok:0, sug:0, bloq:0, sinMarca:0, sinTurno:0 };
+  (e.ciclo||[]).forEach(r=>{
+    const f = r.flags || [];
+    const bloq = f.includes('A-17') || (f.includes('A-04') && !f.includes('SUGERIDO'));
+    const sug  = f.includes('SUGERIDO') || r.inferido;
+    const sinM = f.includes('A-18');
+    if(f.includes('A-19')) c.sinTurno++;
+    /* Mismo criterio que computeCalidad: `r.W` falta en los dias que no llegaron al
+       emparejamiento (ausencias y bloqueados), asi que el turno se lee de `r.turno`. */
+    if(!r.W && !(r.turno && r.turno !== '—')) return;
+    c.conTurno++;
+    if(sinM){ c.sinMarca++; return; }
+    if(bloq) c.bloq++; else if(sug) c.sug++; else c.ok++;
+  });
+  const vino = (c.conTurno - c.sinMarca) + c.sinTurno;
+  const pTurno = c.conTurno ? c.ok / c.conTurno * 100 : null;
+  const pProg  = vino ? (c.conTurno - c.sinMarca) / vino * 100 : null;
+  const cls = p => p==null ? '' : p>=95 ? 'style="color:var(--ok)"' : p>=80 ? 'style="color:var(--warn)"' : 'style="color:var(--err)"';
+  return `<div data-tip="De sus ${fmtN(c.conTurno)} días con turno asignado, en ${fmtN(c.ok)} la marcación quedó completa e inequívoca. ${
+      fmtN(c.sug)} hubo que interpretarlos, ${fmtN(c.bloq)} no se pudieron calcular y ${fmtN(c.sinMarca)} no tienen marcación.">
+      <div class="k">Cumplió su turno</div>
+      <div class="v" ${cls(pTurno)}>${pTurno==null?'—':pTurno.toFixed(0)+'%'}<small>${fmtN(c.ok)}/${fmtN(c.conTurno)}</small></div></div>
+    <div data-tip="De los ${fmtN(vino)} días en que vino y marcó, en ${fmtN(c.conTurno - c.sinMarca)} había turno cargado. Los ${
+      fmtN(c.sinTurno)} restantes son programación que no se cargó en BioTime: no son culpa suya.">
+      <div class="k">Tenía turno cargado</div>
+      <div class="v" ${cls(pProg)}>${pProg==null?'—':pProg.toFixed(0)+'%'}<small>${fmtN(c.sinTurno)} sin turno</small></div></div>`;
+}
+
 function renderDet(){
   const R = RESULT, cols = conceptCols(R.cfg);
   const e = R.byEmp.get(CUR_EMP);
@@ -3789,6 +3959,7 @@ function renderDet(){
      <div data-tip="Horas suplementarias del ciclo, contadas desde el fin de cada turno con la escalera."><div class="k">Extras</div><div class="v">${fmt(e.extraH)||0}</div></div>
      <div data-tip="Horas que le faltaron para completar sus turnos y aun asi se le pagaron."><div class="k">Pendientes</div><div class="v">${fmt(e.pendH)||0}</div></div>
      <div data-nov="TARDE"><div class="k">Dias con desvio</div><div class="v">${e.tardes}</div></div>` +
+    calidadDeEmpleado(e) +
     cols.filter(c=>e.tot[c.key]>0).map(c=>
       `<div data-tip="${esc(c.tip)}"><div class="k">${esc(c.code)} · ${esc(c.short)}</div>
        <div class="v">${fmt(e.tot[c.key])}</div></div>`).join('');
@@ -4293,7 +4464,9 @@ document.addEventListener('DOMContentLoaded',()=>{
   $('#fOrdQ').onchange    = ()=>RESULT&&renderCalidad();
   $('#fClearQ').onclick  = ()=>{ $('#fCiaQ').value=''; $('#fDeptoQ').value='';
     $('#fOrdQ').value='peso'; RESULT&&renderCalidad(); };
-  $('#expQ').onclick = ()=>RESULT&&save({'Calidad de marcacion':aoaCalidad()},
+  if($('#qQEmp')) $('#qQEmp').oninput = ()=>RESULT&&renderCalidad();
+  $('#expQ').onclick = ()=>RESULT&&save({'Calidad de marcacion':aoaCalidad(),
+      'Calidad por empleado':aoaCalidadEmp()},
     `Calidad_Marcacion_${stamp()}.xlsx`);
   $('#pdfQ').onclick = ()=>{
     if(!RESULT){ toast('Primero calcule el ciclo.'); return; }

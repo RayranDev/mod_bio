@@ -73,6 +73,8 @@ AS_VISTA, AS_IDENT, AS_RES_HEAD, asIdent, asisResFila    (resumen de asistencia)
 asisResumenFilas, aoaAsisResumen, renderAsisResumen, habilesEntre
 COLS_ASIS, COLS_ASIS_OCULTAS, aplicarColsAsis, renderColsAsis, tagVinculo, estadoAsis
 guardarXLS, colorAsisCal, colorAsisRes, nivelPct, nivelSil (exportacion con colores)
+computeCalidad, calidadFiltrada, renderCalidad, renderCalidadEmp, nivelQ  (calidad de marcacion)
+aoaCalidad, aoaCalidadEmp, calidadDeEmpleado
 KPI_EXCL, KPI_EXCLUIDOS_ULTIMO                          (estado del KPI)
 kpiCalcular, pct, kpiPorDepto, kpiFiltrarEmpleados      (KPI de cumplimiento)
 barPath, fmtPct, fmtN, svgKpiChart, renderCobertura, renderKpi, aoaKpiDep, aoaKpiEmp
@@ -747,6 +749,38 @@ posteriores a su vigencia; el motor **no cuenta ni uno solo como ausencia**, por
 y aun así no tener ni un día de asistencia — la marca fue el **cierre de una jornada que empezó el día
 anterior**, o quedó fuera de la tolerancia del turno. Es el empleado 8709. Por eso el estado se llama
 `Sin marcar en el rango` y no "nunca marcó", y el tooltip lo explica.
+
+**Las DOS calidades de marcación (sept-2026), con dueños distintos.** El usuario lo planteó así:
+*"la calidad ideal se basa en cruzar el turno asignado contra si lo cumplió según las marcaciones; y
+está la otra, donde el empleado marcó bien pero infortunadamente no se le cargó el turno"*. Antes
+había un solo número (`limpio / días`) que mezclaba las dos cosas y no dejaba actuar. Ahora se
+calculan por **empleado, departamento y empresa**:
+
+- **`calidadTurno` — "Cumplió su turno"** = `okTurno / conTurno`. Denominador: los días con turno
+  asignado. Numerador: los días en que marcó completo y sin que el motor tuviera que interpretar.
+  Los días interpretados, los que no se pudieron calcular y las ausencias restan. **Es del empleado y
+  su jefe.**
+- **`calidadProg` — "Tenía turno cargado"** = `(conTurno − sinMarcaTurno) / diasVino`. De los días en
+  que la persona **sí vino y marcó**, en cuántos había turno cargado. Lo que falta aquí no es culpa de
+  quien marca: **es programación que no se cargó en BioTime.**
+
+Sobre los archivos del 2026-09-22 (01-ago a 22-sep): **74,2% cumplió su turno** (26.791 de 36.108
+días con turno; 6.286 interpretados y 3.031 sin marcar) y **91,6% tenía turno cargado** (3.039 días
+trabajados sin turno). La calidad global vieja (73,5%) se conserva como columna para no perder la
+comparación histórica.
+
+> **Trampa real al implementarlo: `r.W` NO está en todas las filas.** Se asigna recién en el
+> emparejamiento (`row.W = W`), así que un día con turno y **cero marcaciones** (A-18) o un día
+> bloqueado sale antes por `return` y llega sin `W`. Contar "días con turno" por `r.W` dejaba las
+> 3.031 ausencias fuera del denominador y la calidad salía inflada (79,8% en vez de 74,2%). El turno
+> asignado se lee de **`r.turno`**, que se estampa siempre. La misma regla vale en
+> `calidadDeEmpleado()`.
+
+**Detalle por empleado y tabla por persona.** La pestaña Calidad tiene ahora una tabla **por
+empleado** (`#tQEmp`, hasta 400 filas, ordenada por días con problema y con buscador propio), y cada
+fila abre el Detalle de esa persona. En el encabezado del **Detalle** aparecen las dos tarjetas con
+las mismas cifras (`calidadDeEmpleado`), verificado contra la tabla: el empleado 1840 da 2/37 y 1 día
+sin turno en los dos lugares. El Excel exporta dos hojas: por departamento y por empleado.
 
 **Búsqueda de empleados (`coincideEmp`).** El nombre se guarda como `APELLIDOS NOMBRES`, así que
 comparar la frase completa hacía fallar "juan perez" contra "PEREZ JUAN" — el usuario lo reportó como
