@@ -17,8 +17,8 @@ decisión, qué se probó y se descartó, qué convención seguir al modificar e
 
 | Archivo | Qué es |
 |---|---|
-| `reporte-horas.html` | Herramienta completa: 9 pestañas (Consolidado, Detalle, Calendario, Excepciones, Asistencia, **Resumen del ciclo**, **Adopción**, Calidad de marcación, Glosario). Para análisis, auditoría de datos y seguimiento del proceso de implementación. |
-| `reporte-horas-rrhh.html` | Versión lite para RRHH: 7 pestañas (Consolidado, Detalle, Calendario, Asistencia, **Resumen del ciclo**, **Adopción**, Calidad de marcación). Sin Excepciones ni Glosario. Parametrización avanzada detrás de un botón de engranaje (`⚙`) en vez de siempre visible. |
+| `reporte-horas.html` | Herramienta completa: 10 pestañas (Consolidado, Detalle, Calendario, Excepciones, Asistencia, **Resumen del ciclo**, **Adopción**, Calidad de marcación, **Rotación**, Glosario). Para análisis, auditoría de datos y seguimiento del proceso de implementación. |
+| `reporte-horas-rrhh.html` | Versión lite para RRHH: 8 pestañas (Consolidado, Detalle, Calendario, Asistencia, **Resumen del ciclo**, **Adopción**, Calidad de marcación, **Rotación**). Sin Excepciones ni Glosario. Parametrización avanzada detrás de un botón de engranaje (`⚙`) en vez de siempre visible. |
 | `CATALOGO-CONDICIONES.md` | Las 137 condiciones de diseño original, con sus códigos (A-01, D-14, I-03, etc.) usados como referencia cruzada en el código. |
 | `scripts/pruebas_motor/` | Pruebas sintéticas del motor y de la lactancia en Node (`node scripts/pruebas_motor/<archivo>.js`); sin datos reales ni dependencias. Ver su `README.md`. |
 | `CLAUDE.md` | Este archivo. |
@@ -84,7 +84,13 @@ aoaCalidad, aoaCalidadEmp, calidadDeEmpleado, hookCalidad
 KPI_EXCL                                                (departamentos excluidos, guardados: ahora parte del Alcance)
 barPath, fmtPct, fmtN                                   (helpers de gráficos y porcentajes)
 ALC, ALC_TABS, ALC_SUCIO, SIN_DEP, depKey, sinTurnoAsignado   (Alcance: estado)
-alcanceOk, alcanceR, alcanceUnDepto, alcanceHay, alcanceInfo, alcanceLista, alcanceTexto, aoaAlcance   (Alcance: qué personas entran)
+alcanceOk, alcanceOkEmp, alcanceR, alcanceUnDepto, alcanceHay, alcanceInfo, alcanceLista, alcanceTexto, aoaAlcance   (Alcance: qué personas entran)
+alcCargos, alcSetCargo                                  (Alcance: cargo, dependiente de compañía/departamentos)
+ROT_MESES, ROT_TIPOS, ROT_UMBRAL, ROT_COL, ROT_HEAD, ROT   (Rotación: constantes y estado)
+rotSumaMes, rotListaMeses, rotEtqMes, rotUltimoDia, rotTipo, rotTiposDisponibles, rotTiposSel, rotTiposTexto   (Rotación: meses y tipos)
+retirosMasivos, marcarRetirosMasivos, rotRango, rotPersonas, rotMes, rotSuma, rotGrupos, computeRot, rotOpt, rotCalc   (Rotación: cálculo)
+svgRotMeses, rotTablaMes, rotTablaCia, rotMesesChips, renderRot, hookRot   (Rotación: pantalla y cableado)
+rotEstado, rotFila, aoaRotAlcance, aoaRotMes, aoaRotGrupo, aoaRotDetalle, aoaRotFechas   (Rotación: Excel)
 alcSetCia, alcSetModoDep, alcToggleDep, alcAddPers, alcQuitarPers, alcSetModoPer, alcSetPerfil, alcSetVinc, alcSetSinTurno, alcLimpiar
 tabActiva, renderTab, alcCambio, alcResumen, alcPanel, alcSugerir, hookAlcance   (Alcance: pantalla y cableado)
 esTurnoExtra, pasoExtra                                 (turnos de solo extras, T-EXTRA)
@@ -999,6 +1005,69 @@ Pedido del usuario: poder filtrar el Consolidado por **departamento y por cargo*
   celdas que el encabezado con y sin conceptos, selector y CSS, y una corrida con `#fCargo`/`#btnColsCons` renombrados para comprobar que nada
   revienta cuando el HTML no los declara); `prueba_identidad.js` suma las funciones y constantes nuevas.
 
+### Rotación de personal (nov-2026)
+
+Pedido del usuario: un indicador de **rotación** (quién entra y quién sale), que se pueda cortar por **compañía, departamento y cargo**, y
+mirarlo **por meses**. Confirmó que los picos grandes de retiros de BioTime (abril y julio de 2026) son **limpiezas masivas del sistema, no
+salidas reales**, y que BioTime se corregirá: su mitigación fue «verlo por meses y poder generar el reporte por meses». Añadió después que
+el **tipo de retiro** (renuncia / despedido / otro) debe ser un **filtro de verdad**, combinable con todo lo demás.
+
+- **Pestaña `rot` (`#tab-rot`) en los dos archivos**, después de *Calidad de marcación*. Es **independiente del ciclo**: tiene su propia ventana
+  «Desde / Hasta» (por defecto los últimos 6 meses con datos, desde el primer retiro hasta el mes de la última marcación), porque un ciclo de
+  30 días trae muy pocos retiros y la tasa sale con demasiado ruido. Lee **`MODEL.employees`** (todos los empleados y todos los
+  renunciados, no solo los del ciclo) y no recalcula nada del motor: la nómina es idéntica (huella verificada con datos reales).
+- **Fórmula:** `tasa mensual = retiros del mes ÷ plantilla promedio del mes`, con plantilla promedio = (inicio + fin) ÷ 2. En varios meses es
+  Σ retiros ÷ Σ plantillas promedio. También se muestran ingresos, saldo neto y la mezcla renuncia / despedido / otro.
+- **Plantilla (`rotMes`).** Presente al inicio del mes = `ini < d0` y (`ret` nulo o `ret ≥ d0`); al final = `ini ≤ d1` y (`ret` nulo o
+  `ret > d1`). Se verificó contra un oráculo diario independiente en la prueba. `ini = null` significa «ya estaba antes de la ventana».
+- **Aproximaciones (dichas en pantalla y en el Excel):** (1) **el archivo de Renuncias no trae fecha de ingreso**, así que quien se fue se
+  asume presente desde antes de la ventana (sobrestima algo la plantilla de los primeros meses); no se puede medir antigüedad ni rotación
+  temprana; (2) **la compañía del retirado no viene en ese archivo**: solo se recupera de `Branch` si marcó. En los datos reales casi
+  todos los retiros quedan como **«Sin dato»** (`p.cia`), que se cuentan pero **no llevan tasa** (su plantilla no es comparable y saldría
+  de 134% o 200%). Con una compañía elegida en Alcance esos retiros **no se cuentan** y la tasa de esa compañía sale subestimada; la
+  pantalla lo avisa con el porcentaje de retiros sin compañía.
+- **Fechas masivas (mitigación de las depuraciones).** Parámetro **`cRetMasivo`** (default 15, junto a `cIngMasivo`; `readConfig` lo acota a
+  ≥ 1): una fecha de retiro compartida por **más** de ese número de personas es una **depuración masiva** (`retirosMasivos`,
+  `marcarRetirosMasivos` → `MODEL.retiroMasivo`, que se llama en `runCalc`). Esas personas se sacan **del numerador y de la plantilla** y se
+  dibujan aparte en gris con su cantidad. El interruptor **«Incluir depuraciones masivas»** las cuenta como retiros normales (y entonces sí
+  están en la plantilla). Igual con las **fechas de ingreso masivas** (`cIngMasivo`, ya existía) e **«Incluir ingresos masivos»**.
+- **Mes no confiable.** Cada mes se puede marcar con un clic (`mb_rot_meses` en `localStorage`): queda en gris y **sale de todos los
+  promedios y tarjetas**. El **mes en curso** (el de la última marcación, si no está completo) también queda fuera automáticamente. La
+  pantalla además avisa de un **pico** (un mes con ≥ 20 retiros y ≥ 3 veces la mediana) para que se decida.
+- **Filtro de tipo de retiro (`ROT.tiposOff`, casillas `#rotTipos`).** Solo hay casillas para los tipos que existen en los datos
+  (`rotTiposDisponibles`: *Renuncia (voluntaria)*, *Despedido*, *Otro / sin tipo*); por defecto todas marcadas. **Semántica, probada:**
+  **el numerador cuenta solo los tipos marcados; la plantilla NO se reduce** (la tasa de «solo despedidos» es despedidos ÷ plantilla
+  total: quien renunció igual salió de la plantilla). Con un solo tipo marcado el gráfico apilado muestra solo ese. También filtra la
+  depuración aparte, el detalle y todas las hojas del Excel. La línea del **Alcance** lo muestra («Tipo de retiro: Despedido») solo en esta
+  pestaña. `rotTipo()` clasifica por texto (`desped|despid|justa causa` → despedido; `renunci|voluntari|mutuo` → renuncia; lo demás, otro).
+  **Ojo con el regex:** «Despedido» se escribe d-e-s-p-e-d-i-d-o; la primera versión buscaba solo `despid` y clasificaba a todos como «otro».
+- **Alcance en Rotación.** Se usa la misma barra, pero con `alcanceOkEmp(m)` (nivel **persona**, sin el cálculo del ciclo): compañía,
+  departamentos, **cargo** y personas. **Perfil, vínculo y «sin turno» no aplican** (el vínculo es lo que se mide): la pantalla lo dice.
+  El **cargo** se agregó al Alcance (`ALC.cargo`, `#alcCargo`, dependiente de compañía/departamentos/personas vía `alcCargos()`) y recorta
+  también las otras tres pestañas. En esta pestaña el resumen del Alcance cuenta a **toda la gente del modelo** y no ofrece «ocultar sin turno».
+- **Pantalla:** tarjetas (retiros del período, rotación mensual promedio, % renuncia, ingresos, saldo neto), columnas apiladas por mes con
+  el % de rotación encima (rojo si pasa 1,5 veces el promedio con ≥ 3 retiros), ranking por **tasa** (no por cantidad) por departamento o,
+  si hay uno solo, por cargo (solo con plantilla promedio ≥ 5), y una tabla mes × compañía. Cada gráfico tiene su tabla gemela.
+  Clic en un departamento del ranking abre sus cargos (`ROT.dep`).
+- **Excel (`#expRot`):** `Alcance` (con tipos incluidos, ventana, interruptores, meses no confiables y la aproximación), `Por mes` (mes ×
+  compañía), `Por departamento y mes`, `Por cargo y mes`, `Detalle de retiros` y `Fechas masivas`. **Solo ids, nunca nombres.**
+- **Renuncias sigue siendo OPCIONAL.** Sin el archivo (y sin fechas de retiro en el maestro) la pestaña dice «Cargá el archivo de
+  Renuncias» y oculta el cuerpo; el resto de las pestañas calcula igual.
+- **Datos reales (archivos del 15-oct, solo agregados):** 501 retiros leídos, de 2025-11 a 2026-10. Fechas masivas detectadas con el
+  límite 15: **2026-04-16 (139 personas), 2026-07-21 (110) y 2026-08-28 (17)**; ingresos masivos: 8 fechas (2026-04-08 con 446, 2026-09-07
+  con 73…). Retiros por mes **sin** depuración: may 39 · jun 42 · **jul 69 (+110)** · **ago 41 (+17)** · sep 27 (18 renuncias, 9 despidos)
+  · oct 1 (en curso); abr 8 (+139). Tasa mensual: may 3,4 % · jun 3,6 % · jul 6,2 % · ago 3,8 % · sep 2,5 %; promedio 3,9 %.
+  Todavía **no es un buen indicador antes de marzo de 2026** (el archivo casi no trae retiros). Julio sigue alto aun sin la depuración
+  del 21 (69): conviene que RRHH diga si el resto fue real.
+- **Pruebas:** `prueba_rotacion.js` (cifras calculadas a mano mes a mes; oráculo diario; depuración, ingresos masivos, mes no
+  confiable y mes en curso; el filtro de tipo con plantilla intacta; el caso combinado tipo + departamento + cargo + ventana +
+  interruptor de depuración, por el modelo y por la interfaz; casos borde: alcance vacío, una sola persona, retiro anterior a la
+  ventana, sin fecha, retiro anterior al ingreso, cargo ausente, sin Renuncias; exportación a Excel; los dos archivos pintan lo mismo).
+  `prueba_alcance.js` y `prueba_identidad.js` se actualizaron (cargo, 4 pestañas sucias, constantes nuevas) y la comparación entre archivos
+  ya no depende de la hora de generación (quitaba un fallo intermitente que existía desde antes).
+- **Sin verificar:** la impresión a PDF (`#pdfRot`, mismo CSS de impresión que Resumen) y el ancho de 1280 px reales (solo se emuló).
+  Los HTML previos a este cambio están en `informes/respaldo-previo-consolidacion/` (sufijo `_antes-de-rotacion`).
+
 ## Parámetros de configuración (`readConfig()`)
 
 Los 20 campos que lee el motor, con su id de HTML. En `reporte-horas.html` viven todos en el panel "2
@@ -1036,6 +1105,7 @@ guarda en `localStorage.mb_dispositivos`. Es la configuración que más pesa sob
 | `cAusAviso` | Días hábiles sin marcar para marcar **Revisar** en Asistencia (default 3) | — |
 | `cAusGrave` | Días hábiles sin marcar para marcar **Alerta** (default 6) | — |
 | `cIngMasivo` | Umbral de empleados para considerar una fecha de ingreso "masiva" | (hallazgo de esta sesión, no está en el catálogo original) |
+| `cRetMasivo` | Una fecha de **retiro** compartida por más de este número de personas es una depuración masiva de BioTime (default 15; mínimo 1). Solo afecta a la pestaña Rotación | (Rotación, nov-2026) |
 | `cAutor` | Política de extras sin autorización: calcular y marcar / exigir autorización | F-09 |
 | `cRedon` | Redondeo por día y concepto, o solo al total del ciclo | D-10 a D-13 |
 
