@@ -3,10 +3,10 @@
 Herramientas locales de nómina para Plastitec / SIRH: calculan horas trabajadas, horas extra y
 recargos a partir de exportaciones de BioTime, sin backend, sin base de datos, sin conexión a
 internet salvo la librería de Excel (SheetJS, cargada desde `cdnjs.cloudflare.com`). Todo el cálculo
-corre en el navegador del usuario, sobre los cinco archivos Excel que él mismo carga (cuatro
-obligatorios más `Renuncia_*.xlsx`, que es opcional).
+corre en el navegador del usuario, sobre los seis archivos Excel que él mismo carga (cuatro
+obligatorios más dos opcionales: `Renuncia_*.xlsx` y el de **Lactancia**).
 
-El catálogo de condiciones de negocio (166 condiciones, bloques A a K, v2.0) está en
+El catálogo de condiciones de negocio (167 condiciones, bloques A a K, v2.1) está en
 **[CATALOGO-CONDICIONES.md](CATALOGO-CONDICIONES.md)**. Ese documento es hoy el catálogo de
 condiciones **vigente**: cada condición trae su estado real de implementación (Implementada / Parcial
 / Decisión de diseño / Reemplazada / No implementada), verificado contra el código. Este archivo
@@ -17,9 +17,10 @@ decisión, qué se probó y se descartó, qué convención seguir al modificar e
 
 | Archivo | Qué es |
 |---|---|
-| `reporte-horas.html` | Herramienta completa: 9 pestañas (Consolidado, Detalle, Calendario, Excepciones, Asistencia, KPI Cumplimiento, Calidad de marcación, Cobertura y calidad, Glosario). Para análisis, auditoría de datos y seguimiento del proceso de implementación. |
-| `reporte-horas-rrhh.html` | Versión lite para RRHH: 7 pestañas (Consolidado, Detalle, Calendario, Asistencia, KPI Cumplimiento, Calidad de marcación, Cobertura y calidad). Sin Excepciones ni Glosario. Parametrización avanzada detrás de un botón de engranaje (`⚙`) en vez de siempre visible. |
+| `reporte-horas.html` | Herramienta completa: 10 pestañas (Consolidado, Detalle, Calendario, Excepciones, Asistencia, **Resumen del ciclo**, **Adopción**, Calidad de marcación, **Rotación**, Glosario). Para análisis, auditoría de datos y seguimiento del proceso de implementación. |
+| `reporte-horas-rrhh.html` | Versión lite para RRHH: 8 pestañas (Consolidado, Detalle, Calendario, Asistencia, **Resumen del ciclo**, **Adopción**, Calidad de marcación, **Rotación**). Sin Excepciones ni Glosario. Parametrización avanzada detrás de un botón de engranaje (`⚙`) en vez de siempre visible. |
 | `CATALOGO-CONDICIONES.md` | Las 137 condiciones de diseño original, con sus códigos (A-01, D-14, I-03, etc.) usados como referencia cruzada en el código. |
+| `scripts/pruebas_motor/` | Pruebas sintéticas del motor y de la lactancia en Node (`node scripts/pruebas_motor/<archivo>.js`); sin datos reales ni dependencias. Ver su `README.md`. |
 | `CLAUDE.md` | Este archivo. |
 | `.gitignore` | Excluye `*.xlsx`, `*.xls` y `.atl/` — los datos de empleados **nunca** se suben al repo. |
 
@@ -60,7 +61,11 @@ round05, dayType, classify, atomize                     (clasificación y redond
 escalera, quitarDescanso, tramosAcreditados             (jornada fija + escalera de sobretiempo)
 clasificarHuecos, topeCafe                              (huecos por rol de dispositivo, B-12/B-16)
 rolAuto, rolDisp, rolEfectivo, renderDisp, guardarDisp   (rol de cada biométrico)
-esLactancia, topeLactancia                              (tiempo de lactancia pagado, E-04)
+LACT_ETAPAS, LACT_PATS, fechaLact, idsConocidos, leerLactancia   (archivo de lactancia: lectura y validación, E-04)
+faseLactancia, minLactancia, ubicarLactancia, textoLact, resumenLactancia   (crédito de lactancia en compute)
+LACT_CARGA (global), validarLactCarga, htmlCargaLact, renderLactVal, abrirLactVal, renderLactBtn, hookLact   (carga y validación visible)
+lactChips, tagLact, cardLactDet, cardsLactCons, filaLactCons, lactCoincide   (marcas, tarjetas y filtro de lactancia)
+aoaLactancia, descargarPlantillaLact                    (hoja «Lactancia» del Excel y plantilla)
 readConfig                                              (lee los parámetros del formulario)
 limpiarMarcaciones                                      (dedupe A-06 + agrupación A-07)
 compute                                                 (el motor de horas y conceptos, ~490 líneas)
@@ -72,34 +77,50 @@ sinTildes, coincideEmp                                  (busqueda de empleados e
 AS_VISTA, AS_IDENT, AS_RES_HEAD, asIdent, asisResFila    (resumen de asistencia)
 asisResumenFilas, aoaAsisResumen, renderAsisResumen, habilesEntre
 COLS_ASIS, COLS_ASIS_OCULTAS, aplicarColsAsis, renderColsAsis, tagVinculo, estadoAsis
+celdaIngreso                                            (fecha de ingreso en el resumen, marca las compartidas)
 guardarXLS, colorAsisCal, colorAsisRes, nivelPct, nivelSil (exportacion con colores)
-computeCalidad, calidadFiltrada, renderCalidad, renderCalidadEmp, nivelQ  (calidad de marcacion)
-aoaCalidad, aoaCalidadEmp, calidadDeEmpleado
-KPI_EXCL, KPI_EXCLUIDOS_ULTIMO                          (estado del KPI)
-kpiCalcular, pct, kpiPorDepto, kpiFiltrarEmpleados      (KPI de cumplimiento)
-barPath, fmtPct, fmtN, svgKpiChart, renderCobertura, renderKpi, aoaKpiDep, aoaKpiEmp
+computeCalidad, calidadFiltrada, renderCalidad, nivelQ, Q_DEP   (Calidad de marcación)
+aoaCalidad, aoaCalidadEmp, calidadDeEmpleado, hookCalidad
+KPI_EXCL                                                (departamentos excluidos, guardados: ahora parte del Alcance)
+barPath, fmtPct, fmtN                                   (helpers de gráficos y porcentajes)
+ALC, ALC_TABS, ALC_SUCIO, SIN_DEP, depKey, sinTurnoAsignado   (Alcance: estado)
+alcanceOk, alcanceOkEmp, alcanceR, alcanceUnDepto, alcanceHay, alcanceInfo, alcanceLista, alcanceTexto, aoaAlcance   (Alcance: qué personas entran)
+alcCargos, alcSetCargo                                  (Alcance: cargo, dependiente de compañía/departamentos)
+ROT_MESES, ROT_TIPOS, ROT_UMBRAL, ROT_COL, ROT_HEAD, ROT   (Rotación: constantes y estado)
+rotSumaMes, rotListaMeses, rotEtqMes, rotUltimoDia, rotTipo, rotTiposDisponibles, rotTiposSel, rotTiposTexto   (Rotación: meses y tipos)
+retirosMasivos, marcarRetirosMasivos, rotRango, rotPersonas, rotMes, rotSuma, rotGrupos, computeRot, rotOpt, rotCalc   (Rotación: cálculo)
+svgRotMeses, rotTablaMes, rotTablaCia, rotMesesChips, renderRot, hookRot   (Rotación: pantalla y cableado)
+rotEstado, rotFila, aoaRotAlcance, aoaRotMes, aoaRotGrupo, aoaRotDetalle, aoaRotFechas   (Rotación: Excel)
+alcSetCia, alcSetModoDep, alcToggleDep, alcAddPers, alcQuitarPers, alcSetModoPer, alcSetPerfil, alcSetVinc, alcSetSinTurno, alcLimpiar
+tabActiva, renderTab, alcCambio, alcResumen, alcPanel, alcSugerir, hookAlcance   (Alcance: pantalla y cableado)
 esTurnoExtra, pasoExtra                                 (turnos de solo extras, T-EXTRA)
 semanaDeTs, inicioSemanaTs, partirPorSemana            (semana del umbral por instante)
 activoEnCiclo                                           (universo del reporte segun el rango, recortado a la vigencia)
-estadoCob, computeCobertura, cobFiltrado, cobAgregar, nivelCob   (Cobertura y calidad)
-COB_EMP, COB_PERD, COB_SIG, COB_TIP, cobOrden, cobConcentra      (navegación general → detalle)
-renderCob, aoaCobertura, aoaCoberturaDep
+estadoCob, computeCobertura, cobFiltrado, cobCalc, cobAgregar, nivelCob   (Adopción)
+COB_EMP, COB_DEP, COB_ORD, COB_PERD, COB_SIG, COB_TIP, cobOrden, cobConcentra   (navegación general → detalle)
+renderCob, aoaCobertura, aoaCoberturaDep, hookCob
 modo, irADetalle, marcarCol, aplicarCols, renderCols     (interfaz: modos, salto y columnas)
 tipHTML, chip, initPop                                  (sistema de tooltips — ver nota abajo)
 toast, conceptCols, renderMatriz
-filtroActivo, filtroHay, filtroSlug, consFiltrado, fillFiltros
+filtroActivo, filtroHay, filtroSlug, consFiltrado, fillFiltros, SIN_CARGO, cargoDe, fillCargos   (filtros del Consolidado, con cargo)
+COLS_CONS_OCULTAS, COLS_CONS_DATOS, COLS_CONS_HORAS, COLS_CONS_OTROS, aplicarColsCons, renderColsCons   (columnas visibles del Consolidado)
 renderCons, celdaHora, celdaSemana, renderAutor, addAutor, renderDet, renderExc
 DOW_CAL, renderCal
 fillSelects, buscarEmp, showTab, save
+IND_UMBRAL, IND_RAMPA, IND_DIAS, IND_DIA_NOM, IND_METS, IND_DEP, IND_MET, IND_PP, IND_SEM   (Resumen del ciclo: constantes y estado)
+fmtH, computeInd, indBarras, indEscala, indColPath, indTrunc, indOpt   (Resumen: cálculo y escalas)
+svgIndBarras, svgIndSemana, svgIndPareto, svgIndApilada, indTabla   (Resumen: gráficos y tabla gemela)
+renderInd, indAbrir, indDiaLargo, aoaIndRes, aoaInd, aoaIndEmp, aoaIndSem, aoaIndAlert, hookInd   (Resumen: pantalla y Excel)
 aoaCons, aoaDet, aoaExc, aoaCal, sinergyTxt
 checkReady, hook, runCalc
 ```
 
-> **Asistencia y KPI pasaron a ser compartidos; Excepciones salió de RRHH (sept-2026).**
-> Las funciones del KPI (`KPI_EXCL`, `KPI_EXCLUIDOS_ULTIMO`, `kpiCalcular`, `pct`, `kpiPorDepto`,
-> `kpiFiltrarEmpleados`, `barPath`, `fmtPct`, `fmtN`, `svgKpiChart`, `renderCobertura`, `renderKpi`,
-> `aoaKpiDep`, `aoaKpiEmp`) viven ahora en los DOS archivos. Solo `renderGlosario` sigue siendo
-> exclusiva del archivo completo.
+> **El KPI Cumplimiento se retiró (nov-2026) y Excepciones salió de RRHH (sept-2026).**
+> Se borraron `kpiCalcular`, `kpiPorDepto`, `kpiFiltrarEmpleados`, `svgKpiChart`, `renderCobertura`,
+> `renderKpi`, `aoaKpiDep`, `aoaKpiEmp`, `pct` y `KPI_EXCLUIDOS_ULTIMO`; se conservan `barPath`, `fmtPct`,
+> `fmtN` y `KPI_EXCL` (la llave `mb_kpi_excl`, ahora parte del Alcance). Solo `renderGlosario` sigue
+> siendo exclusiva del archivo completo. `prueba_identidad.js` comprueba que ni esas funciones ni sus
+> elementos HTML queden en ningún archivo.
 >
 > **`renderExc` y `aoaExc` SIGUEN en los dos archivos** aunque RRHH ya no tenga la pestaña: la
 > exportación combinada de RRHH escribe igual la hoja de Excepciones, y es la única vía por la que
@@ -116,8 +137,8 @@ checkReady, hook, runCalc
 
 > **Asistencia pasó a ser compartida (sept-2026).** El usuario la pidió también en la versión
 > RRHH, así que `AS_LABEL`, `ASISTENCIA`, `computeAsistencia`, `asisFiltrado`, `renderAsistencia` y
-> `aoaAsistencia` viven ahora en los DOS archivos y entran en la lista de arriba. KPI y Glosario
-> siguen siendo exclusivos del archivo completo.
+> `aoaAsistencia` viven ahora en los DOS archivos y entran en la lista de arriba. Solo el Glosario
+> sigue siendo exclusivo del archivo completo.
 
 ### Funciones exclusivas de `reporte-horas.html` (NO existen en la versión RRHH, a propósito)
 
@@ -125,7 +146,7 @@ checkReady, hook, runCalc
 renderGlosario
 ```
 
-Si una tarea futura toca **solo** una de estas funciones (por ejemplo, un ajuste al gráfico de KPI),
+Si una tarea futura toca **solo** una de estas funciones (por ejemplo, un ajuste a la tabla del Glosario),
 el cambio va **solo** en `reporte-horas.html` — no existe equivalente que actualizar en el archivo
 RRHH. Si la tarea toca algo de la primera lista (el motor), va en los dos.
 
@@ -162,8 +183,10 @@ lectura del diff.
 función carácter a carácter, delimitándolas por su primer `
 }
 ` — **no** por la función siguiente,
-porque lo que viene después difiere entre archivos (el full sigue con el KPI) y eso da una diferencia
-falsa.
+porque lo que viene después difiere entre archivos (el full sigue con el Glosario) y eso da una diferencia
+falsa. Dos bloques salen distintos por esa misma razón y **no son divergencias**: `rolEfectivo` (es una
+sola línea, así que su "primer `}`" arrastra la línea `let KPI_EXCL`, que en RRHH está antes) y `runCalc`
+(el full llama además a `renderGlosario()`). Idénticos también en las copias previas a la lactancia.
 
 **Ojo con `core.autocrlf=true`:** un `git checkout` deja el working copy en CRLF mientras el otro
 archivo sigue en LF, y entonces ningún anclaje de texto coincide. El repo guarda LF; normalizar a LF
@@ -178,8 +201,9 @@ de validación más abajo).
 
 ## Fuentes de datos
 
-Cuatro archivos Excel exportados desde BioTime/SIRH. Se cargan una vez por sesión (nunca se suben a
-git — ver `.gitignore`). Nombres típicos (el prefijo/timestamp varía en cada exportación real):
+Cuatro archivos Excel exportados desde BioTime/SIRH, más dos opcionales (Renuncia, que también sale de
+BioTime, y Lactancia, que arma RRHH con una plantilla propia). Se cargan una vez por sesión (nunca se
+suben a git — ver `.gitignore`). Nombres típicos (el prefijo/timestamp varía en cada exportación real):
 
 | Archivo | Contenido | Columnas usadas |
 |---|---|---|
@@ -188,6 +212,7 @@ git — ver `.gitignore`). Nombres típicos (el prefijo/timestamp varía en cada
 | `Horario_*.xlsx` | Asignación de turno por empleado y rango de fechas | Empleado ID, Código, Fecha Inicial, Fecha Final |
 | `Reporte de Marcaciones_*.xlsx` | Marcaciones crudas del reloj biométrico | Employee ID, Fecha, Hora, Tipo de Marcación, Origen del registro, **Branch** |
 | `Renuncia_*.xlsx` | **Opcional.** Personal que ya no está en la empresa | Empleado (id + nombre pegados), Departamento, Cargo, Tipo de renuncia, Fecha de retiro |
+| Lactancia (plantilla propia, `DATA.lac`) | **Opcional.** Empleadas con derecho a lactancia y las fechas de cada etapa. No viene de BioTime: RRHH la arma (botón *Descargar plantilla de lactancia*) | `ID_empleado`, `Inicio_lactancia_6m`, `Fin_lactancia_6m`, `Inicio_lactancia_24m`, `Fin_lactancia_24m` (una fila por empleada; ver «Lactancia por archivo» más abajo) |
 
 ### Hallazgos reales sobre estos datos (no hipotéticos — confirmados contra exportaciones reales)
 
@@ -204,8 +229,8 @@ git — ver `.gitignore`). Nombres típicos (el prefijo/timestamp varía en cada
   usada para probar: `Reporte de Marcaciones` cubre 2026-03-01 a 2026-08-31 (280.857 filas), pero
   `Horario` solo cubre 2026-07-01 a 2026-10-01 (cero filas antes de julio). Cualquier ciclo anterior a
   julio 2026 mostrará "sin turno programado" para prácticamente todo el mundo — **eso es un hueco de
-  datos, no evidencia de incumplimiento.** El KPI Cumplimiento (solo en `reporte-horas.html`) tiene un
-  aviso automático para esto (`#kpiCobertura`, columnas "Con marca" / "Con turno").
+  datos, no evidencia de incumplimiento.** Adopción (en los dos archivos) muestra un aviso automático cuando
+  hay personas sin ninguna marcación o sin ninguna programación cargada (`#cobAviso`).
 - **Fechas de ingreso masivas = migración del sistema, no contratación real.** En los datos de
   referencia, 879 de 1.273 empleados comparten exactamente `2026-04-08` como fecha de ingreso, y
   ninguno de esos 879 tiene turno programado antes de esa fecha tampoco. Eso es la fecha en que se
@@ -218,9 +243,9 @@ git — ver `.gitignore`). Nombres típicos (el prefijo/timestamp varía en cada
   — sus marcaciones no representan la asistencia de un individuo. Los ids `123456` y `1234567`
   (departamento `SNAPIT`) son cuentas de prueba del proveedor/integrador. Ninguna de las dos genera
   concepto alguno en Consolidado (0 horas extra, 0 recargos), así que no hay riesgo de nómina — el
-  riesgo era que aparecieran en la lista de "peor cumplimiento" del KPI. Se resolvió con un campo de
-  exclusión por departamento en la pestaña KPI (`#fExclDeptos`, persistido en
-  `localStorage.mb_kpi_excl`), no filtrando estos ids a nivel de motor — si aparecen más cuentas de
+  riesgo era que aparecieran en las listas de "peor cumplimiento". Se resolvió con la exclusión por
+  departamento del filtro **Alcance** (guardada en `localStorage.mb_kpi_excl`, la misma llave que usaba la
+  pestaña KPI), no filtrando estos ids a nivel de motor — si aparecen más cuentas de
   prueba en el futuro, agregar su departamento ahí, no hardcodear el id en el código.
 - **El catálogo de turnos es dinámico: hoy son estos 13, mañana serán otros.** Nada en el motor debe
   depender de un código de turno concreto. Todo sale del Excel de Turno (horas, días de la semana,
@@ -463,44 +488,139 @@ perdón del café, que es la dirección correcta. Con los cuatro interiores clas
 Y el 8456 pasa de 15 h a 8,98 h — **no a cero**: las horas que sí debe siguen ahí. Eso es lo que se
 buscaba, no un perdón general.
 
-**Tiempo de lactancia pagado (E-04 / C-09, `esLactancia` + `topeLactancia`).** Mismo mecanismo del
-café —minutos perdonados hasta un tope diario, en vez de horas pendientes— pero con dos diferencias
-que importan:
+**Lactancia por archivo (E-04 / C-09, `leerLactancia` + `ubicarLactancia`).** Reemplazó al esquema
+anterior de turnos `T_LACT*` (`esLactancia`/`topeLactancia`, parámetros `cLactPref`/`cLactMin`: **todo
+eliminado**). Se descartó porque obligaba a crear en BioTime un turno por cada combinación de horario ×
+etapa × empleada —una cantidad absurda de turnos, que además habría que reasignar cada vez que una
+empleada pasa de la etapa de 6 meses a la de 24—. Ahora la lactancia es un dato de la persona, no del turno.
 
-- **Se identifica por el código del turno, no por la columna `Descanso`.** El turno se llamará
-  `T_LACT*` y el prefijo es un parámetro (`cLactPref`, default `T_LACT`), igual que `cAdminPref`.
-  **Esto no es capricho:** una lactancia de 60 minutos choca de frente con el umbral de almuerzo
-  (`cfg.descMin`, también 60). Si el tope saliera de la columna `Descanso` como el del café,
-  `quitarDescanso()` la trataría como almuerzo y **se la descontaría de la jornada fija** — es decir,
-  le quitaría exactamente la hora que la ley le reconoce. Leerlo del código del turno evita esa
-  colisión y no depende de cómo BioTime configure el descanso. Si el turno además declara un almuerzo
-  real, ese se descuenta normal.
-- **Es un derecho, no una obligación.** El usuario fue explícito: *"habrán mujeres que se tomen ese
-  tiempo, habrán otras que no"*. El crédito está topado por los huecos que la persona
-  **efectivamente** tomó (`Math.min(topeLact, huecos − café)`), así que quien no sale no recibe
-  ningún crédito fantasma, y una llegada tarde **nunca** se perdona aunque el turno sea de lactancia.
+*El archivo.* Sexta fuente, **opcional** (como Renuncia: `checkReady()` no la exige, no se guarda en
+`localStorage`, se carga en cada corrida). Una fila por empleada, cinco columnas que se ubican por nombre
+tolerante con `pick()` (`ID_empleado`/`Empleado ID`/`Código`; `Inicio_lactancia_6m`/`Fecha inicio 6
+meses`/`Desde 6M`; etc.), con o sin fila de título. Cada etapa es opcional, pero sus dos fechas van juntas:
 
-Café y lactancia son topes **separados y acumulables** (20 + 60 = 80 min/día con los defaults), porque
-son dos derechos distintos. Se imputa primero el café y el resto a lactancia, para que el reporte
-muestre los dos conceptos por separado: tooltip de la celda `PEND.` y columna
-`MIN LACTANCIA RECONOCIDO` en el Detalle. La novedad `E-04` marca solo los días donde de verdad se
-reconoció lactancia.
+| Etapa | Fechas | Tope diario (parámetro) |
+|---|---|---|
+| `6M` | `Inicio_lactancia_6m` … `Fin_lactancia_6m` | `cLactMin6` = 60 min |
+| `24M` | `Inicio_lactancia_24m` … `Fin_lactancia_24m` | `cLactMin24` = 30 min |
 
-**El código está en producción pero inerte hasta que exista el turno.** Con cero turnos `T_LACT*` en
-los datos, la salida es idéntica al commit anterior — verificado sobre agosto 2026 en los dos
-archivos. El comportamiento se validó con cinco casos sintéticos (turno `T_LACT1` 08:00–17:00,
-almuerzo 12:00, jornada fija 480 min):
+La etapa de un día es la de su **fecha de jornada** (la del inicio del turno). Si caen las dos —solo
+pasa cuando `Fin_6m == Inicio_24m`, igualdad permitida— manda la de 6 meses.
 
-| caso | huecos | café | lactancia | pendiente |
-|---|---|---|---|---|
-| sale 80 min (café + lactancia completa) | 80 | 20 | 60 | **0** |
-| no se toma la lactancia, trabaja completo | 0 | 0 | 0 | **0** |
-| llega 60 min tarde, no sale en el turno | 0 | 0 | 0 | **60** |
-| sale 120 min (excede el tope de 80) | 120 | 20 | 60 | **40** |
-| control: mismas marcaciones, turno normal | 80 | 20 | **0** | **60** |
+*Validación (`leerLactancia`, nunca lanza; todo queda en pantalla).* Se hace **al cargar los archivos**
+(`validarLactCarga()` desde `checkReady()`, con `idsConocidos()`, que replica los patrones de id de
+`buildModel()`) y otra vez dentro de `buildModel()` (`MODEL.lactancia`, que es lo que usa el cálculo);
+una prueba comprueba que dan exactamente lo mismo y que `idsConocidos()` == ids del modelo en datos
+reales. El resumen sale en la tira del encabezado (`#hdrCarga`: filas, válidas, "N con error" en rojo,
+"N aviso(s)" en ámbar) y el botón *Validación de lactancia* (y un clic en la tira) abre el panel con
+fila de la hoja, ID, tipo y motivo. El panel imprime solo el ID, nunca el nombre.
 
-La última fila es la que prueba que el crédito solo aplica al turno de lactancia: mismas marcaciones,
-turno normal, y conserva los 60 minutos de pendiente.
+| | Caso | Severidad | Efecto |
+|---|---|---|---|
+| a | ID vacío o ilegible | Error | se ignora la fila |
+| b | ID que no está en el maestro ni en renuncias | Aviso | se ignora la fila |
+| c | ID repetido | Error | se ignoran **todas** las filas con ese ID |
+| d | etapa con una sola de sus dos fechas | Error | se ignora esa etapa |
+| e | fin anterior al inicio | Error | se ignora esa etapa |
+| f | `Fin_6m` posterior a `Inicio_24m` | Error | se ignora **toda** la fila (igual es válido). **Solo se evalúa si AMBAS etapas son válidas** |
+| g | fecha ilegible (30 de febrero, texto) | Error | se ignora esa etapa |
+| h | fila sin ninguna etapa válida | Aviso | sin efecto |
+
+**La regla f solo corre entre dos etapas VÁLIDAS (sept-2026, corrige un bug real).** `fase()` devuelve
+`ini`/`fin` también para una etapa inválida, y la primera versión comparaba esas fechas sin mirar `valida`:
+una etapa de 24 meses incompleta o al revés (un `Inicio_24m` suelto anterior a `Fin_6m`, o fin < inicio) tiraba
+abajo una etapa de 6 meses correcta y encima emitía un segundo error engañoso. Ahora una etapa incompleta,
+al revés o ilegible se ignora **sola** (con su propio error) y la otra sobrevive; solo un `Fin_6m >
+Inicio_24m` real entre dos etapas válidas descarta toda la fila.
+
+*Lectura de fechas: `readSheet(buf, true)` lee en BRUTO (`raw:true`).* Una fecha escrita a mano en Excel
+trae el formato corto del sistema, y SheetJS con `raw:false` la devuelve como `1/15/26` (verificado con
+SheetJS 0.18.5 real, no es hipótesis): `toISO()` no la entiende y **todas** las fechas habrían salido como
+"ilegibles". En bruto llega como `Date` o como serial y `toISO()` las resuelve; el texto `AAAA-MM-DD` y
+`DD/MM/AAAA` también. `fechaLact()` además rechaza lo que `toISO()` deja pasar (mes 13, 30 de febrero,
+años absurdos). Con `conFila` también se conservan las filas en blanco, para que el "Fila" del panel sea
+el número REAL de la hoja de Excel. Sin `conFila`, `readSheet` queda exactamente como antes.
+
+*Crédito (en `compute()`, solo en la rama de jornada con turno).* Después del café (B-12, intacto):
+
+```
+pendCafe        = max(0, jornadaFija − dentro − café − tránsito)
+lactPagadoMin   = min(tope de la etapa de ese día, pendCafe)
+pendienteMin    = pendCafe − lactPagadoMin
+```
+
+Es un **derecho, no una obligación**: se acredita solo lo que la persona realmente no trabajó dentro de
+su turno, sea llegada tarde, salida temprana o un hueco interno **de cualquier rol de biométrico**
+(incluida portería: está topado y es opt-in). Si toma menos que el tope, se acredita lo que faltó. Sin
+crédito en días sin marcaciones (A-18), para `CONFIANZA` ni en turnos `T-EXTRA` (no tienen pendientes).
+Café y lactancia siguen siendo separados y acumulables y juntos nunca superan los minutos pendientes.
+
+*Cómo se pagan: ordinarios SIN recargo (decisión del usuario).* La base del día es la jornada fija
+completa, y los minutos pendientes **no están ubicados en el tiempo** (son una métrica). Para poder quitarles
+el recargo hay que ponerlos en la línea de tiempo: `ubicarLactancia()` resta lo realmente trabajado
+(`r.iv`) de los intervalos de la jornada fija (`alm.iv`, ya sin almuerzo) y reparte los minutos
+acreditados sobre los **minutos sin trabajar, en orden cronológico**. La elección solo importa para el
+recargo y es una convención estable, no una adivinanza de cuándo la tomó. La base se vuelve a partir con
+`atomize()` en esas fronteras (la suma no cambia: I-01) y los tramos resultantes llevan **`lact:true`**. En la
+clasificación (`classify`), un tramo `lact && !extra` se paga como **ordinario sin concepto** —ni 0220, ni
+0252/0253, ni 0258— aunque caiga de noche, domingo o festivo; solo lleva recargo lo que realmente trabajó.
+`partirPorSemana()` y la bolsa conservan la marca (se copia con `{...t}`). Consecuencias, probadas:
+
+- **Cuentan en la bolsa semanal (ROTATIVO) y en la jornada diaria (ADMINISTRATIVO) como cualquier minuto
+  ordinario**, así que por sí solos no generan extras. Las extras de la escalera (25/10) no cambian.
+- Si la bolsa ya estaba agotada, el tramo `lact` se reclasifica como `extra:true` (igual que cualquier otro
+  minuto acreditado sin trabajar) y se paga como extra normal: el sobretiempo solo aparece después de la
+  bolsa, como antes. El pendiente igual baja.
+- La suma de TODOS los conceptos solo puede bajar, y solo para quienes figuran en el archivo.
+
+*Identificación y estadísticas.* `byEmp.lact` (`resumenLactancia()`) trae etapas dentro del ciclo, días
+calendario en lactancia por etapa (recortados a su vigencia), días con crédito y minutos por etapa.
+Consolidado: columna con la marca `LACT 6M`/`LACT 24M`, filtro «Lactancia» (todas / solo en lactancia /
+6 meses / 24 meses), tarjetas *Empleadas en lactancia* y *Horas de lactancia acreditadas* y, en el Excel,
+`ETAPA LACTANCIA`, `DIAS EN LACTANCIA`, `DIAS CON CREDITO LACTANCIA`, `MIN LACTANCIA 6M`, `MIN LACTANCIA
+24M`. Detalle: tarjeta *Lactancia*, chip `E-04 · 6M · 45 min` en cada día (el tooltip dice etapa y minutos;
+el chip lleva también `data-nov="E-04"`, así que un clic salta a la excepción como las demás novedades, y en
+`initPop` el `data-tip` manda sobre el `data-nov` para que el tooltip siga siendo el texto del día),
+excepción INFO `E-04` por día y, en el Excel del Detalle, `ETAPA LACTANCIA` como **última columna**
+(después de `EXPLICACION`, igual que en el Consolidado) para que ninguna columna se corra al cargar el archivo;
+sin archivo el orden es el de siempre. Asistencia
+(resumen): la marca junto al vínculo, solo en pantalla. «Exportar detalle completo» agrega la hoja
+**Lactancia**: una fila por **cada fila del archivo** (también las ignoradas, con su estado `VALIDA`/`VALIDA
+CON ERRORES`/`IGNORADA` y los motivos). **La hoja respeta los filtros activos del Consolidado** (empresa,
+departamento, perfil, activos/retirados, filtro de lactancia y búsqueda), con el mismo criterio que la hoja de
+Excepciones: `aoaLactancia(ids)` con los ids de `consFiltrado()`; sin filtro trae todas las filas, con filtro solo
+las de esos empleados (las filas ignoradas sin empleado, como un ID desconocido, no aparecen). Antes ignoraba
+los filtros y filtraba datos de otra empresa, que es justo lo que el filtro de compañía busca evitar. Las fechas
+que llegan como serial de Excel se exportan como fecha ISO, no como `46037`. **Nada de esto se pinta ni se exporta sin archivo
+cargado.** El botón *Descargar plantilla de lactancia* baja un `.xlsx` con los cinco encabezados y dos filas
+**ficticias** con IDs no numéricos (`EJEMPLO-1` y `EJEMPLO-2`, para que nunca puedan chocar con el ID de una
+persona real: antes eran 9991 y 9992, que están dentro del rango real); cargada sin modificar solo produce
+avisos «ID desconocido», sin errores y sin acreditar nada a nadie. Es la única descarga que crea esta función y solo la
+dispara el usuario.
+
+*Verificación.* Sin archivo: huella completa (empleado × conceptos × ordinarias × extras × pendientes) y
+todas las exportaciones idénticas a la copia previa, en los dos archivos, con 1.074 empleados (ciclo
+11-sep a 10-oct) y 1.148 (1-ago a 14-oct), I-01/I-02/I-03 = 0. Con un archivo sintético de ~20 ids reales:
+quienes no están en el archivo quedan idénticos; en los que sí, ordinarias y extras idénticas, los recargos
+solo bajan y los pendientes bajan exactamente los minutos acreditados. Casos sintéticos (turno nocturno
+22:00–06:00, jornada fija 480 min; rotativo salvo que se diga):
+
+| caso | crédito | pendiente (control sin archivo) | recargo nocturno (control) |
+|---|---|---|---|
+| etapa 6M, sale 05:00 | 60 | **0** (60) | 7 h (8 h) |
+| 6M, sale 02:00 | 60 | **180** (240) | 7 h (8 h) |
+| 6M, llega 60 tarde | 60 | **0** (60) | 7 h (8 h) |
+| 24M, llega 60 tarde | 30 | **30** (60) | 7,5 h (8 h) |
+| 6M, hueco de 60 por portería | 60 | **0** (60) | 7 h (8 h) |
+| 6M, hueco de 80 por vestier | 60 (+20 café) | **0** (60) | 7 h (8 h) |
+| 6M, toma solo 30 de 60 (sale 05:30) | 30 | **0** (30) | 7,5 h (8 h) |
+| 6M, sin marcaciones / CONFIANZA / T-EXTRA | 0 | sin cambio | sin cambio |
+| ADMINISTRATIVO, sale 05:00 | 60 | **0** (60) | 7 h (8 h) |
+| domingo / festivo, sale 1 h antes | 60 | **0** (60) | dominical 7 h (8 h) |
+| 6 noches, la 6.ª llega 1 h tarde | 60 | **0** (60) | 1 h (2 h); extras 6 h iguales |
+
+**Ojo con un ejemplo que se prestó a confusión:** si sale a las 02:00 de un turno 22:00–06:00 faltan 4 h;
+el tope de la etapa de 6 meses cubre 60 min, así que **quedan 3 h pendientes**, no 4.
 
 **Dirección, confianza y manejo (Art. 162 CST, `CONFIANZA`).** Marca por empleado —checkbox en la
 barra de Detalle, persistida en `localStorage.mb_confianza`— para los cargos que la ley excluye de la
@@ -612,40 +732,30 @@ B-06 cuando se usa. **Decisión del usuario (sept-2026): se queda con el prefijo
 
 ---
 
-**Reporte Cobertura y calidad (pestaña `cob`, en los dos archivos).** Tres porcentajes por empleado,
-departamento y empresa, **prorrateados por la vigencia de cada persona**: los días antes de su ingreso
-real (las fechas de ingreso masivas no cuentan como límite) y después de `vigFin` no entran al
-denominador, así que quien entró o se fue a mitad de ciclo no queda penalizado.
+**Adopción (pestaña `cob`, antes «Cobertura y calidad»; en los dos archivos).** Dos porcentajes por persona,
+departamento y alcance, **prorrateados por la vigencia de cada persona**: los días antes de su ingreso real
+(las fechas de ingreso masivas no cuentan como límite) y después de `vigFin` no entran al denominador, así que
+quien entró o se fue a mitad de ciclo no queda penalizado.
 
-- `% asignación` = días con turno asignado / días vigentes.
-- `% marcó` = (jornadas programadas − faltas) / jornadas programadas.
-- `% calidad` = días con marcación limpia / días en que marcó (los sugeridos A-04 y los dudosos restan).
-  **Un día bien marcado sin turno cuenta como limpio**: ese problema ya es de programación y cae en
-  `% asignación`. Contarlo dos veces mezclaba problemas con dueños distintos (el empleado 379 marcaba
-  bien 15 días sin turno y salía con 0% de calidad).
-- Los días perdidos de asignación son `vig − asig` (**10.222** en agosto), no `sinasig` (8.110): a
-  `sinasig` le faltaban los días en que la persona marcó sin tener turno.
+- **Turno cargado** = días con turno asignado / **días vigentes** (el denominador va en el rótulo).
+- **Marcó cuando tenía jornada** = (jornadas programadas − faltas) / jornadas programadas, donde «marcó» se decide
+  **por jornada** (`r.marcas` de la fila de esa jornada; A-18 = turno y ninguna marca), no por fecha de calendario.
+- La calidad de lo marcado **ya no vive aquí**: está en Calidad de marcación (una sola definición). Se quitaron
+  del Excel las columnas de calidad de Adopción.
+- Los días perdidos de asignación son `vig − asig`, no `sinasig`: a `sinasig` le faltan los días en que la
+  persona marcó sin tener turno.
 
-**Navegación de lo general al detalle.** Empresa → departamento → empleado → día → Detalle. El
-nivel se deriva del estado, no se guarda aparte: `COB_EMP` (empleado abierto) o si no `#fDeptoCob`
-(departamento) o si no la empresa. La tabla del medio cambia según el nivel (departamentos,
-empleados, o los días a revisar con sus marcaciones reales), y una ruta (`#cobRuta`) permite
-subir. Se ordena por **días perdidos**, no por porcentaje (un 50% en un área de 2 personas pesa menos
-que un 90% en una de 574), y clic en un indicador ordena por esa métrica. Cada indicador dice
-cuántas unidades concentran el 80% del problema (`cobConcentra`): en agosto el 80% de los días sin
-turno está en 5 de 23 departamentos, pero dentro de Producción Farmacéutica está en 394 de 574
-personas, o sea que es un problema de proceso y no de individuos. Al abrir un día en Detalle aparece
-`#btnDetVolver`, que regresa a la pestaña de origen sin perder nivel ni filtros (sirve también para
-Calendario y Asistencia, porque vive en `irADetalle`).
+**Navegación de lo general al detalle.** Alcance → departamento → persona → día → Detalle. El nivel se deriva del
+estado: `COB_EMP` (persona abierta) o si no `COB_DEP` (departamento abierto con un clic) o el **único departamento
+que queda en el alcance** (`cobCalc`) o si no todo el alcance. La tabla del medio cambia según el nivel (cinco
+columnas), y una ruta (`#cobRuta`) permite subir. **La matriz día por día solo aparece con un departamento (o una
+persona) abierto**: a nivel alcance son miles de filas que nadie lee. Se ordena por **días perdidos**, no por
+porcentaje (clic en una tarjeta o en el encabezado ordena por esa métrica). Cada indicador dice cuántas unidades
+concentran el 80% del problema (`cobConcentra`). Al abrir un día en Detalle aparece `#btnDetVolver`.
 
-Cada celda de la matriz calendario tiene un estado (`ok`, `dud`, `falta`, `sinturno`, `sinasig`,
-`desc`, `fuera`) calculado por `estadoCob()` y lleva a Detalle con `irADetalle`. Exporta a Excel dos
-hojas: por empleado y por departamento con fila TOTAL.
-
-> **Ojo con el nombre: `renderCob()` ≠ `renderCobertura(rows)`.** La segunda ya existía: es el aviso de
-> cobertura de datos del KPI (`#kpiCobertura`). Una segunda `function renderCobertura` la habría pisado
-> en silencio (en JS la última declaración gana) y el KPI habría dejado de pintar su aviso sin lanzar
-> error. Por eso la pestaña nueva usa `renderCob`.
+Cada celda de la matriz tiene un estado (`ok`, `dud`, `falta`, `sinturno`, `sinasig`, `desc`, `fuera`) calculado por
+`estadoCob()`. Exporta a Excel dos hojas (por persona y por departamento con fila TOTAL) precedidas por la hoja
+«Alcance». **`renderCobertura(rows)` (el aviso del KPI) ya no existe**; el aviso de cobertura de datos es `#cobAviso`.
 
 **`activoEnCiclo()` respeta la vigencia (sept-2026).** Antes miraba si había un turno asignado en el
 ciclo sin recortarlo a ingreso/`vigFin`. Como en BioTime nadie le quita la asignación de turno a quien
@@ -776,16 +886,15 @@ comparación histórica.
 > asignado se lee de **`r.turno`**, que se estampa siempre. La misma regla vale en
 > `calidadDeEmpleado()`.
 
-**Detalle por empleado y tabla por persona.** La pestaña Calidad tiene ahora una tabla **por
-empleado** (`#tQEmp`, hasta 400 filas, ordenada por días con problema y con buscador propio), y cada
-fila abre el Detalle de esa persona. En el encabezado del **Detalle** aparecen las dos tarjetas con
-las mismas cifras (`calidadDeEmpleado`), verificado contra la tabla: el empleado 1840 da 2/37 y 1 día
-sin turno en los dos lugares. El Excel exporta dos hojas: por departamento y por empleado.
+**Detalle por empleado y tabla por persona.** *(Reemplazado en nov-2026: ver «Resumen del ciclo, Adopción y Calidad».)*
+La pestaña muestra solo las **15 personas con más días interpretados** (`#tQEmp`), cada una con enlace al Detalle en su
+primer día interpretado (`P.diaDud`); la lista completa de personas sigue en el Excel (`aoaCalidadEmp`). En el
+encabezado del **Detalle** siguen las dos tarjetas «Cumplió su turno» y «Tenía turno cargado» (`calidadDeEmpleado`).
 
 **Búsqueda de empleados (`coincideEmp`).** El nombre se guarda como `APELLIDOS NOMBRES`, así que
 comparar la frase completa hacía fallar "juan perez" contra "PEREZ JUAN" — el usuario lo reportó como
 "no deja buscar por apellido". Ahora se compara **por palabras sueltas, en cualquier orden y sin
-tildes**, contra el código y el nombre. Lo usan Consolidado, Asistencia, KPI, Cobertura y Excepciones.
+tildes**, contra el código y el nombre. Lo usan Consolidado, Asistencia, el filtro Alcance y Excepciones.
 
 **Los `.xlsx` NO pueden llevar color: es un límite de la librería, no una omisión.** La versión libre
 de SheetJS (0.18.5, la que carga el HTML) escribe datos y ancho de columna, nunca formato de celda;
@@ -797,6 +906,167 @@ está evaluando** antes de decidir si se extiende a los demás reportes o se des
 hasta que lo confirme.
 
 ---
+
+## Resumen del ciclo, Adopción y Calidad de marcación — la consolidación (nov-2026)
+
+**Por qué.** La auditoría de nov-2026 contó **cuatro pestañas (Indicadores, KPI, Calidad, Cobertura), unos 30 bloques y 7 gráficos**,
+con el mismo hecho contado con tres números («turno sin marca»: 1.475 / 1.483 / 1.411), tres nombres para la calidad y dos
+definiciones de «turno cargado» (81,2% y 97,1%). Pedido del usuario: *algo completo pero sencillo para decidir*, pocos gráficos y
+claros, y poder **limitar los indicadores a ciertos departamentos o personas** (Gerencia General no tiene turno individual, así que
+todas sus horas salen como extra y distorsionan). Quedan **tres pestañas, cada una con una pregunta**, y el KPI se retiró.
+Todo en horas y personas: la herramienta no tiene salarios.
+
+**Resumen del ciclo (`ind`)** — ¿dónde está el tiempo que se paga y a cuántas personas toca? Sale de `RESULT.byEmp` recortado al alcance;
+`computeInd(R, {depto})` es pura. De arriba abajo:
+
+- Línea de **salud de los datos**: % de las horas acreditadas que descansa en días interpretados (la misma cifra de Calidad).
+- Cuatro **tarjetas** (extras, recargos, pendientes, días sin marcar), cada una con *«N de M personas»*; **sirven de selector** del gráfico principal.
+- **Gráfico principal**: barras por departamento (o por persona al abrir uno) de la métrica elegida, **Total / Por persona**, con
+  «horas · personas» en cada barra. Un solo color; **rojo solo si la tasa de esa unidad pasa `IND_UMBRAL.rojoVeces` (2) veces el
+  promedio del alcance** (con un mínimo de horas pagadas o de días con turno). Los recargos nunca se pintan en rojo: son estructurales.
+  Con 1,5 veces casi todas las barras salían rojas y el rojo dejaba de decir algo. La tabla de calor concepto × departamento queda
+  dentro de «Ver todas las horas por concepto y departamento».
+- **Dónde mirar primero**: unidades con más extras **y** más días sin marcar **por persona** que la mediana del alcance (sustituye al
+  gráfico de puntos, que no se entendía en 3 segundos). Es una pista, no un diagnóstico.
+- **Concentración (Pareto)** de las extras: «N de M personas suman el 80%».
+- **De cada 100 h pagadas**: UNA barra apilada que es una partición exacta (ordinarias sin recargo + ordinarias con recargo + extras;
+  el recargo está dentro de las ordinarias). Las **pendientes van aparte, debajo, y no se apilan**: están dentro de las ordinarias.
+- **Día de la semana**: un solo gráfico con selector (extras / días sin marcar).
+- Cada gráfico tiene su tabla gemela (`indTabla`); eje con escala redonda (`indEscala`).
+
+**Adopción (`cob`)** — ¿tiene turno cargado? y ¿marcó cuando tenía jornada? (ver arriba, «Adopción»). **Calidad de marcación (`cal2`)** —
+¿qué tan bien se marca? Dos números grandes: **Calidad de marcación** = días con marcación completa e inequívoca / **días con marcación**
+(`calidadMarca = limpio / (dias − sinMarca)`), y **horas apoyadas en días interpretados**; una tabla por departamento de cinco columnas
+(clic abre sus personas), las 15 personas con más días interpretados y la tarjeta «Tiempo fuera del turno». Se quitaron de pantalla el
+embudo, las cajas de «dueños» y la tabla de 400 filas (todo sigue en el Excel). **Calidad = cómo marcó; Adopción = si había turno cargado:
+dos preguntas con dueños distintos que no se mezclan.** «Cumplió su turno» y «Tenía turno cargado» siguen en el Detalle de cada persona.
+
+**El filtro Alcance (una sola barra para las tres pestañas).** Estado `ALC` (+ `KPI_EXCL` para las exclusiones). Filtros, todos con Y:
+compañía; departamentos con modo **«solo estos»** (`ALC.depIn`) o **«todos menos estos»** (`KPI_EXCL`, **persistido en `mb_kpi_excl`**, así que lo
+que estaba configurado en el KPI no se pierde; al arrancar con exclusiones guardadas el modo es «todos menos estos»); personas con chips
+(buscador con `coincideEmp`; modo «solo estas» o «excluir estas»); perfil; vínculo; y el interruptor **«Ocultar personas sin turno asignado»**.
+`alcanceR(R)` devuelve un R con la misma forma pero solo con las personas del alcance, así que **`computeCalidad`, `computeCobertura` y
+`computeInd` no cambian: solo reciben un R recortado**. Pantalla y Excel salen de las mismas funciones, y **cada Excel lleva primero la hoja
+«Alcance»**. El resumen dice *«Alcance: 22 de 23 departamentos · 1.066 de 1.074 personas»* y la nota *«N personas sin turno asignado: todas sus
+horas salen como extra»* (con botón «Ocultarlas»). La persona «sin turno» es la que no tiene **ni un día** con turno en el ciclo (`sinTurnoAsignado`).
+Un cambio de alcance repinta solo la pestaña visible y deja las otras sucias (`ALC_SUCIO`); `showTab` las repinta al abrirlas. «Quitar filtros»
+borra todo, también la exclusión guardada. Si el alcance deja un solo departamento, Resumen y Adopción abren directamente el nivel persona.
+
+**Definiciones únicas (el cambio de cifras que hay que conocer).** Con los archivos del 2026-10-15, ciclo 11-sep a 10-oct (antes → después):
+
+| Cifra | Antes | Después |
+|---|---|---|
+| Turno sin marca: KPI / Calidad / Resumen / Adopción | 1.475 / 1.483 / 1.483 / **1.411** | **1.483** en las tres pestañas (A-18, por jornada) |
+| Días interpretados: Calidad / Adopción | 4.019 / 4.017 | 4.019 / 4.019 |
+| Adopción · «Marcó cuando tenía jornada» | 93,64% | 93,32% (jornadas sin marcar 1.411 → 1.483) |
+| Adopción · «marcó sin turno» (S) | 442 | 411 (una marca del cierre de un turno nocturno ya no cuenta como «marcó sin turno») |
+| Calidad · % de calidad | 75,94% (sobre todos los días) y 76,06% «cumplió su turno» | **81,21%** (limpios / días con marcación) |
+| «Turno cargado» | 81,23% (Adopción, sobre días vigentes) y 97,13% (Calidad, sobre días trabajados) | solo el primero, con el denominador en el rótulo |
+
+La definición de «marcó» en Adopción pasó de *«hay una marca con esa fecha de calendario»* a *«la fila de esa jornada tiene marcas»*
+(`estadoCob`: `!!(r && r.marcas)`): un turno nocturno cierra al día siguiente y mirar el calendario contaba como asistencia lo que no lo era.
+**Nómina idéntica**: la huella (empleado × conceptos × ordinarias × extras × pendientes) es la misma antes y después, I-01/I-02/I-03 = 0.
+**La pestaña Asistencia conserva su propia regla** (ventana del turno ± tolerancia, `computeAsistencia`: 1.475) porque mide otra cosa: el
+silencio contra la fecha de corte. No se tocó.
+
+**Qué pasó con lo exclusivo del KPI:** el filtro por tipo de incidencia → clic en las tarjetas o en los encabezados de Adopción ordena por
+esa métrica; `KPI_EXCL` → parte del Alcance; el aviso de cobertura de datos → `#cobAviso` en Adopción; los PDF/Excel del KPI desaparecen
+(los de las tres pestañas siguen). Las listas nominales de 988 y 400 filas quedan solo en el Excel.
+
+**Reglas de dataviz aplicadas** (skill `dataviz`): un solo tono por gráfico, rojo solo sobre un umbral, énfasis en vez de categorías, sin doble
+eje, marcas finas con extremo de 4 px, etiquetas directas, tabla gemela y `data-tip`/`<title>` en cada marca. **Lección de legibilidad:** el SVG
+se escala al ancho de su tarjeta; con `viewBox` de 560 px en una tarjeta de 370 px el texto de 10,5 px queda en 6,6 px. Por eso las barras
+usan `viewBox` de 720 y `max-width:900px`. **Barras negras del KPI (corregido antes):** `reporte-horas-rrhh.html` no definía `--cat-1..3`,
+`--chart-grid` ni `--chart-axis`; un `fill="var(--cat-1)"` sin variable definida se pinta negro. Ahora los dos archivos tienen el mismo bloque `:root`.
+
+**Cómo se validó:** las pruebas de `scripts/pruebas_motor/` (la nueva `prueba_alcance.js` cubre la semántica de cada filtro, la persistencia,
+las exportaciones y que los dos archivos pintan igual; `prueba_indicadores.js` se reescribió para el Resumen), datos reales (huella de
+nómina idéntica, las tres pestañas con 1.074 personas y con cada filtro, exportaciones rectangulares) y revisión en Chrome con datos
+anonimizados (ids 50001+). Los HTML previos a la consolidación están en `informes/respaldo-previo-consolidacion/`.
+
+### Consolidado: filtro por cargo y columnas visibles (nov-2026)
+
+Pedido del usuario: poder filtrar el Consolidado por **departamento y por cargo** y quitar o poner columnas.
+
+- **Filtro de cargo (`#fCargo`).** Es **dependiente del departamento**: con un departamento elegido, la lista trae solo los cargos de ese
+  departamento (`fillCargos()`, desde `fillFiltros()` y desde el `onchange` de `#fDepto`); la selección se conserva si sigue siendo válida
+  y si no vuelve a «Todos los cargos». «(sin cargo)» (`SIN_CARGO`) aparece solo si hay alguien sin cargo en ese alcance. Entra en
+  `filtroActivo`/`filtroHay`/`filtroSlug`/`consFiltrado` y **por eso lo respetan solos** `aoaCons`, la hoja de Excepciones y de Lactancia del
+  «detalle completo» y el `.txt` de Sinergy (el mismo `consFiltrado()`; el aviso de «hay un filtro activo» ya existía). El departamento sigue
+  siendo de **una sola** opción: el filtro de varios departamentos vive en la barra de **Alcance** de las otras pestañas, que no se tocó.
+- **Columna Cargo** entre Departamento y Compañía. **El Excel no cambió:** `aoaCons` ya traía `CARGO` (entre `PERFIL` y `DEPARTAMENTO`); se
+  verificó con datos reales que el Excel, el `.txt` de Sinergy, la hoja de Excepciones y la huella de nómina son idénticos a los de antes.
+- **Selector de columnas (`#btnColsCons` → `#dlgColsCons`).** Mismo patrón de Detalle y Asistencia: se guarda la lista de **ocultas**
+  (`localStorage.mb_colsCons`) y se aplica por CSS (`#colConsStyle`, `#tCons [data-col="k"]{display:none}`). Cada `th`/`td` de `renderCons`
+  lleva `data-col` (`dep`, `cargo`, `cia`, `c-<código>`, `hrs`, `ord`, `pend`, `extra`, `perfil`, `lact`, `aut`, `estado`), también la fila
+  «sin conceptos». `COD_EMPLEADO` y `NOMBRE` nunca se ocultan. Ocultar es **solo de pantalla**: el Excel sigue completo. El `colspan` de la fila
+  vacía se calcula con las columnas reales (antes era un `16` fijo).
+- **Pruebas:** `prueba_consolidado.js` (cascada, semántica Y con el buscador, `(sin cargo)`, pantalla = Excel = Sinergy, cada fila con las mismas
+  celdas que el encabezado con y sin conceptos, selector y CSS, y una corrida con `#fCargo`/`#btnColsCons` renombrados para comprobar que nada
+  revienta cuando el HTML no los declara); `prueba_identidad.js` suma las funciones y constantes nuevas.
+
+### Rotación de personal (nov-2026)
+
+Pedido del usuario: un indicador de **rotación** (quién entra y quién sale), que se pueda cortar por **compañía, departamento y cargo**, y
+mirarlo **por meses**. Confirmó que los picos grandes de retiros de BioTime (abril y julio de 2026) son **limpiezas masivas del sistema, no
+salidas reales**, y que BioTime se corregirá: su mitigación fue «verlo por meses y poder generar el reporte por meses». Añadió después que
+el **tipo de retiro** (renuncia / despedido / otro) debe ser un **filtro de verdad**, combinable con todo lo demás.
+
+- **Pestaña `rot` (`#tab-rot`) en los dos archivos**, después de *Calidad de marcación*. Es **independiente del ciclo**: tiene su propia ventana
+  «Desde / Hasta» (por defecto los últimos 6 meses con datos, desde el primer retiro hasta el mes de la última marcación), porque un ciclo de
+  30 días trae muy pocos retiros y la tasa sale con demasiado ruido. Lee **`MODEL.employees`** (todos los empleados y todos los
+  renunciados, no solo los del ciclo) y no recalcula nada del motor: la nómina es idéntica (huella verificada con datos reales).
+- **Fórmula:** `tasa mensual = retiros del mes ÷ plantilla promedio del mes`, con plantilla promedio = (inicio + fin) ÷ 2. En varios meses es
+  Σ retiros ÷ Σ plantillas promedio. También se muestran ingresos, saldo neto y la mezcla renuncia / despedido / otro.
+- **Plantilla (`rotMes`).** Presente al inicio del mes = `ini < d0` y (`ret` nulo o `ret ≥ d0`); al final = `ini ≤ d1` y (`ret` nulo o
+  `ret > d1`). Se verificó contra un oráculo diario independiente en la prueba. `ini = null` significa «ya estaba antes de la ventana».
+- **Aproximaciones (dichas en pantalla y en el Excel):** (1) **el archivo de Renuncias no trae fecha de ingreso**, así que quien se fue se
+  asume presente desde antes de la ventana (sobrestima algo la plantilla de los primeros meses); no se puede medir antigüedad ni rotación
+  temprana; (2) **la compañía del retirado no viene en ese archivo**: solo se recupera de `Branch` si marcó. En los datos reales casi
+  todos los retiros quedan como **«Sin dato»** (`p.cia`), que se cuentan pero **no llevan tasa** (su plantilla no es comparable y saldría
+  de 134% o 200%). Con una compañía elegida en Alcance esos retiros **no se cuentan** y la tasa de esa compañía sale subestimada; la
+  pantalla lo avisa con el porcentaje de retiros sin compañía.
+- **Fechas masivas (mitigación de las depuraciones).** Parámetro **`cRetMasivo`** (default 15, junto a `cIngMasivo`; `readConfig` lo acota a
+  ≥ 1): una fecha de retiro compartida por **más** de ese número de personas es una **depuración masiva** (`retirosMasivos`,
+  `marcarRetirosMasivos` → `MODEL.retiroMasivo`, que se llama en `runCalc`). Esas personas se sacan **del numerador y de la plantilla** y se
+  dibujan aparte en gris con su cantidad. El interruptor **«Incluir depuraciones masivas»** las cuenta como retiros normales (y entonces sí
+  están en la plantilla). Igual con las **fechas de ingreso masivas** (`cIngMasivo`, ya existía) e **«Incluir ingresos masivos»**.
+- **Mes no confiable.** Cada mes se puede marcar con un clic (`mb_rot_meses` en `localStorage`): queda en gris y **sale de todos los
+  promedios y tarjetas**. El **mes en curso** (el de la última marcación, si no está completo) también queda fuera automáticamente. La
+  pantalla además avisa de un **pico** (un mes con ≥ 20 retiros y ≥ 3 veces la mediana) para que se decida.
+- **Filtro de tipo de retiro (`ROT.tiposOff`, casillas `#rotTipos`).** Solo hay casillas para los tipos que existen en los datos
+  (`rotTiposDisponibles`: *Renuncia (voluntaria)*, *Despedido*, *Otro / sin tipo*); por defecto todas marcadas. **Semántica, probada:**
+  **el numerador cuenta solo los tipos marcados; la plantilla NO se reduce** (la tasa de «solo despedidos» es despedidos ÷ plantilla
+  total: quien renunció igual salió de la plantilla). Con un solo tipo marcado el gráfico apilado muestra solo ese. También filtra la
+  depuración aparte, el detalle y todas las hojas del Excel. La línea del **Alcance** lo muestra («Tipo de retiro: Despedido») solo en esta
+  pestaña. `rotTipo()` clasifica por texto (`desped|despid|justa causa` → despedido; `renunci|voluntari|mutuo` → renuncia; lo demás, otro).
+  **Ojo con el regex:** «Despedido» se escribe d-e-s-p-e-d-i-d-o; la primera versión buscaba solo `despid` y clasificaba a todos como «otro».
+- **Alcance en Rotación.** Se usa la misma barra, pero con `alcanceOkEmp(m)` (nivel **persona**, sin el cálculo del ciclo): compañía,
+  departamentos, **cargo** y personas. **Perfil, vínculo y «sin turno» no aplican** (el vínculo es lo que se mide): la pantalla lo dice.
+  El **cargo** se agregó al Alcance (`ALC.cargo`, `#alcCargo`, dependiente de compañía/departamentos/personas vía `alcCargos()`) y recorta
+  también las otras tres pestañas. En esta pestaña el resumen del Alcance cuenta a **toda la gente del modelo** y no ofrece «ocultar sin turno».
+- **Pantalla:** tarjetas (retiros del período, rotación mensual promedio, % renuncia, ingresos, saldo neto), columnas apiladas por mes con
+  el % de rotación encima (rojo si pasa 1,5 veces el promedio con ≥ 3 retiros), ranking por **tasa** (no por cantidad) por departamento o,
+  si hay uno solo, por cargo (solo con plantilla promedio ≥ 5), y una tabla mes × compañía. Cada gráfico tiene su tabla gemela.
+  Clic en un departamento del ranking abre sus cargos (`ROT.dep`).
+- **Excel (`#expRot`):** `Alcance` (con tipos incluidos, ventana, interruptores, meses no confiables y la aproximación), `Por mes` (mes ×
+  compañía), `Por departamento y mes`, `Por cargo y mes`, `Detalle de retiros` y `Fechas masivas`. **Solo ids, nunca nombres.**
+- **Renuncias sigue siendo OPCIONAL.** Sin el archivo (y sin fechas de retiro en el maestro) la pestaña dice «Cargá el archivo de
+  Renuncias» y oculta el cuerpo; el resto de las pestañas calcula igual.
+- **Datos reales (archivos del 15-oct, solo agregados):** 501 retiros leídos, de 2025-11 a 2026-10. Fechas masivas detectadas con el
+  límite 15: **2026-04-16 (139 personas), 2026-07-21 (110) y 2026-08-28 (17)**; ingresos masivos: 8 fechas (2026-04-08 con 446, 2026-09-07
+  con 73…). Retiros por mes **sin** depuración: may 39 · jun 42 · **jul 69 (+110)** · **ago 41 (+17)** · sep 27 (18 renuncias, 9 despidos)
+  · oct 1 (en curso); abr 8 (+139). Tasa mensual: may 3,4 % · jun 3,6 % · jul 6,2 % · ago 3,8 % · sep 2,5 %; promedio 3,9 %.
+  Todavía **no es un buen indicador antes de marzo de 2026** (el archivo casi no trae retiros). Julio sigue alto aun sin la depuración
+  del 21 (69): conviene que RRHH diga si el resto fue real.
+- **Pruebas:** `prueba_rotacion.js` (cifras calculadas a mano mes a mes; oráculo diario; depuración, ingresos masivos, mes no
+  confiable y mes en curso; el filtro de tipo con plantilla intacta; el caso combinado tipo + departamento + cargo + ventana +
+  interruptor de depuración, por el modelo y por la interfaz; casos borde: alcance vacío, una sola persona, retiro anterior a la
+  ventana, sin fecha, retiro anterior al ingreso, cargo ausente, sin Renuncias; exportación a Excel; los dos archivos pintan lo mismo).
+  `prueba_alcance.js` y `prueba_identidad.js` se actualizaron (cargo, 4 pestañas sucias, constantes nuevas) y la comparación entre archivos
+  ya no depende de la hora de generación (quitaba un fallo intermitente que existía desde antes).
+- **Sin verificar:** la impresión a PDF (`#pdfRot`, mismo CSS de impresión que Resumen) y el ancho de 1280 px reales (solo se emuló).
+  Los HTML previos a este cambio están en `informes/respaldo-previo-consolidacion/` (sufijo `_antes-de-rotacion`).
 
 ## Parámetros de configuración (`readConfig()`)
 
@@ -822,8 +1092,8 @@ engranaje), con un botón explícito "Aplicar y recalcular" en vez de recalcular
 | `cCorte` | Fecha de corte 0253→0252 / 0259→0258 | H-06 |
 | `cDesc` | Horas mínimas de descanso para descontarlo como almuerzo | B-10/B-12 |
 | `cCafeAdm` | Café para turnos que no lo declaran, minutos (default 20). Solo se usa cuando el turno no trae un `Descanso` menor al umbral de almuerzo | B-12 |
-| `cLactPref` | Prefijo de los códigos de turno de lactancia (default `T_LACT`) | E-04 |
-| `cLactMin` | Tiempo de lactancia reconocido por día, minutos (default 60). Va de 30 a 60 según el tiempo de gestación; lo decide RRHH, no el motor | E-04 / C-09 |
+| `cLactMin6` | Tope diario de lactancia de la etapa de 6 meses, minutos (default 60; nunca negativo: `readConfig` lo acota a 0). Lo decide RRHH, no el motor | E-04 / C-09 |
+| `cLactMin24` | Tope diario de lactancia de la etapa de 24 meses, minutos (default 30; acotado a 0 como el anterior) | E-04 / C-09 |
 | `cTransAviso` | Avisar (B-16) si un tránsito interior supera estos minutos (default 120). No lo topa: solo lo señala para revisión | B-16 |
 
 El **rol de cada biométrico** no es un campo del formulario: se edita en el botón *Dispositivos* y se
@@ -835,6 +1105,7 @@ guarda en `localStorage.mb_dispositivos`. Es la configuración que más pesa sob
 | `cAusAviso` | Días hábiles sin marcar para marcar **Revisar** en Asistencia (default 3) | — |
 | `cAusGrave` | Días hábiles sin marcar para marcar **Alerta** (default 6) | — |
 | `cIngMasivo` | Umbral de empleados para considerar una fecha de ingreso "masiva" | (hallazgo de esta sesión, no está en el catálogo original) |
+| `cRetMasivo` | Una fecha de **retiro** compartida por más de este número de personas es una depuración masiva de BioTime (default 15; mínimo 1). Solo afecta a la pestaña Rotación | (Rotación, nov-2026) |
 | `cAutor` | Política de extras sin autorización: calcular y marcar / exigir autorización | F-09 |
 | `cRedon` | Redondeo por día y concepto, o solo al total del ciclo | D-10 a D-13 |
 
@@ -857,10 +1128,10 @@ más estrictos que lo que pedía el catálogo original), B (jornada programada),
 (clasificación y redondeo, salvo D-14 y el contador mensual D.4), e I (los 12 invariantes —
 verificados en cada sesión de pruebas contra datos reales, siempre en cero violaciones).
 
-**Implementado en esta sesión, pendiente solo de que exista el dato en BioTime:** **E-04/C-09**
-(lactancia) tiene el motor completo y probado; se activa solo cuando aparezca un turno `T_LACT*`.
-La duración quedó parametrizada (30 a 60 min) en vez de fijarse, que era el "⚠️ definir duración"
-del catálogo original.
+**E-04/C-09 (lactancia) está implementada por archivo:** motor, validación y reportes completos y probados;
+se activa cuando RRHH carga el archivo opcional de Lactancia (sin él, la salida es idéntica a la de
+siempre). El tope diario quedó parametrizado por etapa (60 min en la de 6 meses, 30 en la de 24), que era
+el "⚠️ definir duración" del catálogo original. Ver «Lactancia por archivo».
 
 **Resuelto como decisión de diseño documentada, no como código pendiente:** D-05 a D-08 (la matriz de
 concurrencia festivo × dentro/fuera de jornada) se implementó como **mutuamente excluyente por
@@ -996,8 +1267,8 @@ del HTML (fila por fila con motivo, firma por confianza) o **esperar a la app**.
 
 ## Exportación a Sinergy — diseño acordado, PENDIENTE de implementar (sept-2026)
 
-**Este es el objetivo final de toda la herramienta.** Todo lo demás (Consolidado, Detalle, KPI,
-Cobertura) existe para que RRHH valide el cálculo y dé el OK. Después de ese OK se exporta el TXT
+**Este es el objetivo final de toda la herramienta.** Todo lo demás (Consolidado, Detalle, Resumen del ciclo,
+Adopción, Calidad) existe para que RRHH valide el cálculo y dé el OK. Después de ese OK se exporta el TXT
 plano que se sube a **Sinergy**, el programa que liquida la nómina. Junto con el TXT se entrega un
 consolidado de las horas reportadas. El usuario confirmó que esto **se va a implementar**; esta sección
 es el insumo para cuando lo pida.
@@ -1083,6 +1354,14 @@ empleado: eso es el **bloque J** (conciliación), que hoy no está implementado.
 
 ## Cómo validar un cambio (no hay navegador ni captura de pantalla en este entorno)
 
+> **Novedad (lactancia): se puede probar la capa de parseo con la librería REAL.** `npm i xlsx@0.18.5`
+> en un directorio de trabajo (la misma versión que carga el HTML) permite fabricar un `.xlsx` con
+> `openpyxl` —fila de título, filas en blanco, fechas con formato `mm-dd-yy`/`dd/mm/yyyy`, serial en
+> General— y pasarlo por `readSheet(buf, true)` de verdad. Así se descubrió que `raw:false` devuelve las
+> fechas nativas de Excel como `1/15/26` (ilegibles); ver «Lactancia por archivo». Además, el mock de DOM
+> puede **capturar el `DOMContentLoaded`** y ejecutarlo: así se prueba el cableado de botones y filtros
+> contra `null` en la versión RRHH, que es donde se rompe lo que no se guardó.
+
 El patrón usado en toda la sesión, y el que hay que seguir para cualquier cambio futuro al motor:
 
 1. **Nunca confiar solo en el chequeo de sintaxis.** `new Function(src)` solo confirma que el
@@ -1134,6 +1413,10 @@ El patrón usado en toda la sesión, y el que hay que seguir para cualquier camb
   (empleado × conceptos × ordinarias × extras × pendientes) contra el commit anterior: **idéntica en
   los dos archivos** cuando no se carga Renuncia. Si algún cambio futuro hace que el motor dependa de
   ese archivo, se rompe esta garantía.
+- **El archivo de Lactancia también es OPCIONAL, no se persiste y se carga en cada corrida.**
+  `checkReady()` no lo exige y no se guarda nada en `localStorage` (son datos personales y
+  cambian cada mes). Sin archivo, la salida es idéntica byte a byte a la de antes: verificado con la
+  huella completa y con todas las exportaciones en los dos archivos.
 - **Nunca subir los `.xlsx`/`.xls` a git** — contienen datos personales reales de empleados (nombres,
   marcaciones, cargos). Ya están en `.gitignore`; si se agrega un nuevo tipo de exportación, agregar su
   patrón también.
