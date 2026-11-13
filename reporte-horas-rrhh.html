@@ -340,6 +340,16 @@
   .indalert li span{display:block;font-size:11.5px;color:var(--muted);margin-top:1px}
   .indleg{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12px;margin-top:6px}
   .indleg i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px}
+  .rotmeses{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;align-items:center;font-size:12px}
+  .rotmeses button{border:1px solid var(--line);background:#fff;border-radius:999px;padding:3px 10px;cursor:pointer;font:inherit;color:var(--ink)}
+  .rotmeses button.off{background:var(--warn-soft);border-color:var(--warn);color:var(--warn);text-decoration:line-through}
+  .rotbar{align-items:center;gap:10px 16px}
+  .rotbar label{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);white-space:nowrap}
+  .rotbar label input{width:auto}
+  .rotbar select{max-width:150px}
+  #rotTipos{display:inline-flex;flex-wrap:wrap;align-items:center;gap:6px 14px}
+  .rottab td small{display:block;font-size:10.5px;color:var(--muted)}
+  #rotPrintHead{display:none}
   .cober>div.sel{outline:2px solid var(--accent);outline-offset:-2px}
   #tQ tr.sel{background:var(--accent-soft)}
   /* Cabecera que solo existe en el PDF: sin ella la hoja impresa no dice de que ciclo
@@ -373,6 +383,15 @@
     body.print-ind table{ font-size:8px }
     body.print-ind .indchart, body.print-ind .cober>div{ break-inside:avoid }
     body.print-ind details.rules{ display:none }
+    body.print-rot #tab-rot, body.print-rot #tab-rot *{ visibility:visible }
+    body.print-rot #tab-rot{ position:absolute; left:0; top:0; width:100%; display:block!important }
+    body.print-rot #rotPrintHead{ display:block; margin-bottom:10px }
+    body.print-rot #rotPrintHead h2{ margin:0 0 2px; font-size:15px }
+    body.print-rot .bar-noprint{ display:none!important }
+    body.print-rot .scroll{ max-height:none!important; overflow:visible!important; border:0 }
+    body.print-rot table{ font-size:8px }
+    body.print-rot .indchart, body.print-rot .cober>div{ break-inside:avoid }
+    body.print-rot details.rules{ display:none }
   }
   #tAsis td.incompleto{box-shadow:inset 0 0 0 2px var(--warn)}
   #toast{position:fixed;right:16px;bottom:16px;background:#16202c;color:#fff;padding:9px 14px;
@@ -602,6 +621,8 @@
         <input type="time" id="cSemHora" value="22:00"></div>
       <div><label class="f">Fecha de ingreso masiva si la comparten más de (empleados)</label>
         <input type="number" id="cIngMasivo" value="15" min="0"></div>
+      <div><label class="f">Fecha de retiro masiva (depuración de BioTime) si la comparten más de (empleados)</label>
+        <input type="number" id="cRetMasivo" value="15" min="1"></div>
       <div><label class="f">Extras sin autorizacion registrada <span class="muted">(F-09)</span></label>
         <select id="cAutor">
           <option value="marcar">Calcular y marcar (requiere decision)</option>
@@ -659,6 +680,7 @@
   <button data-tab="ind">Resumen del ciclo</button>
   <button data-tab="cob">Adopción</button>
   <button data-tab="cal2">Calidad de marcación</button>
+  <button data-tab="rot">Rotación</button>
 </div>
 
 <div id="alcBar" class="alcance bar-noprint" hidden>
@@ -675,6 +697,8 @@
       <div>
         <label class="f">Compañía</label>
         <select id="alcCia"><option value="">Todas las compañías</option></select>
+        <label class="f">Cargo</label>
+        <select id="alcCargo"><option value="">Todos los cargos</option></select>
         <label class="f">Perfil</label>
         <select id="alcPerfil"><option value="">Todos los perfiles</option>
           <option value="ROTATIVO">Rotativo</option><option value="ADMINISTRATIVO">Administrativo</option></select>
@@ -961,6 +985,57 @@
       <span><b style="background:#fff;border:1px solid var(--line);color:var(--line)">·</b><b style="width:auto;background:none"></b>descanso programado</span>
       <span><b class="c-fuera" style="background:#f0f2f5"></b>fuera de vigencia: no cuenta en ningún porcentaje</span>
     </div>
+  </div>
+</section>
+
+<section id="tab-rot" class="tabwrap">
+  <div class="note bar-noprint">
+    <b>Rotación</b> = retiros del mes ÷ plantilla promedio del mes. Se mira por <b>meses</b> (no por ciclo) y se corta con
+    <b>Alcance</b>. El filtro de <b>tipo de retiro</b> solo cambia a quién se cuenta como retiro: la plantilla es siempre la real.
+    Las fechas que comparte muchísima gente son depuraciones de BioTime: salen de la tasa y se ven aparte.
+    Quien se fue no trae fecha de ingreso, así que se asume presente desde antes de la ventana (aproximación).
+  </div>
+  <div class="bar bar-noprint rotbar">
+    <label>Desde <select id="rotDesde"></select></label>
+    <label>Hasta <select id="rotHasta"></select></label>
+    <span id="rotTipos"></span>
+    <label data-tip="Cuenta como retiros las fechas que comparten más personas que el límite de los parámetros (depuraciones de BioTime)."><input type="checkbox" id="rotIncRet"> Incluir depuraciones masivas</label>
+    <label data-tip="Cuenta como ingresos las fechas que comparten muchísimas personas (por ejemplo, la migración al sistema)."><input type="checkbox" id="rotIncIng"> Incluir ingresos masivos</label>
+    <span class="sp"></span>
+    <button id="expRot">Exportar rotación (Excel)</button>
+    <button id="pdfRot">Exportar rotación (PDF)</button>
+  </div>
+  <div id="rotPrintHead"></div>
+  <div class="note" id="rotAviso" hidden></div>
+  <div id="rotCuerpo">
+    <div class="ruta" id="rotRuta"></div>
+    <div class="indsalud" id="rotSalud" hidden></div>
+    <div class="cober ind-cards" id="rotCards"></div>
+    <div class="indgrid2">
+      <div class="indchart ancho">
+        <h3>Retiros por mes y rotación</h3>
+        <p class="lead" id="rotMesLead"></p>
+        <div id="rotMes"></div>
+        <div class="indleg" id="rotLeg"></div>
+        <div class="rotmeses bar-noprint" id="rotChips"></div>
+        <div id="rotMesTabla"></div>
+      </div>
+      <div class="indchart">
+        <h3 id="rotRankTitle">Rotación mensual por departamento</h3>
+        <p class="lead" id="rotRankLead"></p>
+        <div id="rotRank"></div>
+        <div id="rotRankTabla"></div>
+      </div>
+    </div>
+    <div class="indchart">
+      <h3>Por mes y compañía · retiros · tasa de rotación</h3>
+      <div id="rotCia"></div>
+      <p class="muted" id="rotCiaNota" style="font-size:11px;margin:8px 0 0"></p>
+    </div>
+    <p class="muted" style="font-size:11px">
+      Rojo = pasa 1,5 veces el promedio del alcance. Pase el cursor sobre una columna o una barra para el detalle; clic en un
+      departamento abre sus cargos. Cada gráfico tiene su tabla gemela debajo y todo sale en el Excel, por mes, departamento y cargo.
+    </p>
   </div>
 </section>
 
@@ -1962,6 +2037,7 @@ function readConfig(){
     tolPunt: +v('cTolPunt')||0, autor: v('cAutor'),
     ausAviso: +v('cAusAviso')||3, ausGrave: +v('cAusGrave')||6,
     ingMasivo: +v('cIngMasivo')||0,
+    retMasivo: Math.max(1, +v('cRetMasivo')||15),
     escPrimer: +v('cEscPrimer')||0, escGracia: +v('cEscGracia')||0,
     cafeAdm: +v('cCafeAdm')||0,
     lactMin6: Math.max(0, +v('cLactMin6')||0), lactMin24: Math.max(0, +v('cLactMin24')||0),
@@ -3015,10 +3091,10 @@ function barPath(x0, y, w, h, r){
    que usaba el KPI, para no perder lo que ya estaba configurado); lo demás vive en la sesión.
    Nada de esto toca el cálculo: solo decide qué personas entran a cada reporte.
    ══════════════════════════════════════════════════════════════════ */
-const ALC_TABS = ['ind','cob','cal2'];
+const ALC_TABS = ['ind','cob','cal2','rot'];
 const SIN_DEP = '(sin departamento)';
 let ALC = { cia:'', modoDep:KPI_EXCL.size ? 'excluir' : 'incluir', depIn:new Set(),
-            pers:new Map(), modoPer:'solo', perfil:'', vinc:'', sinTurno:false };
+            pers:new Map(), modoPer:'solo', perfil:'', vinc:'', sinTurno:false, cargo:'' };
 let ALC_SUCIO = new Set(ALC_TABS);        // pestañas que hay que repintar al abrirlas
 
 /** Departamento en MAYÚSCULAS: la llave con la que se guardan y comparan las exclusiones. */
@@ -3030,14 +3106,24 @@ function sinTurnoAsignado(e){
   return !e.ciclo.some(r=>r.W || (r.turno && r.turno!=='—'));
 }
 
-/** `e` = una entrada de RESULT.byEmp. `ignorarTurno` salta solo el interruptor de «sin turno». */
-function alcanceOk(e, ignorarTurno){
-  const A = ALC, m = e.emp;
+/** Lo que decide el alcance sobre una PERSONA (un empleado del modelo, no una entrada del cálculo):
+ *  compañía, departamentos, cargo y personas. Perfil, vínculo y «sin turno» necesitan el cálculo del
+ *  ciclo y por eso se evalúan solo en alcanceOk. `ignorarCargo` sirve para armar la lista de cargos. */
+function alcanceOkEmp(m, ignorarCargo){
+  const A = ALC;
   if(A.cia && m.empresa!==A.cia) return false;
   const k = depKey(m);
   if(A.modoDep==='excluir'){ if(KPI_EXCL.has(k)) return false; }
   else if(A.depIn.size && !A.depIn.has(k)) return false;
+  if(!ignorarCargo && A.cargo && (A.cargo===SIN_CARGO ? cargoDe(m) : cargoDe(m)!==A.cargo)) return false;
   if(A.pers.size && (A.modoPer==='solo') !== A.pers.has(m.id)) return false;
+  return true;
+}
+
+/** `e` = una entrada de RESULT.byEmp. `ignorarTurno` salta solo el interruptor de «sin turno». */
+function alcanceOk(e, ignorarTurno){
+  const A = ALC, m = e.emp;
+  if(!alcanceOkEmp(m)) return false;
   if(A.perfil && e.perfil!==A.perfil) return false;
   if(A.vinc && (m.vinculo||'ACTIVO')!==A.vinc) return false;
   if(A.sinTurno && !ignorarTurno && sinTurnoAsignado(e)) return false;
@@ -3063,7 +3149,7 @@ function alcanceUnDepto(R2){
 
 function alcanceHay(){
   const A = ALC;
-  return !!(A.cia || A.perfil || A.vinc || A.sinTurno || A.pers.size
+  return !!(A.cia || A.cargo || A.perfil || A.vinc || A.sinTurno || A.pers.size
          || (A.modoDep==='excluir' ? KPI_EXCL.size : A.depIn.size));
 }
 
@@ -3071,6 +3157,12 @@ function alcanceHay(){
 function alcanceInfo(){
   const o = { personas:0, enAlcance:0, deps:0, depsEn:0, sinTurnoEn:0, ocultas:0 };
   if(!RESULT) return o;
+  if(tabActiva()==='rot' && MODEL){          // Rotación mide a TODA la gente del modelo, no solo a la del ciclo
+    const dT = new Set(), dE = new Set();
+    MODEL.employees.forEach(m=>{ const k = m.depto || SIN_DEP; o.personas++; dT.add(k); if(alcanceOkEmp(m)){ o.enAlcance++; dE.add(k); } });
+    o.deps = dT.size; o.depsEn = dE.size;
+    return o;
+  }
   const dT = new Set(), dE = new Set();
   RESULT.byEmp.forEach(e=>{
     const k = e.emp.depto || SIN_DEP;
@@ -3087,6 +3179,7 @@ function alcanceLista(){
   const A = ALC, t = [];
   const nom = (v, n)=>{ const a = [...v]; return a.length>n ? `${a.length} departamentos` : a.join(', '); };
   if(A.cia) t.push('Compañía: '+A.cia);
+  if(A.cargo) t.push('Cargo: '+A.cargo);
   if(A.modoDep==='excluir' && KPI_EXCL.size) t.push('Sin los departamentos: '+nom(KPI_EXCL, 3));
   if(A.modoDep!=='excluir' && A.depIn.size) t.push('Solo los departamentos: '+nom(A.depIn, 3));
   if(A.pers.size){ const v = [...A.pers.keys()];
@@ -3094,6 +3187,8 @@ function alcanceLista(){
   if(A.perfil) t.push('Perfil: '+A.perfil.toLowerCase());
   if(A.vinc) t.push(A.vinc==='ACTIVO' ? 'Solo activos' : 'Solo retirados');
   if(A.sinTurno) t.push('Sin las personas sin turno asignado');
+  const tr = tabActiva()==='rot' ? rotTiposTexto() : '';       // el tipo de retiro solo cuenta en Rotación
+  if(tr) t.push(tr);
   return t;
 }
 function alcanceTexto(){
@@ -3115,6 +3210,7 @@ function aoaAlcance(){
 
 /* ── cambios de estado: cada uno termina en alcCambio() ── */
 function alcSetCia(v){ ALC.cia = v || ''; alcCambio(); }
+function alcSetCargo(v){ ALC.cargo = v || ''; alcCambio(); }
 function alcSetModoDep(m){ ALC.modoDep = m==='excluir' ? 'excluir' : 'incluir'; alcCambio(true); }
 function alcToggleDep(nombre, on){
   const k = String(nombre||'').toUpperCase();
@@ -3136,7 +3232,7 @@ function alcSetVinc(v){ ALC.vinc = v || ''; alcCambio(); }
 function alcSetSinTurno(b){ ALC.sinTurno = !!b; alcCambio(); }
 function alcLimpiar(){
   ALC.cia = ''; ALC.depIn = new Set(); ALC.pers = new Map(); ALC.modoPer = 'solo';
-  ALC.perfil = ''; ALC.vinc = ''; ALC.sinTurno = false; ALC.modoDep = 'incluir';
+  ALC.perfil = ''; ALC.vinc = ''; ALC.sinTurno = false; ALC.modoDep = 'incluir'; ALC.cargo = '';
   KPI_EXCL = new Set(); localStorage.setItem('mb_kpi_excl', '[]');
   alcCambio(true);
 }
@@ -3147,12 +3243,13 @@ function tabActiva(){
 }
 function renderTab(t){
   if(!RESULT) return;
-  if(t==='ind') renderInd(); else if(t==='cob') renderCob(); else if(t==='cal2') renderCalidad();
+  if(t==='ind') renderInd(); else if(t==='cob') renderCob(); else if(t==='cal2') renderCalidad(); else if(t==='rot') renderRot();
   ALC_SUCIO.delete(t);
 }
 /** Un cambio de alcance deja sucias las tres pestañas y repinta solo la que se está viendo. */
 function alcCambio(rehacerPanel){
   ALC_SUCIO = new Set(ALC_TABS);
+  alcCargos();                       // la lista de cargos depende de compañía, departamentos y personas
   if(rehacerPanel) alcPanel();
   alcResumen();
   const t = tabActiva();
@@ -3168,7 +3265,8 @@ function alcResumen(){
   $('#alcFiltros').innerHTML = t.map(x=>`<span class="alcchip">${esc(x)}</span>`).join('');
   $('#alcClear').hidden = !alcanceHay();
   let nota = '';
-  if(I.sinTurnoEn)
+  if(tabActiva()==='rot') nota = '';
+  else if(I.sinTurnoEn)
     nota = `<b>${fmtN(I.sinTurnoEn)} ${I.sinTurnoEn===1?'persona sin turno asignado':'personas sin turno asignado'}:</b> `+
       `todas sus horas salen como extra, así que inflan los indicadores de extras. `+
       `<button type="button" class="linkbtn" data-alc-ocultar="1">Ocultarlas</button>`;
@@ -3180,6 +3278,7 @@ function alcResumen(){
   /* los controles simples reflejan siempre el estado (también cuando el cambio vino de otro lado) */
   const A = ALC, set = (id, v)=>{ const x = $('#'+id); if(x) x.value = v; };
   set('alcCia', A.cia); set('alcPerfil', A.perfil); set('alcVinc', A.vinc);
+  set('alcCargo', A.cargo);
   set('alcModoDep', A.modoDep); set('alcModoPer', A.modoPer);
   if($('#alcSinTurno')) $('#alcSinTurno').checked = A.sinTurno;
 }
@@ -3188,6 +3287,7 @@ function alcResumen(){
  *  cuando cambia su estructura (modo, personas), no con cada casilla, para no perder el scroll. */
 function alcPanel(){
   if(!$('#alcPanel') || !RESULT) return;
+  alcCargos();
   const cias = new Set(), deps = new Map();
   RESULT.byEmp.forEach(e=>{
     if(e.emp.empresa) cias.add(e.emp.empresa);
@@ -3203,6 +3303,24 @@ function alcPanel(){
     .map(([k,n])=>`<label><input type="checkbox" data-dep="${esc(k)}"${set.has(k)?' checked':''}> ${esc(n)}</label>`).join('');
   if($('#alcPers')) $('#alcPers').innerHTML = [...ALC.pers.entries()].map(([id,n])=>
     `<span class="alcchip"><span class="mono">${esc(id)}</span> ${esc(n)}<button type="button" data-quitar="${esc(id)}" aria-label="Quitar">×</button></span>`).join('');
+}
+
+/** Los cargos que quedan a la vista según compañía, departamentos y personas del alcance (de TODA la
+ *  gente del modelo, también los retirados). Si el cargo elegido deja de estar, se suelta. */
+function alcCargos(){
+  if(!MODEL) return;
+  const cargos = new Set(); let sin = false;
+  MODEL.employees.forEach(m=>{
+    if(!alcanceOkEmp(m, true)) return;
+    const c = cargoDe(m); if(c) cargos.add(c); else sin = true;
+  });
+  if(ALC.cargo && !(cargos.has(ALC.cargo) || (ALC.cargo===SIN_CARGO && sin))) ALC.cargo = '';
+  const sel = $('#alcCargo');
+  if(!sel) return;
+  sel.innerHTML = `<option value="">Todos los cargos</option>` +
+    [...cargos].sort((a,b)=>a.localeCompare(b,'es')).map(c=>`<option>${esc(c)}</option>`).join('') +
+    (sin ? `<option value="${SIN_CARGO}">${SIN_CARGO}</option>` : '');
+  sel.value = ALC.cargo;
 }
 
 /** Sugerencias al escribir en el buscador de personas (por código o nombre, sin tildes). */
@@ -3228,6 +3346,7 @@ function hookAlcance(){
     $('#alcBtn').setAttribute('aria-expanded', String(!p.hidden)); });
   on('#alcClear','click', alcLimpiar);
   on('#alcCia','change', e=>alcSetCia(e.target.value));
+  on('#alcCargo','change', e=>alcSetCargo(e.target.value));
   on('#alcModoDep','change', e=>alcSetModoDep(e.target.value));
   on('#alcDeps','change', e=>{ const t = e.target;
     if(t && t.dataset && t.dataset.dep!==undefined) alcToggleDep(t.dataset.dep, t.checked); });
@@ -4480,6 +4599,549 @@ function hookInd(){
   };
 }
 
+/* ══════════════════════════════════════════════════════════════════
+   ROTACIÓN DE PERSONAL — quién entra y quién sale, mes a mes
+   Es una pestaña INDEPENDIENTE del ciclo: tiene su propia ventana de meses, porque un ciclo de 30
+   días trae muy pocos retiros y la tasa sale con demasiado ruido. Lee MODEL.employees (todos los
+   empleados y todos los renunciados, no solo los del ciclo) y respeta el ALCANCE: compañía,
+   departamentos, cargo y personas. Perfil, vínculo y «sin turno» no se aplican: el vínculo es
+   justo lo que se mide.
+   · tasa mensual = retiros del mes ÷ plantilla promedio del mes ((inicio + fin) ÷ 2).
+   · el FILTRO DE TIPO DE RETIRO solo cambia el numerador: la plantilla es siempre la real.
+   · las fechas de retiro compartidas por muchísima gente son depuraciones de BioTime, no salidas:
+     se sacan del numerador y de la plantilla (parámetro cRetMasivo) y se muestran aparte.
+   · el archivo de Renuncias no trae fecha de ingreso: quien se fue se asume presente desde antes
+     de la ventana. Es una aproximación y está dicha en pantalla.
+   Nada de esto toca el cálculo de horas: es un reporte aparte, en el mismo molde que Resumen.
+   ══════════════════════════════════════════════════════════════════ */
+const ROT_MESES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+const ROT_TIPOS = { vol:'Renuncia (voluntaria)', desp:'Despedido', otro:'Otro / sin tipo' };
+const ROT_UMBRAL = { rojoVeces:1.5, minRetiros:3, minPlantilla:5, maxBarras:12, picoVeces:3, picoMin:20, ventana:6 };
+let ROT = { desde:'', hasta:'', incRet:false, incIng:false, dep:'', tiposOff:new Set(),
+            noConf:new Set(JSON.parse(localStorage.getItem('mb_rot_meses')||'[]')) };
+
+/* ── fechas por mes ── */
+function rotSumaMes(mes, n){
+  const [y, m] = String(mes).split('-').map(Number);
+  const t = y*12 + (m-1) + n;
+  return `${Math.floor(t/12)}-${String(t%12+1).padStart(2,'0')}`;
+}
+function rotListaMeses(desde, hasta){
+  const o = [];
+  if(!desde || !hasta || desde>hasta) return o;
+  for(let m=desde; m<=hasta && o.length<240; m=rotSumaMes(m,1)) o.push(m);
+  return o;
+}
+function rotEtqMes(mes, largo){
+  const [y, m] = String(mes).split('-');
+  return `${ROT_MESES[(+m||1)-1]} ${largo ? y : String(y).slice(2)}`;
+}
+function rotUltimoDia(mes){
+  const [y, m] = String(mes).split('-').map(Number);
+  return `${mes}-${String(new Date(Date.UTC(y, m, 0)).getUTCDate()).padStart(2,'0')}`;
+}
+
+/** Tipo de retiro del archivo de Renuncias → 'vol' (renuncia), 'desp' (despedido) u 'otro'. */
+function rotTipo(t){
+  const s = sinTildes(t);
+  if(/desped|despid|justa causa|terminacion.*justa/.test(s)) return 'desp';
+  if(/renunci|voluntari|mutuo/.test(s)) return 'vol';
+  return 'otro';
+}
+/** Los tipos que de verdad hay en los datos (con cuántas personas), en orden fijo. */
+function rotTiposDisponibles(M){
+  const n = { vol:0, desp:0, otro:0 };
+  M.employees.forEach(e=>{ if(e.retiro || e.vinculo==='RETIRADO') n[rotTipo(e.tipoRetiro)]++; });
+  return ['vol','desp','otro'].filter(k=>n[k]>0).map(k=>({ k, etq:ROT_TIPOS[k], n:n[k] }));
+}
+/** Los tipos marcados en el filtro (por defecto todos). */
+function rotTiposSel(M){
+  return new Set(rotTiposDisponibles(M).filter(d=>!ROT.tiposOff.has(d.k)).map(d=>d.k));
+}
+/** Para la línea del Alcance: vacío si están todos. */
+function rotTiposTexto(){
+  if(!MODEL) return '';
+  const disp = rotTiposDisponibles(MODEL), sel = rotTiposSel(MODEL);
+  if(!disp.length || sel.size===disp.length) return '';
+  return 'Tipo de retiro: ' + (sel.size ? disp.filter(d=>sel.has(d.k)).map(d=>d.etq).join(', ') : 'ninguno');
+}
+
+/* ── fechas masivas ── */
+function retirosMasivos(M, cfg){
+  const lim = cfg && cfg.retMasivo>0 ? cfg.retMasivo : 15;
+  const cnt = new Map();
+  M.employees.forEach(e=>{ if(e.retiro) cnt.set(e.retiro, (cnt.get(e.retiro)||0)+1); });
+  return new Map([...cnt.entries()].filter(([,n])=>n>lim));
+}
+/** Fechas de retiro compartidas por más de cfg.retMasivo personas: depuraciones de BioTime, no salidas. */
+function marcarRetirosMasivos(M, cfg){ M.retiroMasivo = retirosMasivos(M, cfg); }
+
+/** Meses con datos: desde el primer retiro hasta el último dato (retiro o marcación). */
+function rotRango(M){
+  let min = '', max = '', ult = '';
+  M.employees.forEach(e=>{
+    if(e.retiro){ const m = e.retiro.slice(0,7); if(!min || m<min) min = m; if(!max || m>max) max = m; }
+  });
+  M.punches.forEach(a=>{ if(a.length){ const i = a[a.length-1].iso; if(i>ult) ult = i; } });
+  if(!min) return { min:'', max:'', hasta:'', ultimaFecha:ult };
+  const um = ult ? ult.slice(0,7) : '';
+  if(um && um>max) max = um;
+  return { min, max, hasta:(um && um>=min) ? um : max, ultimaFecha:ult };
+}
+
+/** Una ficha por persona del alcance, con lo que hace falta para reconstruir la plantilla mes a mes.
+ *  `ini` null = ya estaba antes de la ventana. `excl` = por qué no cuenta (depuración, sin fecha…). */
+function rotPersonas(M, cfg, opt){
+  opt = opt || {};
+  const rm = M.retiroMasivo || retirosMasivos(M, cfg);
+  if(!M.ingresoMasivo) marcarIngresosMasivos(M, cfg);
+  const im = M.ingresoMasivo;
+  const P = [];
+  M.employees.forEach(e=>{
+    if(opt.ok && !opt.ok(e)) return;
+    const ret = e.retiro || null, ing = e.ingreso || null;
+    const salio = !!(ret || e.vinculo==='RETIRADO');
+    const p = { id:e.id, depto:e.depto||SIN_DEP, cargo:cargoDe(e)||SIN_CARGO, cia:e.empresa||'Sin dato',
+                vinculo:e.vinculo||'ACTIVO', ret, ing, ini:null,
+                tipo: salio ? rotTipo(e.tipoRetiro) : '', sinTipo: !!(salio && !String(e.tipoRetiro||'').trim()),
+                retMas:false, ingMas:false, ingMasMes:'', excl:'' };
+    if(!ret && e.vinculo==='RETIRADO'){ p.excl = 'sinFecha'; P.push(p); return; }
+    if(ret && ing && ret<ing){ p.excl = 'inconsistente'; P.push(p); return; }
+    p.retMas = !!(ret && rm.has(ret));
+    p.ingMas = !!(ing && im.has(ing));
+    if(p.retMas && !opt.incRet) p.excl = 'depuracion';
+    p.ini = (ing && (!p.ingMas || opt.incIng)) ? ing : null;
+    p.ingMasMes = (p.ingMas && !opt.incIng) ? ing.slice(0,7) : '';
+    P.push(p);
+  });
+  return P;
+}
+
+/** Las cifras de UN mes para un grupo de fichas. `tipos` = Set de tipos que cuentan en el numerador
+ *  (null = todos); la plantilla nunca depende de él. */
+function rotMes(P, mes, tipos){
+  const d0 = mes+'-01', d1 = rotUltimoDia(mes);
+  const pasa = p=>!tipos || tipos.has(p.tipo);
+  const o = { mes, ini:0, fin:0, ingresos:0, ingMasivos:0, vol:0, desp:0, otro:0, retiros:0, depurados:0, idsRet:[], idsIng:[] };
+  for(const p of P){
+    if(p.excl){
+      if(p.excl==='depuracion' && pasa(p) && p.ret>=d0 && p.ret<=d1) o.depurados++;
+      continue;
+    }
+    const s = p.ini, e = p.ret;
+    if((s===null || s<d0) && (e===null || e>=d0)) o.ini++;
+    if((s===null || s<=d1) && (e===null || e>d1)) o.fin++;
+    if(s && s>=d0 && s<=d1){ o.ingresos++; o.idsIng.push(p.id); }
+    if(p.ingMasMes===mes) o.ingMasivos++;
+    if(e && e>=d0 && e<=d1 && pasa(p)){ o.retiros++; o[p.tipo]++; o.idsRet.push(p.id); }
+  }
+  o.prom = (o.ini+o.fin)/2;
+  o.tasa = o.prom>0 ? o.retiros/o.prom : null;
+  o.tasaIng = o.prom>0 ? o.ingresos/o.prom : null;
+  o.saldo = o.ingresos - o.retiros;
+  return o;
+}
+/** Suma de varios meses del mismo grupo: la tasa es retiros totales ÷ suma de plantillas promedio. */
+function rotSuma(filas){
+  const o = { meses:filas.length, ingresos:0, ingMasivos:0, vol:0, desp:0, otro:0, retiros:0, depurados:0, sumProm:0 };
+  filas.forEach(f=>{
+    o.ingresos += f.ingresos; o.ingMasivos += f.ingMasivos; o.vol += f.vol; o.desp += f.desp; o.otro += f.otro;
+    o.retiros += f.retiros; o.depurados += f.depurados; o.sumProm += f.prom;
+  });
+  o.tasa = o.sumProm>0 ? o.retiros/o.sumProm : null;
+  o.promMedio = filas.length ? o.sumProm/filas.length : 0;
+  o.saldo = o.ingresos - o.retiros;
+  return o;
+}
+/** Parte las fichas por una clave (compañía, departamento, cargo) y calcula cada mes de cada grupo. */
+function rotGrupos(P, meses, clave, tipos){
+  const g = new Map();
+  P.forEach(p=>{ const k = clave(p); if(!g.has(k)) g.set(k, []); g.get(k).push(p); });
+  return [...g.entries()].map(([k, ls])=>({ clave:k, n:ls.length, filas:meses.map(m=>rotMes(ls, m, tipos)) }));
+}
+
+/** Todo lo que muestra la pestaña, sin tocar el DOM.
+ *  opt: { desde, hasta (AAAA-MM), incRet, incIng, noConf:Set, tipos:Set|null, depto, ok(emp) } */
+function computeRot(M, cfg, opt){
+  opt = opt || {};
+  const rango = rotRango(M);
+  if(!rango.min) return { vacio:true, rango };
+  let hasta = opt.hasta, desde = opt.desde;
+  if(!hasta || hasta>rango.max || hasta<rango.min) hasta = rango.hasta;
+  if(!desde || desde>hasta) desde = rotSumaMes(hasta, -(ROT_UMBRAL.ventana-1));
+  if(desde<rango.min) desde = rango.min;
+  const noConf = opt.noConf || new Set();
+  const tipos = opt.tipos || null;
+  const pasa = p=>!tipos || tipos.has(p.tipo);
+  const P = rotPersonas(M, cfg, opt);
+  const meses = rotListaMeses(desde, hasta);
+  const ult = rango.ultimaFecha;
+  const filas = meses.map(m=>{
+    const f = rotMes(P, m, tipos);
+    f.parcial = !!(ult && m===ult.slice(0,7) && ult<rotUltimoDia(m));
+    f.noConf = noConf.has(m);
+    f.etq = rotEtqMes(m);
+    return f;
+  });
+  /* Los meses que cuentan en promedios: ni parciales ni marcados como no confiables (si no queda
+     ninguno, se aceptan los parciales; los no confiables nunca). */
+  let uso = filas.filter(f=>!f.noConf && !f.parcial);
+  if(!uso.length) uso = filas.filter(f=>!f.noConf);
+  filas.forEach(f=>{ f.usable = uso.includes(f); });
+  const tot = rotSuma(uso);
+
+  const base = filas.filter(f=>!f.parcial && !f.noConf).map(f=>f.retiros).sort((a,b)=>a-b);
+  const med = !base.length ? 0 : base.length%2 ? base[(base.length-1)/2] : (base[base.length/2-1]+base[base.length/2])/2;
+  const picos = filas.filter(f=>!f.noConf && !f.parcial && f.retiros>=ROT_UMBRAL.picoMin
+                              && f.retiros>=ROT_UMBRAL.picoVeces*Math.max(med,1)).map(f=>({ mes:f.mes, etq:f.etq, retiros:f.retiros, veces:f.retiros/Math.max(med,1) }));
+
+  /* ranking: por departamento, o por cargo si todo el alcance es un solo departamento */
+  const deps = new Set(P.map(p=>p.depto));
+  const nivel = (opt.depto || deps.size===1) ? 'cargo' : 'depto';
+  const mesesUso = uso.map(f=>f.mes);
+  const grupos = rotGrupos(P, mesesUso, p=>nivel==='cargo' ? p.cargo : p.depto, tipos);
+  const rank = grupos.map(g=>({ clave:g.clave, personas:g.n, ...rotSuma(g.filas) }))
+    .sort((a,b)=>(b.tasa==null?-1:b.tasa)-(a.tasa==null?-1:a.tasa) || b.retiros-a.retiros || String(a.clave).localeCompare(String(b.clave),'es'));
+  const elegibles = rank.filter(r=>r.promMedio>=ROT_UMBRAL.minPlantilla);
+
+  const cias = rotGrupos(P, meses, p=>p.cia, tipos)
+    .sort((a,b)=>a.clave==='Sin dato' ? 1 : b.clave==='Sin dato' ? -1 : String(a.clave).localeCompare(String(b.clave),'es'));
+
+  const dentro = p=>p.ret && p.ret.slice(0,7)>=desde && p.ret.slice(0,7)<=hasta;
+  const nTipo = {};
+  P.forEach(p=>{ if(p.tipo) nTipo[p.tipo] = (nTipo[p.tipo]||0)+1; });
+  const calidad = {
+    fechasRet: [...(M.retiroMasivo || retirosMasivos(M, cfg)).entries()].sort((a,b)=>b[1]-a[1]).map(([fecha,n])=>({ fecha, n })),
+    fechasIng: [...(M.ingresoMasivo || new Map()).entries()].sort((a,b)=>b[1]-a[1]).map(([fecha,n])=>({ fecha, n })),
+    sinFecha: P.filter(p=>p.excl==='sinFecha' && pasa(p)).length,
+    inconsistentes: P.filter(p=>p.excl==='inconsistente' && pasa(p)).length,
+    sinTipo: P.filter(p=>p.sinTipo && !p.excl && dentro(p) && pasa(p)).length,
+    sinCia: P.filter(p=>p.ret && p.cia==='Sin dato' && !p.excl && dentro(p) && pasa(p)).length,
+    depurados: filas.reduce((s,f)=>s+f.depurados, 0),
+    limRet: cfg && cfg.retMasivo>0 ? cfg.retMasivo : 15,
+    limIng: cfg && cfg.ingMasivo>0 ? cfg.ingMasivo : 0,
+  };
+  return { vacio:false, rango, desde, hasta, meses:filas, uso:mesesUso, tot, P, cias, nivel, rank, elegibles,
+    excluidasRank: rank.length-elegibles.length, calidad, picos, mediana:med,
+    tipos: tipos ? [...tipos] : null,
+    tiposDisp: rotTiposDisponibles(M).map(d=>({ ...d, nAlcance:nTipo[d.k]||0 })),
+    personas: P.filter(p=>!p.excl).length, incRet:!!opt.incRet, incIng:!!opt.incIng };
+}
+
+/** Lo que pide la pantalla (y los Excel): ventana, interruptores, tipos y alcance, en un solo lugar. */
+function rotOpt(){
+  return { desde:ROT.desde, hasta:ROT.hasta, incRet:ROT.incRet, incIng:ROT.incIng, noConf:ROT.noConf,
+           tipos:rotTiposSel(MODEL), depto:ROT.dep,
+           ok:e=>alcanceOkEmp(e) && (!ROT.dep || (e.depto||SIN_DEP)===ROT.dep) };
+}
+function rotCalc(){ return MODEL && RESULT ? computeRot(MODEL, RESULT.cfg, rotOpt()) : { vacio:true, rango:{ min:'' } }; }
+
+/* ── gráfico: columnas apiladas por mes ── */
+const ROT_COL = { vol:'var(--cat-1)', desp:'#0d366b', otro:'#8a97a6', dep:'#d3d9e0' };
+function svgRotMeses(R){
+  const filas = R.meses, n = filas.length;
+  const W = 760, H = 300, l = 40, r = 10, t = 40, b = 52;
+  const pw = W-l-r, ph = H-t-b, cw = pw/n, bw = Math.min(56, cw-14);
+  const real = f=>f.retiros;
+  const E = indEscala(Math.max(...filas.map(real), 1)), max = E.max;
+  const yb = H-b, ref = R.tot.tasa;
+  let s = `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" role="img" `+
+          `aria-label="Retiros por mes, ${n} meses, con la tasa de rotación de cada uno">`;
+  E.ticks.forEach(v=>{
+    const y = yb - v/max*ph;
+    s += `<line x1="${l}" y1="${y}" x2="${W-r}" y2="${y}" stroke="var(--chart-grid)" stroke-width="1"/>`;
+    s += `<text class="axs" x="${l-6}" y="${y+3}" text-anchor="end">${esc(fmtN(Math.round(v*10)/10))}</text>`;
+  });
+  s += `<line x1="${l}" y1="${yb}" x2="${W-r}" y2="${yb}" stroke="var(--chart-axis)" stroke-width="1"/>`;
+  filas.forEach((f,i)=>{
+    const x = l + i*cw + (cw-bw)/2, op = (f.noConf || f.parcial) ? .45 : 1;
+    const tipo = f.noConf ? ' · no confiable (fuera de los promedios)' : f.parcial ? ' · mes en curso (fuera de los promedios)' : '';
+    const tip = esc(`${rotEtqMes(f.mes,true)}${tipo}: ${fmtN(f.retiros)} retiros`+
+      ` (renuncia ${fmtN(f.vol)}, despedido ${fmtN(f.desp)}, otro ${fmtN(f.otro)})`+
+      `, plantilla promedio ${fmtN(Math.round(f.prom))}, tasa ${fmtPct(f.tasa==null?null:f.tasa*100)}`+
+      `, ingresos ${fmtN(f.ingresos)}`+(f.depurados ? `, depuración BioTime ${fmtN(f.depurados)} (no cuenta)` : '')+'.');
+    let y0 = yb;
+    [['vol','Renuncia'],['desp','Despedido'],['otro','Otro tipo']].forEach(([k])=>{
+      if(!(f[k]>0)) return;
+      const h = Math.max(f[k]/max*ph - 2, 2);
+      s += `<rect x="${x.toFixed(1)}" y="${(y0-h).toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" rx="2" fill="${ROT_COL[k]}" opacity="${op}" data-tip="${tip}"><title>${tip}</title></rect>`;
+      y0 -= h + 2;
+    });
+    if(f.depurados>0){
+      const hh = Math.min(ph*0.28, Math.max(14, f.depurados/max*ph));
+      s += `<rect x="${x.toFixed(1)}" y="${(y0-hh).toFixed(1)}" width="${bw.toFixed(1)}" height="${hh.toFixed(1)}" rx="2" fill="${ROT_COL.dep}" opacity="${op}" data-tip="${tip}"><title>${tip}</title></rect>`;
+      s += `<text class="axs" x="${(x+bw/2).toFixed(1)}" y="${(y0-hh/2+3).toFixed(1)}" text-anchor="middle">${esc(fmtN(f.depurados))}</text>`;
+      y0 -= hh + 2;
+    }
+    const rojo = !f.noConf && !f.parcial && f.tasa!=null && ref>0 && f.tasa>=ROT_UMBRAL.rojoVeces*ref && f.retiros>=ROT_UMBRAL.minRetiros;
+    s += `<text class="val${f.noConf||f.parcial?' soft':''}" x="${(x+bw/2).toFixed(1)}" y="${(y0-6).toFixed(1)}" text-anchor="middle"${rojo?' style="fill:var(--err)"':''}>${esc(f.tasa==null?'—':fmtPct(f.tasa*100))}</text>`;
+    s += `<text class="lbl" x="${(x+bw/2).toFixed(1)}" y="${H-b+16}" text-anchor="middle">${esc(f.etq)}</text>`;
+    if(f.noConf || f.parcial)
+      s += `<text class="axs" x="${(x+bw/2).toFixed(1)}" y="${H-b+29}" text-anchor="middle">${f.noConf?'no confiable':'en curso'}</text>`;
+    s += `<rect class="hit" x="${(l+i*cw).toFixed(1)}" y="${t-24}" width="${cw.toFixed(1)}" height="${(ph+24).toFixed(1)}" data-tip="${tip}"/>`;
+  });
+  return s + `</svg>`;
+}
+
+function rotTablaMes(R){
+  const filas = R.meses.map(f=>[f.etq + (f.noConf?' (no confiable)':f.parcial?' (en curso)':''),
+    fmtN(f.ini), fmtN(f.ingresos), fmtN(f.vol), fmtN(f.desp), fmtN(f.otro), fmtN(f.depurados),
+    fmtN(Math.round(f.prom)), fmtPct(f.tasa==null?null:f.tasa*100), fmtN(f.saldo)]);
+  return indTabla('Ver como tabla', ['Mes','Plantilla al inicio','Ingresos','Renuncia','Despedido','Otro','Depuración BioTime (no cuenta)','Plantilla promedio','Tasa de rotación','Saldo neto'], filas);
+}
+
+/** Tabla compacta mes × compañía: «retiros · tasa» y, debajo, la plantilla promedio. */
+function rotTablaCia(R){
+  const cols = R.cias;
+  const celda = f=>f.prom>0 || f.retiros>0
+    ? `<b>${fmtN(f.retiros)}</b> · ${esc(fmtPct(f.tasa==null?null:f.tasa*100))}<small>plantilla ${fmtN(Math.round(f.prom))}</small>` : '<span class="muted">·</span>';
+  /* «Sin dato» = retirados cuya compañía no se conoce (el archivo de Renuncias no la trae): no tienen una plantilla
+     comparable, así que se cuentan pero NO llevan tasa (saldría absurda, de más de 100%). */
+  const celdaSin = f=>f.retiros>0 ? `<b>${fmtN(f.retiros)}</b><small>compañía desconocida: sin tasa</small>` : '<span class="muted">·</span>';
+  const cel = (c, f)=>c.clave==='Sin dato' ? celdaSin(f) : celda(f);
+  const head = `<tr><th>Mes</th><th class="num">Todas</th>${cols.map(c=>`<th class="num">${esc(c.clave)}</th>`).join('')}</tr>`;
+  const cuerpo = R.meses.map((f,i)=>
+    `<tr${f.usable?'':' style="opacity:.55"'}><td>${esc(f.etq)}${f.noConf?' <span class="muted">· no confiable</span>':f.parcial?' <span class="muted">· en curso</span>':''}</td>`+
+    `<td class="num">${celda(f)}</td>${cols.map(c=>`<td class="num">${cel(c, c.filas[i])}</td>`).join('')}</tr>`).join('');
+  return `<div class="scroll" style="max-height:44vh"><table class="rottab"><thead>${head}</thead><tbody>${cuerpo}</tbody></table></div>`;
+}
+
+function rotMesesChips(R){
+  return `<span class="muted">Meses que no son confiables (clic para marcar o quitar):</span>` +
+    R.meses.map(f=>`<button type="button" data-mes="${esc(f.mes)}" class="${f.noConf?'off':''}" aria-pressed="${f.noConf?'true':'false'}" `+
+      `data-tip="${esc(f.noConf?'Marcado como no confiable: no entra a los promedios. Clic para volver a contarlo.':'Clic si este mes no es confiable (por ejemplo, una depuración de BioTime): sale de los promedios.')}">${esc(rotEtqMes(f.mes))}</button>`).join('');
+}
+
+function renderRot(){
+  if(!RESULT || !MODEL || !$('#rotCards')) return;
+  const R = rotCalc();
+  const aviso = $('#rotAviso'), cuerpo = $('#rotCuerpo');
+  if(R.vacio){
+    if(aviso){ aviso.hidden = false;
+      aviso.innerHTML = `<b>Cargá el archivo de Renuncias</b> (o un maestro con fecha de retiro) para medir la rotación: `+
+        `sin retiros no hay nada que contar. Es un archivo opcional: el resto de las pestañas funciona igual sin él.`; }
+    if(cuerpo) cuerpo.hidden = true;
+    return;
+  }
+  if(aviso) aviso.hidden = true;
+  if(cuerpo) cuerpo.hidden = false;
+  ROT.desde = R.desde; ROT.hasta = R.hasta;
+  if(ROT.dep && !R.P.length) ROT.dep = '';
+
+  /* controles: ventana, interruptores y tipos */
+  const lista = rotListaMeses(R.rango.min, R.rango.max);
+  const opts = lista.map(m=>`<option value="${esc(m)}">${esc(rotEtqMes(m,true))}</option>`).join('');
+  [['#rotDesde', R.desde], ['#rotHasta', R.hasta]].forEach(([sel, v])=>{ const x = $(sel); if(x){ x.innerHTML = opts; x.value = v; } });
+  if($('#rotIncRet')) $('#rotIncRet').checked = ROT.incRet;
+  if($('#rotIncIng')) $('#rotIncIng').checked = ROT.incIng;
+  if($('#rotTipos')) $('#rotTipos').innerHTML = `<span class="muted">Tipo de retiro:</span>` + R.tiposDisp.map(d=>
+    `<label data-tip="${esc('Solo cambia a quién se cuenta como retiro: la plantilla de abajo sigue siendo la real, con todos.')}">`+
+    `<input type="checkbox" data-tipo="${d.k}"${ROT.tiposOff.has(d.k)?'':' checked'}> ${esc(d.etq)} <span class="muted">(${fmtN(d.nAlcance)})</span></label>`).join('');
+
+  /* ruta */
+  const sep = '<span class="sep">›</span>';
+  $('#rotRuta').innerHTML =
+    `<button data-nivel="alcance" class="${ROT.dep?'':'on'}">Alcance</button>` +
+    (ROT.dep ? sep + `<button class="on">${esc(ROT.dep)}</button>` : '') +
+    `<span class="muted">${fmtN(R.personas)} personas contadas · ventana ${esc(rotEtqMes(R.desde,true))} a ${esc(rotEtqMes(R.hasta,true))}</span>`;
+  $$('#rotRuta button[data-nivel]').forEach(b=>b.onclick=()=>{ ROT.dep = ''; renderRot(); });
+
+  /* salud de los datos */
+  const C = R.calidad, L = [];
+  let warn = false;
+  const top = (arr, k)=>arr.slice(0,k).map(x=>`${x.fecha} (${fmtN(x.n)})`).join(', ');
+  if(C.fechasRet.length){
+    const tot = C.fechasRet.reduce((s,x)=>s+x.n, 0); warn = true;
+    L.push(`<b>${fmtN(tot)} retiros comparten fecha</b> (${C.fechasRet.length} ${C.fechasRet.length===1?'fecha':'fechas'}: ${esc(top(C.fechasRet,3))}${C.fechasRet.length>3?'…':''}). `+
+      `Parecen depuraciones masivas de BioTime, no salidas reales. `+
+      (R.incRet ? 'Hoy se cuentan como retiros.' : `No entran a la tasa ni a la plantilla (${fmtN(C.depurados)} en esta ventana); use «Incluir depuraciones masivas» para verlos como retiros.`) +
+      ' Si BioTime se corrige, cargue el archivo nuevo y la serie se arregla sola.');
+  }
+  if(C.fechasIng.length){
+    const tot = C.fechasIng.reduce((s,x)=>s+x.n, 0);
+    L.push(`${fmtN(tot)} ingresos comparten fecha (${esc(top(C.fechasIng,3))}${C.fechasIng.length>3?'…':''}): migración o cargas masivas, no contrataciones. `+
+      (R.incIng ? 'Hoy se cuentan como ingresos.' : 'Se cuentan aparte y esas personas se asumen presentes desde antes.'));
+  }
+  R.picos.forEach(p=>{ warn = true;
+    L.push(`${esc(p.etq)} tiene ${fmtN(p.retiros)} retiros (${p.veces.toFixed(1).replace('.',',')} veces la mediana): si fue una depuración, márquelo como no confiable.`); });
+  R.meses.filter(f=>f.parcial).forEach(f=>L.push(`${esc(f.etq)} es un mes en curso (datos hasta ${esc(R.rango.ultimaFecha)}): no entra a los promedios.`));
+  if(C.sinFecha){ warn = true; L.push(`${fmtN(C.sinFecha)} retirados sin fecha de retiro legible: no entran a la tasa.`); }
+  if(C.inconsistentes){ warn = true; L.push(`${fmtN(C.inconsistentes)} personas con retiro anterior a su ingreso: no entran a la tasa.`); }
+  if(C.sinCia) L.push(`${fmtN(C.sinCia)} retiros sin compañía conocida (el archivo de Renuncias no la trae): salen como «Sin dato» y no llevan tasa por compañía. `+
+    (ALC.cia ? '<b>Con una compañía elegida en Alcance, estos retiros no se cuentan y su tasa sale subestimada.</b>' : 'Si elige una compañía en Alcance, no se cuentan.'));
+  if(C.sinTipo) L.push(`${fmtN(C.sinTipo)} retiros sin tipo en el archivo: se cuentan como «Otro / sin tipo».`);
+  if(ALC.perfil || ALC.vinc || ALC.sinTurno) L.push('Perfil, vínculo y «sin turno» del Alcance no se aplican a la rotación.');
+  if(!R.tipos || R.tipos.length===0) { warn = true; L.push('No hay ningún tipo de retiro marcado: no se cuenta ningún retiro.'); }
+  $('#rotSalud').innerHTML = L.length ? L.join('<br>') : '';
+  $('#rotSalud').hidden = !L.length;
+  $('#rotSalud').classList.toggle('warn', warn);
+
+  /* tarjetas */
+  const T = R.tot, nUso = R.uso.length;
+  const tipoTxt = R.tiposDisp.filter(d=>!R.tipos || R.tipos.includes(d.k)).map(d=>{
+    const v = d.k==='vol' ? T.vol : d.k==='desp' ? T.desp : T.otro; return `${d.k==='vol'?'renuncia':d.k==='desp'?'despedido':'otro'} ${fmtN(v)}`; }).join(' · ');
+  const mesesTxt = `${fmtN(nUso)} ${nUso===1?'mes':'meses'} contados`+(R.meses.length>nUso ? ` de ${fmtN(R.meses.length)}` : '');
+  const tile = (k, v, u, pie, pie2, tip)=>`<div data-tip="${esc(tip)}"><div class="k">${esc(k)}</div><div class="v">${v}<small>${esc(u)}</small></div>`+
+    `<div class="falta">${pie}</div><div class="falta">${esc(pie2)}</div></div>`;
+  const nTipos = R.tiposDisp.length;
+  const pv = T.retiros>0 ? T.vol/T.retiros*100 : null;
+  const verVol = !R.tipos || R.tipos.includes('vol');
+  $('#rotCards').innerHTML = [
+    tile('Retiros del período', fmtN(T.retiros), 'personas', `<b>${esc(tipoTxt||'—')}</b>`, mesesTxt,
+      'Personas que se fueron en los meses contados, solo de los tipos marcados. No incluye las depuraciones masivas de BioTime (salvo que se activen) ni los meses no confiables o en curso.'),
+    tile('Rotación mensual promedio', fmtPct(T.tasa==null?null:T.tasa*100), '', `retiros ÷ plantilla promedio`, `plantilla media ${fmtN(Math.round(T.promMedio))} personas`,
+      'Retiros de los meses contados divididos por la suma de las plantillas promedio de esos meses. La plantilla es siempre la real, aunque se filtre por tipo de retiro.'),
+    tile('Renuncia voluntaria', verVol ? fmtPct(pv) : '—', '', verVol ? `<b>${fmtN(T.vol)}</b> de ${fmtN(T.retiros)} retiros` : 'no está marcada en el filtro de tipo', nTipos>1 ? 'el resto: despedido u otro' : '',
+      'Qué parte de los retiros contados fue renuncia. Lo demás es despedido u otro tipo.'),
+    tile('Ingresos', fmtN(T.ingresos), 'personas', `fechas individuales`, T.ingMasivos ? `${fmtN(T.ingMasivos)} en fechas masivas, aparte` : 'sin fechas masivas',
+      'Personas con fecha de ingreso propia dentro de los meses contados. Las fechas compartidas por muchísima gente (migración) no cuentan como contratación.'),
+    tile('Saldo neto', (T.saldo>0?'+':'')+fmtN(T.saldo), 'personas', `ingresos − retiros`, 'positivo = la plantilla crece',
+      'Ingresos menos retiros de los meses contados.'),
+  ].join('');
+
+  /* gráfico mensual */
+  $('#rotMesLead').textContent = T.retiros>0 || T.ingresos>0
+    ? `En ${mesesTxt} se fueron ${fmtN(T.retiros)} personas${T.tasa!=null?`: una rotación mensual promedio de ${fmtPct(T.tasa*100)} sobre una plantilla de ${fmtN(Math.round(T.promMedio))}`:''}. `+
+      `El porcentaje sobre cada columna es la rotación de ese mes; en rojo cuando pasa ${String(ROT_UMBRAL.rojoVeces).replace('.',',')} veces el promedio.`
+    : 'No hay retiros ni ingresos para este alcance en la ventana.';
+  $('#rotMes').innerHTML = svgRotMeses(R);
+  const leg = [['vol','Renuncia'],['desp','Despedido'],['otro','Otro / sin tipo']]
+    .filter(([k])=>R.meses.some(f=>f[k]>0)).map(([k,n])=>`<span><i style="background:${ROT_COL[k]}"></i>${n}</span>`);
+  if(R.meses.some(f=>f.depurados>0)) leg.push(`<span><i style="background:${ROT_COL.dep}"></i>Depuración BioTime (no cuenta; el número es la cantidad)</span>`);
+  $('#rotLeg').innerHTML = leg.join('');
+  $('#rotChips').innerHTML = rotMesesChips(R);
+  $('#rotMesTabla').innerHTML = rotTablaMes(R);
+
+  /* ranking por tasa */
+  const cargo = R.nivel==='cargo';
+  const G = T.tasa || 0;
+  const items = R.elegibles.filter(r=>r.retiros>0).slice(0, ROT_UMBRAL.maxBarras).map(r=>{
+    const rojo = G>0 && r.tasa>=ROT_UMBRAL.rojoVeces*G && r.retiros>=ROT_UMBRAL.minRetiros;
+    const tip = `${r.clave}: ${fmtN(r.retiros)} retiros sobre una plantilla promedio de ${fmtN(Math.round(r.promMedio))}, `+
+      `rotación mensual ${fmtPct(r.tasa*100)} (renuncia ${fmtN(r.vol)}, despedido ${fmtN(r.desp)}, otro ${fmtN(r.otro)}).`+
+      (rojo ? ` Pasa ${(r.tasa/G).toFixed(1).replace('.',',')} veces el promedio del alcance.` : '');
+    return { label:r.clave, v:r.tasa*100, tip, rojo, clave:r.clave, etiqueta:true, drill:!cargo,
+             texto:`${fmtN(r.retiros)} ret. · ${fmtPct(r.tasa*100)}` };
+  });
+  $('#rotRankTitle').textContent = `Rotación mensual por ${cargo?'cargo':'departamento'}`;
+  $('#rotRankLead').textContent = !items.length ? '' :
+    `«${items[0].label}» tiene la rotación más alta: ${items[0].texto.split(' · ')[1]} mensual. ` +
+    (items.some(i=>i.rojo) ? `En rojo: pasa ${String(ROT_UMBRAL.rojoVeces).replace('.',',')} veces el promedio del alcance (con al menos ${ROT_UMBRAL.minRetiros} retiros). ` : '') +
+    `Se ordena por tasa, no por cantidad, y solo entran ${cargo?'cargos':'departamentos'} con al menos ${ROT_UMBRAL.minPlantilla} personas de plantilla promedio`+
+    (R.excluidasRank ? ` (${fmtN(R.excluidasRank)} quedan fuera).` : '.');
+  $('#rotRank').innerHTML = items.length
+    ? svgIndBarras(items, { W:500, labelW:215, padR:105, fmt:v=>fmtH(v)+' %', unidad:'', aria:`Rotación mensual por ${cargo?'cargo':'departamento'}` })
+    : `<p class="muted" style="margin:8px 0">${R.elegibles.length ? 'Nadie tiene retiros en este alcance y esta ventana.' : `Ningún ${cargo?'cargo':'departamento'} llega a ${ROT_UMBRAL.minPlantilla} personas de plantilla promedio.`}</p>`;
+  $('#rotRankTabla').innerHTML = R.elegibles.length ? indTabla('Ver como tabla',
+    [cargo?'Cargo':'Departamento','Retiros','Plantilla promedio','Rotación mensual','Renuncia','Despedido','Otro'],
+    R.elegibles.map(r=>[r.clave, fmtN(r.retiros), fmtN(Math.round(r.promMedio)), fmtPct(r.tasa==null?null:r.tasa*100), fmtN(r.vol), fmtN(r.desp), fmtN(r.otro)])) : '';
+  $$('#rotRank [data-clave]').forEach(el=>el.onclick=()=>{ if(!cargo){ ROT.dep = el.dataset.clave; renderRot(); $('#rotRuta').scrollIntoView({block:'start'}); } });
+
+  $('#rotCia').innerHTML = rotTablaCia(R);
+  const nCiaTot = R.meses.reduce((s,f)=>s+f.retiros, 0), pSin = nCiaTot>0 ? R.calidad.sinCia/nCiaTot*100 : 0;
+  if($('#rotCiaNota')) $('#rotCiaNota').innerHTML = (R.calidad.sinCia>0
+    ? `<b>${fmtPct(pSin)} de los retiros de la ventana (${fmtN(R.calidad.sinCia)} de ${fmtN(nCiaTot)}) no tienen compañía conocida</b>: las tasas por PLASTITECSA y GRANSERVICIOS subestiman la rotación real. `
+    : '') + '«Sin dato»: el archivo de Renuncias no trae la compañía de quien se fue; solo se conoce si la persona marcó. Esos retiros se cuentan en «Todas» pero no tienen una plantilla propia, por eso no llevan tasa.';
+  $('#rotPrintHead').innerHTML =
+    `<h2>Rotación de personal — ${esc(rotEtqMes(R.desde,true))} a ${esc(rotEtqMes(R.hasta,true))}</h2>`+
+    `<div class="muted" style="font-size:11px">${esc(alcanceTexto())}${ROT.dep?' · '+esc(ROT.dep):''} · generado ${esc(new Date().toLocaleString('es-CO'))}</div>`;
+}
+
+function hookRot(){
+  const on = (sel, ev, fn)=>{ const x = $(sel); if(x) x.addEventListener(ev, fn); };
+  const cerca = (ev, attr)=>ev.target && ev.target.closest ? ev.target.closest(attr) : null;
+  const pintar = ()=>{ if(RESULT){ renderRot(); alcResumen(); } };
+  on('#rotDesde','change', e=>{ ROT.desde = e.target.value; pintar(); });
+  on('#rotHasta','change', e=>{ ROT.hasta = e.target.value; pintar(); });
+  on('#rotIncRet','change', e=>{ ROT.incRet = e.target.checked; pintar(); });
+  on('#rotIncIng','change', e=>{ ROT.incIng = e.target.checked; pintar(); });
+  on('#rotTipos','change', e=>{ const t = e.target;
+    if(t && t.dataset && t.dataset.tipo){ if(t.checked) ROT.tiposOff.delete(t.dataset.tipo); else ROT.tiposOff.add(t.dataset.tipo); pintar(); } });
+  on('#rotChips','click', ev=>{ const b = cerca(ev,'[data-mes]'); if(!b) return;
+    const m = b.dataset.mes;
+    if(ROT.noConf.has(m)) ROT.noConf.delete(m); else ROT.noConf.add(m);
+    localStorage.setItem('mb_rot_meses', JSON.stringify([...ROT.noConf]));
+    pintar(); });
+  if($('#expRot')) $('#expRot').onclick = ()=>{
+    if(!RESULT) return;
+    const R = rotCalc();
+    if(R.vacio){ toast('No hay retiros que exportar: cargue el archivo de Renuncias.'); return; }
+    save({ 'Alcance':aoaRotAlcance(R), 'Por mes':aoaRotMes(R), 'Por departamento y mes':aoaRotGrupo(R,'depto'),
+           'Por cargo y mes':aoaRotGrupo(R,'cargo'), 'Detalle de retiros':aoaRotDetalle(R), 'Fechas masivas':aoaRotFechas(R) },
+         `Rotacion_${R.desde}_${R.hasta}.xlsx`);
+  };
+  if($('#pdfRot')) $('#pdfRot').onclick = ()=>{
+    if(!RESULT){ toast('Primero calcule el ciclo.'); return; }
+    document.body.classList.add('print-rot');
+    const limpiar = ()=>document.body.classList.remove('print-rot');
+    window.addEventListener('afterprint', limpiar, {once:true});
+    setTimeout(limpiar, 1500);
+    window.print();
+  };
+}
+
+/* ── exportación (pantalla y Excel salen del mismo computeRot; solo ids, nunca nombres) ── */
+const ROT_HEAD = ['MES','{G}','PLANTILLA INICIO','INGRESOS','INGRESOS EN FECHAS MASIVAS','RETIROS RENUNCIA','RETIROS DESPEDIDO','RETIROS OTRO',
+  'DEPURACION BIOTIME (NO CUENTA)','PLANTILLA FIN','PLANTILLA PROMEDIO','TASA DE ROTACION %','TASA DE INGRESO %','SALDO NETO','ESTADO DEL MES'];
+function rotEstado(f){ return f.noConf ? 'NO CONFIABLE (fuera de promedios)' : f.parcial ? 'EN CURSO (fuera de promedios)' : 'OK'; }
+function rotFila(clave, f){
+  return [rotEtqMes(f.mes,true), clave, f.ini, f.ingresos, f.ingMasivos, f.vol, f.desp, f.otro, f.depurados, f.fin, +f.prom.toFixed(1),
+    (f.tasa==null || clave==='Sin dato') ? '' : +(f.tasa*100).toFixed(2), (f.tasaIng==null || clave==='Sin dato') ? '' : +(f.tasaIng*100).toFixed(2), f.saldo, rotEstado(f)];
+}
+function aoaRotAlcance(R){
+  const filas = aoaAlcance().filter(r=>r[0]!=='Ciclo' && !/^Personas sin turno/.test(String(r[0])));
+  filas[0] = ['ALCANCE DEL REPORTE DE ROTACION',''];
+  const nom = k=>ROT_TIPOS[k];
+  return [...filas,
+    ['Ventana', `${R.desde} a ${R.hasta}`],
+    ['Meses que cuentan en los promedios', R.uso.join(', ') || 'ninguno'],
+    ['Meses marcados como no confiables', R.meses.filter(f=>f.noConf).map(f=>f.mes).join(', ') || 'ninguno'],
+    ['Meses en curso (fuera de promedios)', R.meses.filter(f=>f.parcial).map(f=>f.mes).join(', ') || 'ninguno'],
+    ['Tipos de retiro incluidos', R.tipos && R.tipos.length ? R.tipos.map(nom).join(', ') : 'ninguno'],
+    ['Incluye depuraciones masivas de BioTime', R.incRet ? 'SI' : 'NO'],
+    ['Incluye ingresos en fechas masivas', R.incIng ? 'SI' : 'NO'],
+    ['Departamento abierto', ROT.dep || 'ninguno'],
+    ['Una fecha de retiro es masiva si la comparten más de', R.calidad.limRet],
+    ['Perfil, vínculo y sin turno', 'no se aplican a la rotación'],
+    ['Aproximación', 'El archivo de Renuncias no trae fecha de ingreso: quien se fue se asume presente desde antes de la ventana.'],
+    ['Plantilla', 'No depende del tipo de retiro: es siempre la plantilla real. El filtro de tipo solo cambia quién se cuenta como retiro.'],
+    ['Tasa de rotación', 'retiros del mes ÷ plantilla promedio del mes ((inicio + fin) ÷ 2)']];
+}
+function aoaRotMes(R){
+  const head = ROT_HEAD.map(h=>h==='{G}' ? 'COMPANIA' : h);
+  const body = [];
+  R.meses.forEach((f,i)=>{
+    body.push(rotFila('TODAS', f));
+    R.cias.forEach(c=>body.push(rotFila(c.clave, c.filas[i])));
+  });
+  return [head, ...body];
+}
+function aoaRotGrupo(R, nivel){
+  const head = ROT_HEAD.map(h=>h==='{G}' ? (nivel==='cargo' ? 'CARGO' : 'DEPARTAMENTO') : h);
+  const tipos = R.tipos ? new Set(R.tipos) : null;
+  const g = rotGrupos(R.P, R.meses.map(f=>f.mes), p=>nivel==='cargo' ? p.cargo : p.depto, tipos)
+    .sort((a,b)=>String(a.clave).localeCompare(String(b.clave),'es'));
+  const body = [];
+  g.forEach(x=>x.filas.forEach((f,i)=>{ f.noConf = R.meses[i].noConf; f.parcial = R.meses[i].parcial; body.push(rotFila(x.clave, f)); }));
+  return [head, ...body];
+}
+function aoaRotDetalle(R){
+  const head = ['COD_EMPLEADO','DEPARTAMENTO','CARGO','COMPANIA','VINCULO','TIPO DE RETIRO','FECHA DE RETIRO','MES','FECHA MASIVA','CUENTA EN LA TASA','MOTIVO SI NO CUENTA'];
+  const tipos = R.tipos ? new Set(R.tipos) : null;
+  const motivo = { depuracion:'Fecha masiva: depuración de BioTime', sinFecha:'Retirado sin fecha de retiro legible', inconsistente:'Retiro anterior al ingreso' };
+  const dentro = p=>p.ret && p.ret.slice(0,7)>=R.desde && p.ret.slice(0,7)<=R.hasta;
+  const body = R.P.filter(p=>(!tipos || tipos.has(p.tipo)) && (dentro(p) || p.excl==='sinFecha' || p.excl==='inconsistente'))
+    .sort((a,b)=>String(a.ret||'9999').localeCompare(String(b.ret||'9999')) || String(a.id).localeCompare(String(b.id)))
+    .map(p=>[p.id, p.depto, p.cargo, p.cia, p.vinculo, ROT_TIPOS[p.tipo]||'', p.ret||'', p.ret ? p.ret.slice(0,7) : '',
+             p.retMas ? 'SI' : 'NO', p.excl ? 'NO' : 'SI', motivo[p.excl]||'']);
+  return [head, ...body];
+}
+function aoaRotFechas(R){
+  return [['TIPO','FECHA','PERSONAS','CRITERIO'],
+    ...R.calidad.fechasRet.map(x=>['RETIRO', x.fecha, x.n, `más de ${R.calidad.limRet} personas el mismo día`]),
+    ...R.calidad.fechasIng.map(x=>['INGRESO', x.fecha, x.n, `más de ${R.calidad.limIng} personas el mismo día`])];
+}
+
 function toast(m){ const t=$('#toast'); t.textContent=m; t.classList.add('on');
   clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove('on'),2600); }
 
@@ -5233,6 +5895,7 @@ function showTab(t){
   /* El alcance solo se ve en las tres pestañas que lo usan; si cambió mientras se miraba otra, se repinta al volver. */
   const a = $('#alcBar'); if(a) a.hidden = !ALC_TABS.includes(t);
   if(RESULT && ALC_SUCIO.has(t)) renderTab(t);
+  alcResumen();
 }
 
 /* ══════════════════════════════════════════════════════════════════
@@ -5398,11 +6061,12 @@ function runCalc(){
     MODEL  = buildModel();
     const cfg = readConfig();
     marcarIngresosMasivos(MODEL, cfg);
+    marcarRetirosMasivos(MODEL, cfg);
     RESULT = compute(MODEL, cfg);
     ASISTENCIA = computeAsistencia(MODEL, cfg);
     renderDisp();
     fillSelects(); fillFiltros(); renderCons(); renderDet(); renderExc(); renderCal();
-    renderAsistencia(); renderCalidad(); renderCob(); renderInd(); alcResumen(); ALC_SUCIO.clear();
+    renderAsistencia(); renderCalidad(); renderCob(); renderInd(); renderRot(); alcResumen(); ALC_SUCIO.clear();
     const b = RESULT.exc.filter(x=>x.sev==='BLOQ').length;
     $('#status').innerHTML = `${RESULT.cons.length} empleados con conceptos · ` +
       (b?`<b style="color:#fca5a5">${b} bloqueantes</b>`:'sin bloqueantes');
@@ -5540,7 +6204,7 @@ document.addEventListener('DOMContentLoaded',()=>{
       guardarXLS(`Asistencia_calendario_${stamp()}.xls`, `Asistencia día por día — ${rango}`,
                  aoaAsistencia(), colorAsisCal);
   };
-  hookAlcance(); hookInd(); hookCob(); hookCalidad();
+  hookAlcance(); hookInd(); hookCob(); hookCalidad(); hookRot();
   $('#expCal').onclick  = ()=>{ if(!RESULT) return;
     const id=$('#selEmpCal').value, m=$('#selMes').value;
     save({Calendario:aoaCal(id,m)},`Calendario_${id}_${m}.xlsx`); };

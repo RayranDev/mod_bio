@@ -31,7 +31,7 @@ const PREEXISTENTES = ['rolEfectivo', 'runCalc'];
 const difieren = [...fa.out.keys()].filter(k => fb.out.has(k) && !PREEXISTENTES.includes(k) && fa.out.get(k) !== fb.out.get(k));
 ok(`funciones compartidas byte a byte (${[...fa.out.keys()].filter(k => fb.out.has(k)).length})`, difieren.length === 0, difieren.join(','));
 // constantes y estado del motor
-const consts = ['CONCEPTS', 'CKEYS', 'DOW_ES', 'NOV', 'CONC_DESC', 'MATRIZ', 'LACT_ETAPAS', 'LACT_PATS', 'DATA', 'AS_LABEL', 'COLS_FIJAS', 'COLS_ASIS', 'ROLES', 'DOW_CAL', 'IND_UMBRAL', 'IND_RAMPA', 'IND_DIAS', 'IND_DIA_NOM', 'IND_METS', 'ALC_TABS', 'SIN_DEP', 'SIN_CARGO', 'COLS_CONS_DATOS', 'COLS_CONS_HORAS', 'COLS_CONS_OTROS'];
+const consts = ['CONCEPTS', 'CKEYS', 'DOW_ES', 'NOV', 'CONC_DESC', 'MATRIZ', 'LACT_ETAPAS', 'LACT_PATS', 'DATA', 'AS_LABEL', 'COLS_FIJAS', 'COLS_ASIS', 'ROLES', 'DOW_CAL', 'IND_UMBRAL', 'IND_RAMPA', 'IND_DIAS', 'IND_DIA_NOM', 'IND_METS', 'ALC_TABS', 'SIN_DEP', 'SIN_CARGO', 'COLS_CONS_DATOS', 'COLS_CONS_HORAS', 'COLS_CONS_OTROS', 'ROT_MESES', 'ROT_TIPOS', 'ROT_UMBRAL', 'ROT_COL', 'ROT_HEAD'];
 function bloque(src, n) {
   const m = new RegExp('^(?:const|let) ' + n + '\\b', 'm').exec(src); if (!m) return null;
   const rest = src.slice(m.index);

@@ -135,6 +135,18 @@ for (const [nombre, html] of Object.entries(FILES)) {
   ok('el texto del alcance resume los tres filtros', api.alcanceLista().length === 3, api.alcanceLista().join(' | '));
   api.alcLimpiar();
 
+  // cargo (lo usa Rotación; en las otras tres pestañas recorta igual que los demás filtros)
+  api.alcSetCargo('CARGO PRUEBA');
+  ok('cargo válido: filtra (las 7 tienen ese cargo), cuenta como alcance activo y sale en el texto', n() === 7 && api.alcanceHay() && api.alcanceLista().includes('Cargo: CARGO PRUEBA'), api.alcanceLista().join(' | '));
+  api.alcSetCargo('CARGO QUE NO EXISTE');
+  ok('un cargo que no existe se suelta solo (la lista de cargos depende de lo demás) y no deja el alcance vacío', api.__ev('ALC.cargo') === '' && n() === 7);
+  api.alcSetModoDep('incluir'); api.alcToggleDep('DEPTO A', true); api.alcSetCargo('CARGO PRUEBA');
+  ok('el cargo se combina con Y con el departamento', ids() === '9301,9302,9303');
+  ok('alcanceOkEmp (nivel persona, sin el cálculo del ciclo) coincide con alcanceOk y salta el cargo si se le pide',
+    [...R.byEmp.values()].every(e => api.alcanceOkEmp(e.emp) === api.alcanceOk(e)) && api.alcanceOkEmp(R.byEmp.get('9311').emp, true) === false);
+  api.alcLimpiar();
+  ok('limpiar también suelta el cargo', api.__ev('ALC.cargo') === '' && !api.alcanceHay());
+
   // las tres pestañas y las exportaciones respetan el alcance
   api.alcSetModoDep('incluir'); api.alcToggleDep('DEPTO B', true);
   const R2 = api.alcanceR(R), Q = api.calidadFiltrada(), CC = api.cobCalc(), I2 = api.computeInd(R2, api.indOpt(R2));
@@ -178,7 +190,7 @@ for (const [nombre, html] of Object.entries(FILES)) {
   // cambiar de pestaña repinta lo que quedo sucio
   api.alcSetModoDep('excluir'); api.alcToggleDep('GERENCIA X', true);
   api.__mk('#indCards').innerHTML = 'VIEJO';
-  ok('un cambio de alcance deja las 3 pestañas sucias', api.__ev('[...ALC_SUCIO].sort().join()') === 'cal2,cob,ind');
+  ok('un cambio de alcance deja las 4 pestañas sucias (Resumen, Adopción, Calidad y Rotación)', api.__ev('[...ALC_SUCIO].sort().join()') === 'cal2,cob,ind,rot');
   api.showTab('ind');
   ok('showTab repinta la pestaña sucia con el alcance nuevo', api.__mk('#indCards').innerHTML !== 'VIEJO' && !api.__ev('ALC_SUCIO.has("ind")'));
   ok('showTab muestra la barra de alcance en Resumen y la oculta en Consolidado', api.__mk('#alcBar').hidden === false && (api.showTab('cons'), api.__mk('#alcBar').hidden === true));
@@ -197,6 +209,8 @@ for (const [nombre, html] of Object.entries(FILES)) {
   api.alcSetPerfil('ZZ'); const vacio = todo(); api.alcLimpiar();
   salida[nombre] = varios.join('\n====\n') + '\n====\n' + vacio + '\n====\n' + JSON.stringify([api.aoaAlcance(), api.aoaCobertura(), api.aoaCoberturaDep(), api.aoaCalidad(), api.aoaCalidadEmp()]);
 }
-ok('los dos archivos pintan y exportan EXACTAMENTE lo mismo', salida.COMPLETO === salida.RRHH);
+// el encabezado impreso lleva la hora de generacion (con segundos): se quita para comparar
+const sinHora = t => t.replace(/generado [0-9\/,: .apm]*/gi, 'generado ');
+ok('los dos archivos pintan y exportan EXACTAMENTE lo mismo', sinHora(salida.COMPLETO) === sinHora(salida.RRHH));
 console.log(fallos ? 'FALLOS: ' + fallos : 'ALCANCE OK');
 process.exit(fallos ? 1 : 0);
