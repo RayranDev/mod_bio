@@ -2064,6 +2064,39 @@ function ajDiasCiclo(M, id, cfg){
   if(M.ajustes && M.ajustes.has(id)) rangeDays(cfg.ini, cfg.fin).forEach(iso=>{ if(shiftFor(M, id, iso).source==='AJUSTE') n++; });
   return n;
 }
+/** ¿Algún día del ciclo cambió de turno por un ajuste? (en TODO el modelo: no depende del Alcance, así que la estructura de los Excel no cambia con los filtros).
+ *  Las columnas, tarjetas y hojas de los indicadores (Fase C) salen SOLO si es verdadero: sin ajustes, o con solo ajustes anulados, redundantes, de turno inexistente,
+ *  fuera de vigencia o fuera del ciclo, pantallas y exportaciones quedan idénticas a antes. Se calcula una vez por RESULT. */
+const AJ_CAMBIO = new WeakMap();
+function ajHayCambio(){
+  if(!MODEL || !RESULT || !MODEL.ajustes || !MODEL.ajustes.size) return false;
+  if(!AJ_CAMBIO.has(RESULT)) AJ_CAMBIO.set(RESULT, [...MODEL.ajustes.keys()].some(id=>RESULT.byEmp.has(id) && ajDiasCambiados(MODEL, id, RESULT.cfg)>0));
+  return AJ_CAMBIO.get(RESULT);
+}
+/** Qué cuenta «Días ajustados» (se repite en tooltips, encabezados y la hoja «Alcance» de los Excel). */
+const AJ_DIAS_TXT = 'días de calendario (fines de semana y festivos incluidos) en que el turno aplicado difiere del de BioTime';
+/** Fila extra de la hoja «Alcance» de Adopción y Calidad cuando hay días ajustados. */
+function ajNotaAlcance(){ return ajHayCambio() ? [['Días ajustados', AJ_DIAS_TXT]] : []; }
+/** ¿El turno aplicado ese día salió de un ajuste Y es distinto del de BioTime? Un ajuste anulado, de turno inexistente, sobrepuesto,
+ *  fuera de la vigencia de la persona o redundante (ya coincide con BioTime) NO cambia el día: no cuenta. */
+function ajCambiaDia(M, id, iso){
+  const sf = shiftFor(M, id, iso);
+  return sf.source==='AJUSTE' && (sf.code||null) !== ((sf.original && sf.original.code)||null);
+}
+/** Días del ciclo con el turno cambiado por un ajuste: la misma definición en Adopción, Calidad y Consolidado. */
+function ajDiasCambiados(M, id, cfg){
+  if(!M.ajustes || !M.ajustes.has(id)) return 0;
+  return rangeDays(cfg.ini, cfg.fin).filter(iso=>ajCambiaDia(M, id, iso)).length;
+}
+/** R con la plantilla ORIGINAL de BioTime: quien tiene ajustes usa sus filas de la línea base (`base`, por omisión R.base) y los demás las suyas.
+ *  Sin línea base devuelve R tal cual. Conserva el orden de R. */
+function resultadoOriginal(R, base){
+  base = base || R.base;
+  if(!base) return R;
+  const R2 = { byEmp:new Map(), cfg:R.cfg };
+  R.byEmp.forEach((e,id)=>R2.byEmp.set(id, base.byEmp.get(id) || e));
+  return R2;
+}
 /** Tarjeta del encabezado del Detalle: días ajustados e impacto en el ciclo (solo si la persona tiene ajustes). */
 function cardAjDet(e){
   if(!MODEL || !RESULT) return '';
@@ -4180,18 +4213,19 @@ function alcanceHay(){
          || (A.modoDep==='excluir' ? KPI_EXCL.size : A.depIn.size));
 }
 
-/** Cuántas personas y departamentos entran, y cuántas sin turno hay dentro (o escondidas). */
-function alcanceInfo(){
+/** Cuántas personas y departamentos entran, y cuántas sin turno hay dentro (o escondidas). `R` es el resultado sobre el que se cuenta:
+ *  por omisión el ajustado; Adopción pasa `resultadoOriginal(RESULT)` porque mide el turno de BioTime (su lista, su encabezado y su Excel dicen lo mismo). */
+function alcanceInfo(R){
   const o = { personas:0, enAlcance:0, deps:0, depsEn:0, sinTurnoEn:0, ocultas:0 };
   if(!RESULT) return o;
-  if(tabActiva()==='rot' && MODEL){          // Rotación mide a TODA la gente del modelo, no solo a la del ciclo
+  if(!R && tabActiva()==='rot' && MODEL){          // Rotación mide a TODA la gente del modelo, no solo a la del ciclo
     const dT = new Set(), dE = new Set();
     MODEL.employees.forEach(m=>{ const k = m.depto || SIN_DEP; o.personas++; dT.add(k); if(alcanceOkEmp(m)){ o.enAlcance++; dE.add(k); } });
     o.deps = dT.size; o.depsEn = dE.size;
     return o;
   }
   const dT = new Set(), dE = new Set();
-  RESULT.byEmp.forEach(e=>{
+  (R || RESULT).byEmp.forEach(e=>{
     const k = e.emp.depto || SIN_DEP;
     o.personas++; dT.add(k);
     if(alcanceOk(e)){ o.enAlcance++; dE.add(k); if(sinTurnoAsignado(e)) o.sinTurnoEn++; }
@@ -4218,14 +4252,14 @@ function alcanceLista(){
   if(tr) t.push(tr);
   return t;
 }
-function alcanceTexto(){
-  const I = alcanceInfo(), t = alcanceLista();
+function alcanceTexto(R){
+  const I = alcanceInfo(R), t = alcanceLista();
   return `Alcance: ${fmtN(I.depsEn)} de ${fmtN(I.deps)} departamentos · ${fmtN(I.enAlcance)} de ${fmtN(I.personas)} personas`
     + (t.length ? ' · '+t.join(' · ') : '');
 }
 /** Primera hoja de cada Excel de estas pestañas: de qué grupo de personas salen los números. */
-function aoaAlcance(){
-  const I = alcanceInfo(), t = alcanceLista();
+function aoaAlcance(R){
+  const I = alcanceInfo(R), t = alcanceLista();
   return [['ALCANCE DEL REPORTE',''],
     ['Ciclo', RESULT ? `${RESULT.cfg.ini} a ${RESULT.cfg.fin}` : ''],
     ['Departamentos en el alcance', `${I.depsEn} de ${I.deps}`],
@@ -4286,7 +4320,7 @@ function alcCambio(rehacerPanel){
 /** La línea de arriba: qué se está viendo, qué filtros hay y el aviso de las personas sin turno. */
 function alcResumen(){
   if(!$('#alcBar') || !RESULT) return;
-  const I = alcanceInfo(), t = alcanceLista();
+  const I = alcanceInfo(tabActiva()==='cob' ? resultadoOriginal(RESULT) : undefined), t = alcanceLista();     // en Adopción el recuento es sobre el turno de BioTime
   $('#alcResumen').textContent =
     `Alcance: ${fmtN(I.depsEn)} de ${fmtN(I.deps)} departamentos · ${fmtN(I.enAlcance)} de ${fmtN(I.personas)} personas`;
   $('#alcFiltros').innerHTML = t.map(x=>`<span class="alcchip">${esc(x)}</span>`).join('');
@@ -4514,12 +4548,33 @@ function computeCalidad(M, R, cfg){
 
 let Q_DEP = null;          // departamento abierto en la lista de personas (null = todos)
 
-/** La calidad del alcance activo (las mismas reglas de siempre sobre un R recortado). */
+/** La calidad del alcance activo (las mismas reglas de siempre sobre un R recortado). Si algún día del ciclo cambió de turno por un ajuste trae además
+ *  la lectura con la plantilla ORIGINAL de BioTime (`calidadComparar`). */
 function calidadFiltrada(){
-  return computeCalidad(MODEL, alcanceR(RESULT), RESULT.cfg);
+  const R2 = alcanceR(RESULT), Q = computeCalidad(MODEL, R2, RESULT.cfg);
+  if(ajHayCambio() && RESULT.base) calidadComparar(Q, computeCalidad(MODEL, resultadoOriginal(R2, RESULT.base), RESULT.cfg), R2);
+  return Q;
+}
+/** `dPts` se calcula con los valores ya redondeados a 1 decimal (los que muestran la tarjeta, las tablas y el Excel), así X − Y == Δ exacto y no «a veces 0.1 de diferencia».
+ *  Agrega a Q (la calidad con el turno AJUSTADO, la que paga y la que ve el jefe) la misma calidad con el turno ORIGINAL de BioTime (`Qo`, calculada
+ *  sobre las mismas personas): `calidadOrig`, `dPts` (puntos que suben o bajan por los ajustes) y `diasAj` (días con el turno cambiado), en el total,
+ *  cada departamento y cada persona. Marca `Q.orig = true`. Un turno mal cargado no es culpa de quien marca: por eso la principal es la ajustada. */
+function calidadComparar(Q, Qo, R2){
+  const diasAj = new Map();
+  R2.byEmp.forEach((e,id)=>{ const n = ajDiasCambiados(MODEL, id, RESULT.cfg); if(n) diasAj.set(id, n); });
+  const dif = (q, o, n)=>{ q.calidadOrig = o.calidadMarca; q.diasAj = n;
+    q.dPts = q.calidadMarca==null || o.calidadMarca==null ? null : Math.round((+q.calidadMarca.toFixed(1) - +o.calidadMarca.toFixed(1))*10)/10; };   // desde lo que se ve (1 decimal): X − Y cuadra con Δ
+  const porDep = new Map(Qo.deps.map(d=>[d.dep, d])), porEmp = new Map(Qo.emps.map(p=>[p.empRef.id, p])), nDep = new Map();
+  Q.emps.forEach(p=>{ const n = diasAj.get(p.empRef.id)||0; dif(p, porEmp.get(p.empRef.id), n); nDep.set(p.dep, (nDep.get(p.dep)||0)+n); });
+  Q.deps.forEach(d=>dif(d, porDep.get(d.dep), nDep.get(d.dep)||0));
+  dif(Q.total, Qo.total, [...diasAj.values()].reduce((s,n)=>s+n, 0));
+  Q.orig = true;
+  return Q;
 }
 
 const nivelQ = p => p>=90 ? 'ok' : p>=75 ? 'warn' : 'err';
+/** Diferencia en puntos porcentuales, con signo: «+5.2 pts». */
+const fmtPts = p => p==null ? '—' : (p>0.05 ? '+' : p<-0.05 ? '−' : '') + Math.abs(p).toFixed(1) + ' pts';
 
 /** Calidad de marcación: dos números y dónde actuar. «Calidad» = días con marcación que quedaron
  *  completos e inequívocos sobre los días en que la persona marcó. Si el turno estaba cargado o no
@@ -4533,6 +4588,13 @@ function renderCalidad(){
   const col = n => n==='ok' ? 'var(--ok)' : n==='warn' ? 'var(--warn)' : 'var(--err)';
   const nvC = T.calidadMarca==null ? 'err' : nivelQ(T.calidadMarca);
   const nvH = T.pctHDudosa==null ? 'ok' : nivelQ(100-T.pctHDudosa);
+  const conAj = !!Q.orig;       // columnas Δ: salen si algún día del ciclo cambió de turno (todo el modelo, no depende del Alcance); la tarjeta, solo si alguno cambió dentro del alcance
+  const ajCard = conAj && T.diasAj>0 ? `
+    <div style="min-width:230px;border-left:3px solid var(--adj);padding-left:14px" data-tip="${ajA('La misma calidad de marcación medida con el turno ORIGINAL de BioTime, sobre las mismas personas. La principal usa el turno ajustado: un turno mal cargado no es culpa de quien marca. La diferencia es lo que cambia por los '+fmtN(T.diasAj)+' días ajustados ('+AJ_DIAS_TXT+').')}">
+      <div class="cap">Efecto de los ajustes de horario</div>
+      <div class="big" style="color:var(--adj)">${fmtPts(T.dPts)}</div>
+      <div class="muted" style="font-size:11px;margin-top:4px">Calidad ${fmtPct(T.calidadMarca)} · con la plantilla original ${fmtPct(T.calidadOrig)} · por ${fmtN(T.diasAj)} ${T.diasAj===1?'día ajustado':'días ajustados'}</div>
+    </div>` : '';
 
   $('#qHero').innerHTML = `
     <div style="min-width:230px" data-tip="De los días en que la persona marcó, en cuántos la marcación quedó completa y sin que el motor tuviera que interpretar nada. Mide qué tan bien se marca, no si había turno cargado.">
@@ -4546,7 +4608,7 @@ function renderCalidad(){
       <div class="big" style="color:${col(nvH)}">${fmtN(Math.round(T.hDudosa))}<span style="font-size:18px;font-weight:500"> h</span></div>
       <div class="track"><span style="width:${T.pctHDudosa||0}%;background:${col(nvH)}"></span></div>
       <div class="muted" style="font-size:11px;margin-top:4px">${fmtPct(T.pctHDudosa)} de las ${fmtN(Math.round(T.hTotal))} h acreditadas · ${fmtN(T.empDudososN)} de ${fmtN(T.empleados)} personas</div>
-    </div>
+    </div>${ajCard}
     <div class="det">
       Un día se <b>interpreta</b> cuando el número de marcaciones es impar y el motor tuvo que elegir cuál descartar
       (${fmtN(T.sugerido)} días) o cuando no se pudo calcular (${fmtN(T.bloq)}). Lo resuelve el jefe con su gente.
@@ -4581,8 +4643,13 @@ function renderCalidad(){
   $('#tQ thead').innerHTML = `<tr><th>Departamento</th><th class="num">Personas</th>
     <th data-tip="Días con marcación que quedaron completos e inequívocos, sobre los días en que marcó.">Calidad de marcación</th>
     <th class="num" data-tip="Días que el motor tuvo que interpretar más los que no pudo calcular.">Días interpretados</th>
-    <th class="num" data-tip="Horas acreditadas que se apoyan en esos días, y qué parte de las horas del departamento son.">Horas en días interpretados</th></tr>`;
+    <th class="num" data-tip="Horas acreditadas que se apoyan en esos días, y qué parte de las horas del departamento son.">Horas en días interpretados</th>${
+      conAj ? '<th class="num" data-tip="Puntos que suben o bajan la calidad de marcación del departamento por los ajustes de horario: calidad con el turno ajustado menos calidad con el turno original de BioTime.">Δ por ajustes (pts)</th>' : ''}</tr>`;
   const lista = Q.deps.slice().sort((a,b)=>(b.dudosos||0)-(a.dudosos||0));
+  /* Celda del delta por ajustes de un departamento o una persona: solo tiene sentido si alguno de sus días cambió de turno. */
+  const celdaDeltaQ = x => x.diasAj>0
+    ? `<td class="num" style="color:var(--adj)" data-tip="${ajA(fmtN(x.diasAj)+' día(s) de calendario con el turno ajustado. Calidad '+fmtPct(x.calidadMarca)+' con el turno ajustado; '+fmtPct(x.calidadOrig)+' con el turno original de BioTime.')}">${fmtPts(x.dPts).replace(' pts','')}</td>`
+    : '<td class="num muted">—</td>';
   $('#tQ tbody').innerHTML = lista.map(d=>{
     const n = d.calidadMarca==null ? 'err' : nivelQ(d.calidadMarca);
     const corta = d.muestraCorta
@@ -4591,28 +4658,37 @@ function renderCalidad(){
       <td>${esc(d.dep)}${corta}</td><td class="num">${fmtN(d.empleados)}</td>
       <td${d.muestraCorta?' style="opacity:.6"':''}><span class="qbar"><span style="width:${d.calidadMarca||0}%;background:${col(n)}"></span></span>${fmtPct(d.calidadMarca)}</td>
       <td class="num">${fmtN(d.dudosos)}</td>
-      <td class="num">${fmtN(Math.round(d.hDudosa))} h <span class="muted">(${fmtPct(d.pctHDudosa)})</span></td></tr>`;
-  }).join('') || `<tr><td colspan="5" class="muted" style="padding:18px">Sin datos para el alcance activo.</td></tr>`;
+      <td class="num">${fmtN(Math.round(d.hDudosa))} h <span class="muted">(${fmtPct(d.pctHDudosa)})</span></td>${conAj ? celdaDeltaQ(d) : ''}</tr>`;
+  }).join('') || `<tr><td colspan="${conAj ? 6 : 5}" class="muted" style="padding:18px">Sin datos para el alcance activo.</td></tr>`;
   $$('#tQ tbody tr[data-dep]').forEach(tr=>tr.onclick=()=>{
     Q_DEP = Q_DEP===tr.dataset.dep ? null : tr.dataset.dep;
     renderCalidad();
   });
 
   /* Las 15 personas con más días interpretados: el nivel donde alguien puede actuar. La lista completa va al Excel. */
-  const top = Q.emps.filter(p=>(Q_DEP===null || p.dep===Q_DEP) && p.dudosos>0)
-    .sort((a,b)=>b.dudosos-a.dudosos || b.hDudosa-a.hDudosa).slice(0, 15);
-  const nCon = Q.emps.filter(p=>(Q_DEP===null || p.dep===Q_DEP) && p.dudosos>0).length;
+  const enDep = p=>Q_DEP===null || p.dep===Q_DEP;
+  const orden = Q.emps.filter(p=>enDep(p) && p.dudosos>0).sort((a,b)=>b.dudosos-a.dudosos || b.hDudosa-a.hDudosa);
+  const top = orden.slice(0, 15);
+  /* Con ajustes de horario quien los tiene se ve SIEMPRE: su calidad pudo mejorar hasta no tener días interpretados y no estaría en la lista. */
+  const adj = conAj ? Q.emps.filter(p=>enDep(p) && p.diasAj>0) : [];
+  const conAjuste = adj.filter(p=>!top.includes(p)).sort((a,b)=>b.dudosos-a.dudosos || b.diasAj-a.diasAj).slice(0, Math.max(0, 50 - top.length));   // tope de 50 filas en pantalla; el Excel trae a todas
+  conAjuste.forEach(p=>top.push(p));
+  const adjVistas = adj.filter(p=>top.includes(p)).length;
+  const nCon = orden.length;
   $('#qRuta').innerHTML = `<button data-nivel="todo" class="${Q_DEP===null?'on':''}">Alcance</button>` +
     (Q_DEP!==null ? '<span class="sep">›</span>'+`<button class="on">${esc(Q_DEP)}</button>` : '');
   $$('#qRuta button[data-nivel]').forEach(b=>b.onclick=()=>{ Q_DEP = null; renderCalidad(); });
-  $('#qEmpInfo').textContent = nCon>15
+  $('#qEmpInfo').textContent = (nCon>15
     ? `Se muestran 15 de ${fmtN(nCon)} personas con días interpretados; la lista completa está en el Excel.`
-    : `${fmtN(nCon)} personas con días interpretados.`;
+    : `${fmtN(nCon)} personas con días interpretados.`)
+    + (conAjuste.length ? ` Además se listan ${fmtN(conAjuste.length)} con ajustes de horario, para ver su Δ.` : '')
+    + (adjVistas < adj.length ? ` Mostrando ${fmtN(adjVistas)} de ${fmtN(adj.length)} personas con ajustes; el resto está en el Excel.` : '');
   $('#tQEmp thead').innerHTML = `<tr><th>Código</th><th>Empleado</th><th>Departamento</th>
     <th data-tip="Días con marcación que quedaron completos, sobre los días en que marcó.">Calidad de marcación</th>
     <th class="num" data-tip="Número impar de marcaciones: el motor eligió cuál descartar.">Interpretados</th>
     <th class="num" data-tip="Impares sin solución o salida anterior a la entrada: no se calculó nada.">Sin calcular</th>
-    <th class="num" data-tip="Horas acreditadas que se apoyan en un día que hubo que interpretar.">H. dudosas</th></tr>`;
+    <th class="num" data-tip="Horas acreditadas que se apoyan en un día que hubo que interpretar.">H. dudosas</th>${
+      conAj ? '<th class="num" data-tip="Puntos que suben o bajan su calidad de marcación por los ajustes de horario (turno ajustado menos turno original de BioTime).">Δ por ajustes (pts)</th>' : ''}</tr>`;
   $('#tQEmp tbody').innerHTML = top.map(p=>{
     const n = p.calidadMarca==null ? 'err' : nivelQ(p.calidadMarca);
     return `<tr class="clickable" data-id="${esc(p.empRef.id)}" data-iso="${esc(p.diaDud||'')}">
@@ -4621,8 +4697,8 @@ function renderCalidad(){
       <td><span class="qbar"><span style="width:${p.calidadMarca||0}%;background:${col(n)}"></span></span>${fmtPct(p.calidadMarca)}</td>
       <td class="num${p.sugerido?' dev':''}">${fmtN(p.sugerido)}</td>
       <td class="num${p.bloq?' dev':''}">${fmtN(p.bloq)}</td>
-      <td class="num">${fmtN(Math.round(p.hDudosa*10)/10)}</td></tr>`;
-  }).join('') || `<tr><td colspan="7" class="muted" style="padding:18px">Nadie tiene días interpretados en este alcance.</td></tr>`;
+      <td class="num">${fmtN(Math.round(p.hDudosa*10)/10)}</td>${conAj ? celdaDeltaQ(p) : ''}</tr>`;
+  }).join('') || `<tr><td colspan="${conAj ? 8 : 7}" class="muted" style="padding:18px">Nadie tiene días interpretados en este alcance.</td></tr>`;
   $$('#tQEmp tbody tr[data-id]').forEach(tr=>tr.onclick=()=>irADetalle(tr.dataset.id, tr.dataset.iso || RESULT.cfg.ini));
 
   $('#qPrintHead').innerHTML =
@@ -4631,7 +4707,7 @@ function renderCalidad(){
 }
 
 function aoaCalidad(){
-  const Q = calidadFiltrada();
+  const Q = calidadFiltrada(), conAj = !!Q.orig;     // las columnas de ajustes van SOLO con ajustes y siempre al final
   const head = ['DEPARTAMENTO','EMPLEADOS','DIAS','DIAS CON TURNO','% CUMPLIO SU TURNO',
     'DIAS CON TURNO LIMPIOS','DIAS INTERPRETADOS CON TURNO','DIAS SIN CALCULAR CON TURNO',
     'DIAS QUE VINO','% TENIA TURNO CARGADO','DIAS SIN TURNO','DIAS SIN TURNO CON MARCACION LIMPIA',
@@ -4639,7 +4715,8 @@ function aoaCalidad(){
     'DIAS LIMPIOS','DIAS INTERPRETADOS',
     'DIAS SIN CALCULAR','TURNO SIN MARCA','ENTRADAS TARDE','SALIDAS TEMPRANO',
     'HORAS ANTES DEL TURNO','HORAS LIMPIAS','HORAS DUDOSAS','% HORAS DUDOSAS',
-    'CALIDAD DE MARCACION % (LIMPIOS / DIAS CON MARCACION)'];
+    'CALIDAD DE MARCACION % (LIMPIOS / DIAS CON MARCACION)',
+    ...(conAj ? ['CALIDAD CON TURNO ORIGINAL DE BIOTIME %','DELTA POR AJUSTES (PTS)','DIAS AJUSTADOS'] : [])];
   const fila = d => [d.dep, d.empleados, d.dias, d.conTurno,
     d.calidadTurno==null?'':+d.calidadTurno.toFixed(1),
     d.okTurno, d.sugTurno, d.bloqTurno,
@@ -4650,20 +4727,22 @@ function aoaCalidad(){
     d.limpio, d.sugerido, d.bloq, d.sinMarca, d.tarde, d.temprano,
     +(d.antesMin/60).toFixed(1), +d.hLimpia.toFixed(1), +d.hDudosa.toFixed(1),
     d.pctHDudosa==null?'':+d.pctHDudosa.toFixed(1),
-    d.calidadMarca==null?'':+d.calidadMarca.toFixed(1)];
+    d.calidadMarca==null?'':+d.calidadMarca.toFixed(1),
+    ...(conAj ? [d.calidadOrig==null?'':+d.calidadOrig.toFixed(1), d.dPts==null?'':+d.dPts.toFixed(1), d.diasAj] : [])];
   return [head, ...Q.deps.map(fila), fila({...Q.total, dep:'TOTAL'})];
 }
 
 /** La misma calidad, persona por persona: es el nivel donde alguien puede actuar. */
 function aoaCalidadEmp(){
-  const Q = calidadFiltrada();
+  const Q = calidadFiltrada(), conAj = !!Q.orig;
   const head = ['COD_EMPLEADO','NOMBRES','APELLIDOS','COMPAÑÍA','DEPARTAMENTO','CARGO','PERFIL','VÍNCULO',
     'DIAS DEL CICLO','DIAS CON TURNO','% CUMPLIO SU TURNO','DIAS CON TURNO LIMPIOS',
     'DIAS INTERPRETADOS','DIAS SIN CALCULAR','TURNO SIN MARCA',
     'DIAS QUE VINO','% TENIA TURNO CARGADO','DIAS SIN TURNO','DIAS SIN TURNO CON MARCACION LIMPIA',
     'HORAS EN DIAS SIN TURNO','ENTRADAS TARDE','SALIDAS TEMPRANO',
     'HORAS ANTES DEL TURNO','HORAS LIMPIAS','HORAS DUDOSAS','% HORAS DUDOSAS',
-    'CALIDAD DE MARCACION % (LIMPIOS / DIAS CON MARCACION)'];
+    'CALIDAD DE MARCACION % (LIMPIOS / DIAS CON MARCACION)',
+    ...(conAj ? ['CALIDAD CON TURNO ORIGINAL DE BIOTIME %','DELTA POR AJUSTES (PTS)','DIAS AJUSTADOS'] : [])];
   const body = Q.emps.map(p=>[...asIdent(p.empRef), p.perfil||'', p.empRef.vinculo||'ACTIVO',
     p.dias, p.conTurno, p.calidadTurno==null?'':+p.calidadTurno.toFixed(1), p.okTurno,
     p.sugTurno, p.bloqTurno, p.sinMarca,
@@ -4671,12 +4750,13 @@ function aoaCalidadEmp(){
     +p.hSinTurno.toFixed(1), p.tarde, p.temprano,
     +(p.antesMin/60).toFixed(1), +p.hLimpia.toFixed(1), +p.hDudosa.toFixed(1),
     p.pctHDudosa==null?'':+p.pctHDudosa.toFixed(1),
-    p.calidadMarca==null?'':+p.calidadMarca.toFixed(1)]);
+    p.calidadMarca==null?'':+p.calidadMarca.toFixed(1),
+    ...(conAj ? [p.calidadOrig==null?'':+p.calidadOrig.toFixed(1), p.dPts==null?'':+p.dPts.toFixed(1), p.diasAj] : [])]);
   return [head, ...body];
 }
 
 function hookCalidad(){
-  if($('#expQ')) $('#expQ').onclick = ()=>RESULT&&save({'Alcance':aoaAlcance(), 'Calidad de marcacion':aoaCalidad(),
+  if($('#expQ')) $('#expQ').onclick = ()=>RESULT&&save({'Alcance':aoaAlcance().concat(ajNotaAlcance()), 'Calidad de marcacion':aoaCalidad(),
       'Calidad por empleado':aoaCalidadEmp()},
     `Calidad_Marcacion_${alcanceHay()?'alcance_':''}${RESULT.cfg.ini}_${RESULT.cfg.fin}.xlsx`);
   if($('#pdfQ')) $('#pdfQ').onclick = ()=>{
@@ -4698,9 +4778,11 @@ function hookCalidad(){
  *  «Marcó» se decide por JORNADA, igual que en Calidad de marcación y en el Resumen del ciclo
  *  (A-18 = turno y ninguna marca en esa jornada), no por fecha de calendario: un turno nocturno
  *  cierra al día siguiente, y mirar la fecha cuenta como ausencia o como asistencia lo que no lo es.
- *  `marcasPorIso` ya no decide nada; se conserva en la firma para no tocar a quien llama. */
+ *  `marcasPorIso` ya no decide nada; se conserva en la firma para no tocar a quien llama.
+ *  Adopción mide el turno ORIGINAL de BioTime (`shiftBase`), nunca el ajustado: los ajustes de horario no se filtran a este indicador
+ *  (por eso `cobCalc` también le pasa las filas de la línea base a quien los tiene). */
 function estadoCob(M, R, cfg, id, iso, filaPorIso, marcasPorIso){
-  const sf = shiftFor(M, id, iso);
+  const sf = shiftBase(M, id, iso);
   const asignado = !!sf.code;
   const seg = asignado ? segmentFor(M, sf.code, iso) : null;
   const r = filaPorIso.get(iso);
@@ -4721,9 +4803,10 @@ function computeCobertura(M, R, cfg){
     const emp = e.emp;
     const filaPorIso = new Map((e.rows||[]).map(r=>[r.iso, r]));
     const marcasPorIso = new Set((M.punches.get(id)||[]).map(p=>p.iso));
+    const tieneAj = !!(M.ajustes && M.ajustes.has(id));
     const o = { id, emp, dias:new Map(), vig:0, asig:0, jornada:0, marco:0,
                 limpio:0, dudoso:0, falta:0, sinturno:0, sinasig:0, desc:0, fuera:0,
-                ini:null, fin:null };
+                diasAj:0, ini:null, fin:null };
     dates.forEach(iso=>{
       /* Vigencia: antes del ingreso individual no existia, despues de vigFin ya no esta.
          Las fechas de ingreso masivas son la migracion del sistema, no contratacion. */
@@ -4735,6 +4818,7 @@ function computeCobertura(M, R, cfg){
       o.fin = iso;
       const st = estadoCob(M, R, cfg, id, iso, filaPorIso, marcasPorIso);
       o.dias.set(iso, st);
+      if(tieneAj && ajCambiaDia(M, id, iso)) o.diasAj++;     // dentro de la vigencia y con el turno cambiado por un ajuste (el turno medido sigue siendo el de BioTime)
       if(st.asignado) o.asig++;
       if(st.jornada)  o.jornada++;
       if(st.marco)    o.marco++;
@@ -4764,7 +4848,8 @@ let COB_ORD = 'turno';   // por qué métrica se ordena: turno · marca · nombr
 const COB_PERD = {
   turno:   {k:'perdAsig', txt:'sin turno'},
   marca:   {k:'falta',    txt:'sin marcar'},
-  calidad: {k:'perdCal',  txt:'interpretados'}};
+  calidad: {k:'perdCal',  txt:'interpretados'},
+  aj:      {k:'diasAj',   txt:'días ajustados'}};
 const COB_SIG = {ok:'✓', dud:'!', falta:'F', sinturno:'S', sinasig:'×', desc:'·', fuera:''};
 const COB_TIP = {
   ok:'Marcó y la marcación es inequívoca.',
@@ -4778,6 +4863,7 @@ const COB_TIP = {
 function cobOrden(ord){
   const nom = x => String(x.nombre || (x.emp && x.emp.nombre) || '');
   if(ord === 'nombre') return (a,b)=>nom(a).localeCompare(nom(b), 'es');
+  if(ord==='aj' && !ajHayCambio()) ord = 'turno';          // sin ajustes ese orden no existe
   const k = (COB_PERD[ord] || COB_PERD.turno).k;
   return (a,b)=>(b[k]||0)-(a[k]||0) || nom(a).localeCompare(nom(b), 'es');
 }
@@ -4791,7 +4877,9 @@ function cobFiltrado(C, dep){
 /** Todo lo que necesita Adopción: el R recortado al alcance, su cobertura, el departamento abierto
  *  (el que se eligió con un clic o el único que queda en el alcance) y la lista de personas. */
 function cobCalc(){
-  const R2 = alcanceR(RESULT), C = computeCobertura(MODEL, R2, RESULT.cfg);
+  /* Adopción mide BioTime ORIGINAL: quien tiene ajustes entra con sus filas de la línea base y el alcance se evalúa sobre ellas, así que con o sin
+     ajustes las cifras son idénticas. Lo único que muestra de los ajustes es la columna «Días ajustados». */
+  const R2 = alcanceR(resultadoOriginal(RESULT)), C = computeCobertura(MODEL, R2, RESULT.cfg);
   const u = alcanceUnDepto(R2);
   const unico = u===null ? null : (u===SIN_DEP ? '' : u);
   if(COB_DEP!==null && !C.filas.some(o=>(o.emp.depto||'')===COB_DEP)) COB_DEP = null;
@@ -4800,8 +4888,8 @@ function cobCalc(){
 }
 
 function cobAgregar(lista){
-  const t = { vig:0, asig:0, jornada:0, marco:0, limpio:0, falta:0, sinasig:0, sinturno:0, emp:lista.length };
-  lista.forEach(o=>{ ['vig','asig','jornada','marco','limpio','falta','sinasig','sinturno']
+  const t = { vig:0, asig:0, jornada:0, marco:0, limpio:0, falta:0, sinasig:0, sinturno:0, diasAj:0, emp:lista.length };
+  lista.forEach(o=>{ ['vig','asig','jornada','marco','limpio','falta','sinasig','sinturno','diasAj']
     .forEach(k=>t[k]+=o[k]); });
   t.pctAsig    = t.vig ? t.asig/t.vig*100 : null;
   t.pctMarca   = t.jornada ? (t.jornada-t.falta)/t.jornada*100 : null;
@@ -4892,13 +4980,25 @@ function renderCob(){
       <div class="meter m-${n}"><span style="width:${p==null?0:p.toFixed(1)}%;background:${col(n)}"></span></div>
       <div class="falta">${fmtN(perd)} ${esc(txt)}${esc(pie)}</div></div>`;
   };
+  /* Días ajustados (solo con ajustes de horario): días del ciclo, dentro de la vigencia, en que el turno aplicado salió de un ajuste. Adopción sigue midiendo el
+     turno ORIGINAL de BioTime; esto dice DÓNDE se carga mal la programación. */
+  const conAj = ajHayCambio();
+  const tileAj = !conAj ? '' : (()=>{
+    const [pie, tipTop] = conc('diasAj'), nP = grupo.filter(o=>o.diasAj>0).length;
+    const tip = 'Son ' + AJ_DIAS_TXT + ' (dentro del ciclo y de la vigencia de cada persona; el turno viene de un ajuste de horario). Adopción sigue midiendo el turno ORIGINAL de BioTime: estos días no se descuentan de «Turno cargado»; son el dato de dónde se carga mal la programación.'
+      + tipTop + ' Clic para ordenar por esta métrica.';
+    return `<div data-ord="aj" class="${ord==='aj'?'sel':''}" data-tip="${ajA(tip)}">
+      <div class="k">Días ajustados</div>
+      <div class="v" style="color:var(--adj)">${fmtN(T.diasAj)}<small>de ${fmtN(T.vig)} días vigentes</small></div>
+      <div class="falta">${fmtN(nP)} ${nP===1?'persona con ajustes':'personas con ajustes'}${esc(pie)}</div></div>`;
+  })();
   $('#cobTiles').innerHTML =
     tile('turno', 'Turno cargado', T.pctAsig, T.asig, T.vig,
       'Sobre los días VIGENTES de cada persona (desde su ingreso y hasta su retiro), en cuántos hay una asignación de turno cargada en el Horario. Lo resuelve quien programa en BioTime.',
       T.perdAsig, 'días vigentes sin turno') +
     tile('marca', 'Marcó cuando tenía jornada', T.pctMarca, T.jornada-T.falta, T.jornada,
       'Sobre los días con jornada programada, en cuántos hubo al menos una marcación en esa jornada. Lo resuelve el jefe con su gente.',
-      T.falta, 'jornadas sin marcar');
+      T.falta, 'jornadas sin marcar') + tileAj;
   $$('#cobTiles>div[data-ord]').forEach(d=>d.onclick=()=>{ COB_ORD = d.dataset.ord; renderCob(); });
 
   /* ── tabla del medio: cambia segun el nivel (cinco columnas) ── */
@@ -4913,14 +5013,16 @@ function renderCob(){
       <th class="num">${nivel==='empresa'?'Personas':'Días vigentes'}</th>
       <th class="num">${nivel==='empresa'?'Días vigentes':'Días con jornada'}</th>
       <th data-ord="turno" style="cursor:pointer" data-tip="Clic para ordenar por días sin turno.">Turno cargado</th>
-      <th data-ord="marca" style="cursor:pointer" data-tip="Clic para ordenar por jornadas sin marcar.">Marcó con jornada</th></tr>`;
+      <th data-ord="marca" style="cursor:pointer" data-tip="Clic para ordenar por jornadas sin marcar.">Marcó con jornada</th>${
+        conAj ? '<th class="num" data-ord="aj" style="cursor:pointer" data-tip="' + ajA('Son ' + AJ_DIAS_TXT + '. Clic para ordenar por esta métrica.') + '">Días ajustados</th>' : ''}</tr>`;
     $('#tCobDep tbody').innerHTML = unidades.map(u=>
       `<tr class="${u.clave!==undefined?'drill':''}" data-clave="${esc(u.clave)}"><td>${nivel==='dep'
           ? `<span class="mono">${esc(u.clave)}</span> ${esc(u.nombre)}${tagRetiro(u.emp)}` : esc(u.nombre)}</td>
        <td class="num">${fmtN(nivel==='empresa' ? u.emp : u.vig)}</td>
        <td class="num">${fmtN(nivel==='empresa' ? u.vig : u.jornada)}</td>
-       ${celda(u.pctAsig, u.perdAsig, 'sin turno')}${celda(u.pctMarca, u.falta, 'sin marcar')}</tr>`
-    ).join('') || `<tr><td colspan="5" class="muted" style="padding:18px">Sin datos para el alcance activo.</td></tr>`;
+       ${celda(u.pctAsig, u.perdAsig, 'sin turno')}${celda(u.pctMarca, u.falta, 'sin marcar')}${
+         conAj ? `<td class="num"${u.diasAj ? ' style="color:var(--adj)"' : ''}>${fmtN(u.diasAj||0)}</td>` : ''}</tr>`
+    ).join('') || `<tr><td colspan="${conAj ? 6 : 5}" class="muted" style="padding:18px">Sin datos para el alcance activo.</td></tr>`;
     $$('#tCobDep tbody tr.drill').forEach(tr=>tr.onclick=()=>{
       if(nivel === 'empresa') COB_DEP = tr.dataset.clave;
       else COB_EMP = tr.dataset.clave;
@@ -4977,35 +5079,35 @@ function renderCob(){
 
   $('#cobPrintHead').innerHTML =
     `<h2>Adopción — ciclo ${esc(RESULT.cfg.ini)} a ${esc(RESULT.cfg.fin)}</h2>` +
-    `<div class="muted" style="font-size:11px">${esc(alcanceTexto())} · ` +
+    `<div class="muted" style="font-size:11px">${esc(alcanceTexto(resultadoOriginal(RESULT)))} · ` +
     `${esc(persona ? persona.id+' '+persona.emp.nombre : nivel==='dep' ? (depDe||SIN_DEP) : 'Todo el alcance')} · ${fmtN(T.emp)} personas · ` +
     `${fmtN(T.vig)} días-persona vigentes · generado ${new Date().toLocaleString('es-CO')}</div>`;
 }
 
 function aoaCobertura(){
-  const { C, lista } = cobCalc();
+  const { C, lista } = cobCalc(), conAj = ajHayCambio();     // la columna de ajustes va SOLO con ajustes y siempre al final
   const head = ['COD_EMPLEADO','NOMBRE','DEPARTAMENTO','COMPANIA','VINCULO','INGRESO','FIN VIGENCIA',
     'PRIMER DIA VIGENTE','ULTIMO DIA VIGENTE','DIAS DEL CICLO','DIAS VIGENTES','DIAS FUERA DE VIGENCIA',
     'DIAS CON TURNO','% TURNO CARGADO (SOBRE DIAS VIGENTES)','DIAS SIN TURNO','DIAS CON JORNADA','JORNADAS SIN MARCAR',
-    '% MARCO CUANDO TENIA JORNADA','DIAS QUE MARCO','MARCO SIN TURNO'];
+    '% MARCO CUANDO TENIA JORNADA','DIAS QUE MARCO','MARCO SIN TURNO', ...(conAj ? ['DIAS AJUSTADOS'] : [])];
   const body = lista.map(o=>[o.id, o.emp.nombre, o.emp.depto||'', o.emp.empresa||'',
     o.emp.vinculo||'ACTIVO', o.emp.ingreso||'', o.emp.vigFin||'', o.ini||'', o.fin||'',
     C.dates.length, o.vig, o.fuera,
     o.asig, o.pctAsig==null?'':+o.pctAsig.toFixed(1), o.perdAsig,
     o.jornada, o.falta, o.pctMarca==null?'':+o.pctMarca.toFixed(1),
-    o.marco, o.sinturno]);
+    o.marco, o.sinturno, ...(conAj ? [o.diasAj] : [])]);
   return [head, ...body];
 }
 
 function aoaCoberturaDep(){
-  const { lista } = cobCalc();
+  const { lista } = cobCalc(), conAj = ajHayCambio();
   const porDep = new Map();
   lista.forEach(o=>{ const k=o.emp.depto||SIN_DEP;
     if(!porDep.has(k)) porDep.set(k,[]); porDep.get(k).push(o); });
   const head = ['DEPARTAMENTO','EMPLEADOS','DIAS VIGENTES','DIAS CON TURNO','% TURNO CARGADO (SOBRE DIAS VIGENTES)',
-    'DIAS SIN TURNO','DIAS CON JORNADA','JORNADAS SIN MARCAR','% MARCO CUANDO TENIA JORNADA','DIAS QUE MARCO'];
+    'DIAS SIN TURNO','DIAS CON JORNADA','JORNADAS SIN MARCAR','% MARCO CUANDO TENIA JORNADA','DIAS QUE MARCO', ...(conAj ? ['DIAS AJUSTADOS'] : [])];
   const fila = (dep,t)=>[dep, t.emp, t.vig, t.asig, t.pctAsig==null?'':+t.pctAsig.toFixed(1),
-    t.perdAsig, t.jornada, t.falta, t.pctMarca==null?'':+t.pctMarca.toFixed(1), t.marco];
+    t.perdAsig, t.jornada, t.falta, t.pctMarca==null?'':+t.pctMarca.toFixed(1), t.marco, ...(conAj ? [t.diasAj] : [])];
   const body = [...porDep.entries()].map(([dep,ls])=>fila(dep, cobAgregar(ls)))
     .sort((a,b)=>(a[4]===''?999:a[4])-(b[4]===''?999:b[4]));
   return [head, ...body, fila('TOTAL', cobAgregar(lista))];
@@ -5016,7 +5118,7 @@ function hookCob(){
   on('#tCobDep','click', ev=>{
     const th = ev.target && ev.target.closest ? ev.target.closest('th[data-ord]') : null;
     if(th && RESULT){ COB_ORD = th.dataset.ord; renderCob(); } });
-  if($('#expCob')) $('#expCob').onclick = ()=>RESULT&&save({'Alcance':aoaAlcance(), 'Por empleado':aoaCobertura(),
+  if($('#expCob')) $('#expCob').onclick = ()=>RESULT&&save({'Alcance':aoaAlcance(resultadoOriginal(RESULT)).concat(ajNotaAlcance()), 'Por empleado':aoaCobertura(),
     'Por departamento':aoaCoberturaDep()}, `Adopcion_${alcanceHay()?'alcance_':''}${RESULT.cfg.ini}_${RESULT.cfg.fin}.xlsx`);
   if($('#pdfCob')) $('#pdfCob').onclick = ()=>{
     if(!RESULT){ toast('Primero calcule el ciclo.'); return; }
@@ -6436,6 +6538,9 @@ function renderCons(){
   const R = RESULT, cols = conceptCols(R.cfg);
   const list = consFiltrado();
   const conLact = !!(MODEL && MODEL.lactancia);       // sin archivo de lactancia no se pinta nada
+  const conAj = ajHayCambio();                              // sin ajustes de horario no hay columna «Ajustes»
+  const celdaAj = e=>{ const n = ajDiasCambiados(MODEL, e.emp.id, R.cfg);
+    return n ? `<td class="num" data-col="aj" style="color:var(--adj)">${n}</td>` : '<td class="num muted" data-col="aj">—</td>'; };
   if($('#fLact')) $('#fLact').style.display = conLact ? '' : 'none';
   $('#fInfo').textContent = filtroHay() ? `${list.length} de ${R.cons.length}` : '';
 
@@ -6445,7 +6550,7 @@ function renderCons(){
      <th class="num cw" data-col="ord" data-tip="Suma de las horas fijas de los turnos del ciclo. Se acreditan completas aunque algun dia haya trabajado de menos; ese faltante esta en la columna Pendientes."><b>Ordin.</b><i>jornada fija</i></th>
      <th class="num cw" data-col="pend" data-tip="Horas que le faltaron para completar sus turnos en el ciclo y aun asi se le pagaron. Es el sustento para un reclamo, no un descuento."><b>Pend.</b><i>no cumplidas</i></th>
      <th class="num cw" data-col="extra" data-tip="Sobretiempo del ciclo, contado desde el fin de cada turno con la escalera (25 min la primera media hora, luego 10 min antes de cada media hora siguiente)."><b>Extras</b><i>escalera</i></th>
-     <th data-col="perfil">Perfil</th>${conLact ? '<th data-col="lact" data-tip="Etapa de lactancia vigente dentro del ciclo (archivo de lactancia): 6 meses o 24 meses.">Lactancia</th>' : ''}<th data-col="aut" data-nov="F-09">Autoriz.</th><th data-col="estado">Estado</th></tr>`;
+     <th data-col="perfil">Perfil</th>${conLact ? '<th data-col="lact" data-tip="Etapa de lactancia vigente dentro del ciclo (archivo de lactancia): 6 meses o 24 meses.">Lactancia</th>' : ''}${conAj ? '<th class="num" data-col="aj" data-tip="' + ajA('Son ' + AJ_DIAS_TXT + '. La nómina usa el turno ajustado.') + '">Ajustes</th>' : ''}<th data-col="aut" data-nov="F-09">Autoriz.</th><th data-col="estado">Estado</th></tr>`;
 
   $('#tCons tbody').innerHTML = list.map(e=>{
     if(!e.tieneConceptos) return `<tr class="clickable" data-id="${esc(e.emp.id)}" style="opacity:.6">
@@ -6456,7 +6561,7 @@ function renderCons(){
        <td class="num cw" data-col="ord">${fmt(e.ordH)}</td>
        <td class="num cw ${e.pendH?'pend':''}" data-col="pend">${fmt(e.pendH)}</td>
        <td class="num cw" data-col="extra">${fmt(e.extraH)}</td>
-       <td data-col="perfil"><span class="tag ${e.perfil==='ADMINISTRATIVO'?'t-info':'t-mut'}">${e.perfil[0]}${e.perfil.slice(1).toLowerCase()}</span></td>${conLact ? `<td data-col="lact">${lactChips(e.lact)}</td>` : ''}
+       <td data-col="perfil"><span class="tag ${e.perfil==='ADMINISTRATIVO'?'t-info':'t-mut'}">${e.perfil[0]}${e.perfil.slice(1).toLowerCase()}</span></td>${conLact ? `<td data-col="lact">${lactChips(e.lact)}</td>` : ''}${conAj ? celdaAj(e) : ''}
        <td class="muted" data-col="aut">—</td>
        <td data-col="estado"><span class="tag t-mut" data-tip="No genera ningún concepto de nómina en el ciclo. No sale en el archivo de Sinergy (H-02).">Sin conceptos</span></td></tr>`;
     const alerts = R.exc.filter(x=>x.id===e.emp.id);
@@ -6473,13 +6578,13 @@ function renderCons(){
        <td class="num cw" data-col="ord">${fmt(e.ordH)}</td>
        <td class="num cw ${e.pendH?'pend':''}" data-col="pend">${fmt(e.pendH)}</td>
        <td class="num cw" data-col="extra">${fmt(e.extraH)}</td>
-       <td data-col="perfil"><span class="tag ${e.perfil==='ADMINISTRATIVO'?'t-info':'t-mut'}">${e.perfil[0]}${e.perfil.slice(1).toLowerCase()}</span></td>${conLact ? `<td data-col="lact">${lactChips(e.lact)}</td>` : ''}
+       <td data-col="perfil"><span class="tag ${e.perfil==='ADMINISTRATIVO'?'t-info':'t-mut'}">${e.perfil[0]}${e.perfil.slice(1).toLowerCase()}</span></td>${conLact ? `<td data-col="lact">${lactChips(e.lact)}</td>` : ''}${conAj ? celdaAj(e) : ''}
        <td data-col="aut">${ e.noAut  ? `<span class="tag t-err" data-nov="F-03">${e.noAut} rechaz.</span>`
                       : e.sinAut ? `<span class="tag t-warn" data-nov="F-09">${e.sinAut} sin autorizar</span>`
                       : e.extraH ? `<span class="tag t-ok">Autorizado</span>`
                       : `<span class="tag t-mut">sin extras</span>` }</td>
        <td data-col="estado">${st}</td></tr>`;
-  }).join('') || `<tr><td colspan="${5 + cols.length + 4 + 1 + (conLact ? 1 : 0) + 2}" class="muted" style="padding:18px">${
+  }).join('') || `<tr><td colspan="${5 + cols.length + 4 + 1 + (conLact ? 1 : 0) + (conAj ? 1 : 0) + 2}" class="muted" style="padding:18px">${
     filtroHay() ? 'Ningún empleado coincide con el filtro activo.'
                 : 'Sin empleados con conceptos en el ciclo.'}</td></tr>`;
   $('#kpis').dataset.modo = $('#fSinConc').checked ? 'todos' : 'h02';
@@ -6554,7 +6659,7 @@ function renderCols(){
 let COLS_CONS_OCULTAS = colsLeer('mb_colsCons');
 const COLS_CONS_DATOS = [['dep','Departamento'],['cargo','Cargo'],['cia','Compañía']];
 const COLS_CONS_HORAS = [['hrs','Horas trabajadas'],['ord','Ordinarias'],['pend','Pendientes'],['extra','Extras']];
-const COLS_CONS_OTROS = [['perfil','Perfil'],['lact','Lactancia'],['aut','Autorización'],['estado','Estado']];
+const COLS_CONS_OTROS = [['perfil','Perfil'],['lact','Lactancia'],['aj','Ajustes de horario'],['aut','Autorización'],['estado','Estado']];
 
 function aplicarColsCons(){
   const st = $('#colConsStyle'); if(!st) return;
@@ -6574,7 +6679,7 @@ function renderColsCons(){
     caja('Datos de la persona', COLS_CONS_DATOS.map(([k,l])=>chk(k,l)).join('')) +
     (cols.length ? caja('Conceptos de nómina', cols.map(c=>chk('c-'+c.code, c.code)).join('')) : '') +
     caja('Horas', COLS_CONS_HORAS.map(([k,l])=>chk(k,l)).join('')) +
-    caja('Otros', COLS_CONS_OTROS.filter(([k])=>k!=='lact' || conLact).map(([k,l])=>chk(k,l)).join(''));
+    caja('Otros', COLS_CONS_OTROS.filter(([k])=>(k!=='lact' || conLact) && (k!=='aj' || ajHayCambio())).map(([k,l])=>chk(k,l)).join(''));
   $$('#colsConsBox input[data-col-chk]').forEach(i => i.onchange = () => {
     const k = i.dataset.colChk;
     if(i.checked) COLS_CONS_OCULTAS.delete(k); else COLS_CONS_OCULTAS.add(k);
@@ -6945,12 +7050,14 @@ const stamp = () => `${filtroSlug()}_${RESULT.cfg.ini}_${RESULT.cfg.fin}`.replac
 function aoaCons(){
   const cols = conceptCols(RESULT.cfg);
   const conLact = !!(MODEL && MODEL.lactancia);
+  const conAj = ajHayCambio();                            // la columna de ajustes va SOLO con ajustes y siempre al final
   const head = ['COD_EMPLEADO','NOMBRE', ...cols.map(c=>c.head),
                 'HORAS TRABAJADAS','HORAS ORDINARIAS','HORAS PENDIENTES','HORAS EXTRA',
                 'DIAS SIN AUTORIZAR','DIAS RECHAZADOS','DIAS CON DESVIO',
                 'PERFIL','CARGO','DEPARTAMENTO','COMPANIA','VINCULO','FECHA DE RETIRO',
                 'EN ARCHIVO SINERGY',
-                ...(conLact ? ['ETAPA LACTANCIA','DIAS EN LACTANCIA','DIAS CON CREDITO LACTANCIA','MIN LACTANCIA 6M','MIN LACTANCIA 24M'] : [])];
+                ...(conLact ? ['ETAPA LACTANCIA','DIAS EN LACTANCIA','DIAS CON CREDITO LACTANCIA','MIN LACTANCIA 6M','MIN LACTANCIA 24M'] : []),
+                ...(conAj ? ['DIAS CON AJUSTE DE HORARIO'] : [])];
   const body = consFiltrado().map(e=>[
     e.emp.id, e.emp.nombre,
     ...cols.map(c=>e.tot[c.key]||''),
@@ -6959,7 +7066,8 @@ function aoaCons(){
     e.perfil, e.emp.cargo, e.emp.depto, e.emp.empresa||'',
     e.emp.vinculo||'ACTIVO', e.emp.retiro||'',
     e.tieneConceptos?'SI':'NO',
-    ...(conLact ? filaLactCons(e) : []) ]);
+    ...(conLact ? filaLactCons(e) : []),
+    ...(conAj ? [ajDiasCambiados(MODEL, e.emp.id, RESULT.cfg)] : []) ]);
   return [head, ...body];
 }
 function aoaDet(e){

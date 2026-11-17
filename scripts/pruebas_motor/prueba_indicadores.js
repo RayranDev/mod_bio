@@ -165,6 +165,8 @@ for (const [nombre, html] of Object.entries(FILES)) {
   ok('cableado de la pestana corre sin errores', api.__errores.length === 0, api.__errores.slice(0, 2).join(' | '));
   salida[nombre] = t1 + '\n====\n' + t2 + '\n====\n' + t2b + '\n====\n' + t3 + '\n====\n' + JSON.stringify(hojas);
 }
-ok('los dos archivos pintan y exportan EXACTAMENTE lo mismo', salida.COMPLETO === salida.RRHH);
+// El encabezado de impresion trae la hora de generacion: se quita para no depender del reloj.
+const sinHora = t => t.replace(/generado [0-9\/,: .apm]*/gi, 'generado ');
+ok('los dos archivos pintan y exportan EXACTAMENTE lo mismo', sinHora(salida.COMPLETO) === sinHora(salida.RRHH));
 console.log(fallos ? 'FALLOS: ' + fallos : 'INDICADORES OK');
 process.exit(fallos ? 1 : 0);
