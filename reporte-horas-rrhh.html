@@ -133,9 +133,9 @@
   body[data-modo="reportes"] .setup{display:none}
   body[data-modo="setup"] #reportes{display:none}
   #btnVolver[hidden]{display:none}
-  dialog#dlgDisp,dialog#dlgAutor,dialog#dlgCols,dialog#dlgColsAs,dialog#dlgColsCons,dialog#dlgLact{border:1px solid var(--line);border-radius:8px;padding:16px 18px;
+  dialog#dlgDisp,dialog#dlgAutor,dialog#dlgCols,dialog#dlgColsAs,dialog#dlgColsCons,dialog#dlgLact,dialog#dlgImportCfg{border:1px solid var(--line);border-radius:8px;padding:16px 18px;
     max-width:860px;width:92vw;max-height:86vh;overflow:auto;background:#fff;color:var(--fg)}
-  dialog#dlgDisp::backdrop,dialog#dlgAutor::backdrop,dialog#dlgCols::backdrop,dialog#dlgColsAs::backdrop,dialog#dlgColsCons::backdrop,dialog#dlgLact::backdrop{background:rgba(10,14,20,.55)}
+  dialog#dlgDisp::backdrop,dialog#dlgAutor::backdrop,dialog#dlgCols::backdrop,dialog#dlgColsAs::backdrop,dialog#dlgColsCons::backdrop,dialog#dlgLact::backdrop,dialog#dlgImportCfg::backdrop{background:rgba(10,14,20,.55)}
   dialog#dlgAutor h3{font-size:13px;margin:0 0 4px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted)}
   .aut{background:#fff;border:1px solid var(--line);border-radius:6px;padding:10px 12px;margin-bottom:10px}
   .aut h3{font-size:12px;margin:0 0 8px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted)}
@@ -411,6 +411,9 @@
   <span id="hdrCarga" class="sub" data-tip="Archivos cargados en esta sesión. Si falta Renuncias, quien ya salió de la empresa aparece como activo y sin marcar."></span>
   <span id="status" class="sub">Sin datos cargados</span>
   <button id="btnVolver" hidden title="Volver a cargar archivos o cambiar parámetros">&#8592; Datos y parámetros</button>
+  <button id="btnExportCfg" title="Guarda en un .json los parámetros, perfiles, autorizaciones, dispositivos y preferencias. No incluye los Excel ni la lactancia.">Exportar configuración</button>
+  <button id="btnImportCfg" title="Carga un .json de configuración exportado antes. Los Excel cargados se conservan.">Importar configuración</button>
+  <input type="file" id="fImportCfg" accept=".json,application/json" style="display:none">
   <button id="btnGear" title="Configuración avanzada" aria-label="Configuración avanzada">&#9881;</button>
 </header>
 
@@ -535,6 +538,14 @@
   <div class="bar" style="margin-top:12px">
     <button id="btnColsConsAll">Mostrar todas</button>
     <button id="btnColsConsClose">Cerrar</button>
+  </div>
+</dialog>
+
+<dialog id="dlgImportCfg">
+  <div id="cfgImpBody"></div>
+  <div class="bar" style="margin-top:12px">
+    <button class="primary" id="btnCfgImpOk" disabled>Reemplazar</button>
+    <button id="btnCfgImpCancel">Cancelar</button>
   </div>
 </dialog>
 
@@ -665,6 +676,7 @@
     </details>
   </div>
   <div class="dlg-foot">
+    <button id="btnParamsReset" style="margin-right:auto" title="Vuelve cada parámetro al valor con que viene la herramienta">Restaurar parámetros por defecto</button>
     <button id="btnGearApply" class="primary">Aplicar y recalcular</button>
     <button id="btnGearClose2">Cerrar</button>
   </div>
@@ -1652,9 +1664,12 @@ function round05(min){
  *  completarse (default 10): 1,0 h a los 50 min, 1,5 h a los 80, 2,0 h a los 110, y así.
  *  Ambos números son parámetros del formulario, no constantes del código. */
 function escalera(min, cfg){
-  if(min < cfg.escPrimer) return 0;
+  if(!Number.isFinite(min) || min < cfg.escPrimer) return 0;
+  /* Gracia saneada: no finita => 0; fuera de [0,29] se acota. Con valores normales (10) no cambia nada,
+     y el bucle queda acotado por min (antes una gracia infinita lo dejaba girando para siempre). */
+  const g = Number.isFinite(cfg.escGracia) ? Math.min(Math.max(cfg.escGracia, 0), 29) : 0;
   let n = 1;
-  while(min >= 30*(n+1) - cfg.escGracia) n++;
+  while(n < 2000 && min >= 30*(n+1) - g) n++;
   return n*0.5;
 }
 
@@ -2048,6 +2063,389 @@ function readConfig(){
   };
   cfg.corteOn = cfg.corte && cfg.fin >= cfg.corte;      // H-06
   return cfg;
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   PARÁMETROS PERSISTENTES Y ARCHIVO DE CONFIGURACIÓN
+   · Los parámetros del formulario se guardan en localStorage.mb_params y se reponen al abrir la
+     página. Los valores por defecto son los del propio HTML (PARAM_DEFAULTS), capturados antes de
+     aplicar lo guardado. El rango del ciclo (cIni/cFin) NO se guarda ni se exporta: cambia cada mes
+     y uno viejo dejaría vacío el ciclo nuevo (checkReady solo lo sugiere si el campo está vacío).
+   · El archivo de configuración (.json) lleva ese estado más lo que ya se guardaba por separado
+     (perfiles, confianza, autorizaciones, dispositivos, alcance, rotación, columnas) para llevarlo
+     a otro navegador o a otra persona. NUNCA lleva los Excel ni la lactancia.
+   · Importar valida TODO antes de tocar nada (atómico) y muta los globales en sitio: nunca recarga
+     la página, porque se perderían los Excel cargados.
+   ══════════════════════════════════════════════════════════════════ */
+const PARAM_IDS = ['cIni','cFin','cNocIni','cNocFin','cUmbral','cAnclaje','cDoble','cImpar','cTolIni','cTolFin',
+  'cAdmin','cCorte','cDesc','cDom','cDescRec','cInfer','cRedon','cTolPunt','cAutor','cAusAviso','cAusGrave',
+  'cIngMasivo','cRetMasivo','cEscPrimer','cEscGracia','cCafeAdm','cLactMin6','cLactMin24','cTransAviso',
+  'cExtraPref','cExtraPaso','cMinDias','cSemIni','cSemHora'];
+const PARAM_CICLO = ['cIni','cFin'];
+const PARAM_GUARDAR = PARAM_IDS.filter(k=>!PARAM_CICLO.includes(k));
+const CFG_FORMATO = 'mod_bio-config';
+const CFG_VERSION = 1;
+const CFG_CLAVES = ['formato','version','generado','herramienta','parametros','perfiles','confianza',
+  'autorizaciones','dispositivos','ajustesHorario','alcance','rotacion','columnas'];
+const CFG_PERFILES = ['ROTATIVO','ADMINISTRATIVO'];
+const COLS_CLAVE = /^[\w-]+$/;       // las claves de columna acaban dentro de un selector CSS: solo letras, cifras, _ y -
+/** Lista guardada de columnas ocultas. Descarta lo que no sea una clave segura, para que un
+ *  localStorage envenenado (o un .json importado antes de esta validacion) no pueda inyectar CSS. */
+function colsLeer(clave){
+  try{
+    const a = JSON.parse(localStorage.getItem(clave)||'[]');
+    return new Set(Array.isArray(a) ? a.filter(x=>typeof x==='string' && COLS_CLAVE.test(x)) : []);
+  }catch(e){ return new Set(); }
+}
+
+/** Valores actuales de los controles de parámetros (sin el rango del ciclo). */
+function leerParametrosForm(){
+  const o = {};
+  PARAM_GUARDAR.forEach(k=>{ const el = document.getElementById(k); if(el) o[k] = String(el.value); });
+  return o;
+}
+/** Valor que trae el HTML (sus atributos), no lo que el navegador haya restaurado al recargar. */
+function paramDefaultDe(el){
+  if(el.options && el.options.length){
+    const o = [...el.options].find(x=>x.defaultSelected) || el.options[0];
+    return String(o.value);
+  }
+  return String(el.defaultValue !== undefined ? el.defaultValue : el.value);
+}
+function paramDefaults(){
+  const d = {};
+  PARAM_GUARDAR.forEach(k=>{ const el = document.getElementById(k); if(el) d[k] = paramDefaultDe(el); });
+  return d;
+}
+const PARAM_DEFAULTS = paramDefaults();
+
+/** ¿Es un valor aceptable para ese control? Un select solo acepta sus opciones. */
+function paramValido(k, v){
+  const el = document.getElementById(k);
+  if(!el || typeof v !== 'string') return false;
+  if(el.options && el.options.length) return [...el.options].some(o=>String(o.value)===v);
+  if(el.type==='number'){
+    if(v==='') return true;
+    if(!/^-?\d+(\.\d+)?$/.test(v)) return false;           // sin espacios, 0x10, 1e308, NaN ni Infinity
+    const n = +v, lim = x => (x==null || x==='') ? null : +x;
+    const mn = lim(el.min), mx = lim(el.max);
+    if(!Number.isFinite(n) || Math.abs(n) > 1e6) return false;   // tope duro: ningun parametro real se le acerca
+    if(mn!==null && Number.isFinite(mn) && n < mn) return false;
+    if(mx!==null && Number.isFinite(mx) && n > mx) return false;
+    return true;
+  }
+  if(el.type==='date'){
+    if(v==='') return true;
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
+    const t = new Date(v+'T00:00:00Z'); return !isNaN(t) && t.toISOString().slice(0,10)===v;
+  }
+  if(el.type==='time') return v==='' || /^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/.test(v);
+  return v.length <= 200;
+}
+/** El texto que ve la persona: el rótulo del campo y, en un select, el texto de la opción. */
+function paramEtiqueta(k){
+  const el = document.getElementById(k), p = el && el.parentElement;
+  const l = p && p.querySelector ? p.querySelector('label') : null;
+  return l && l.textContent ? l.textContent.replace(/\s+/g,' ').trim() : k;
+}
+function paramTexto(k, v){
+  const el = document.getElementById(k);
+  const o = el && el.options ? [...el.options].find(x=>String(x.value)===v) : null;
+  return o && o.text ? o.text.trim() : v;
+}
+/** Repone los parámetros guardados. Un id que ya no existe o un valor que ya no es válido se ignora. */
+function aplicarParametrosGuardados(){
+  let g = null;
+  try{ g = JSON.parse(localStorage.getItem('mb_params')||'null'); }catch(e){ g = null; }
+  if(!g || typeof g!=='object' || Array.isArray(g)) return 0;
+  let n = 0;
+  PARAM_GUARDAR.forEach(k=>{
+    if(Object.prototype.hasOwnProperty.call(g,k) && paramValido(k, g[k])){
+      document.getElementById(k).value = g[k]; n++; }
+  });
+  return n;
+}
+/** Guarda SOLO lo que difiere del default del HTML: así un default que cambie en una versión
+ *  nueva le llega a quien nunca tocó ese parámetro. Sin cambios queda '{}'. */
+function guardarParametros(){
+  const act = leerParametrosForm(), dif = {};
+  Object.keys(act).forEach(k=>{ if(act[k]!==PARAM_DEFAULTS[k]) dif[k] = act[k]; });
+  try{ localStorage.setItem('mb_params', JSON.stringify(dif)); }catch(e){}
+}
+/** Vuelve cada parámetro al valor del HTML y borra lo guardado. No recalcula: eso lo decide quien llama. */
+function restaurarParametros(){
+  PARAM_GUARDAR.forEach(k=>{ const el = document.getElementById(k); if(el && k in PARAM_DEFAULTS) el.value = PARAM_DEFAULTS[k]; });
+  try{ localStorage.setItem('mb_params', '{}'); }catch(e){}
+}
+aplicarParametrosGuardados();     // al cargar, antes de cualquier render
+
+/* ── exportar ── */
+function configNombre(f){
+  const p = n => String(n).padStart(2,'0');
+  return `mod_bio_config_${f.getFullYear()}-${p(f.getMonth()+1)}-${p(f.getDate())}_${p(f.getHours())}${p(f.getMinutes())}.json`;
+}
+/** Arma el archivo desde el estado en memoria (no desde localStorage crudo). Todo ordenado: dos
+ *  exportaciones del mismo estado salen iguales. Solo ids y valores; nunca nombres ni los Excel. */
+function configArmar(fecha){
+  const f = fecha || new Date(), p = n => String(n).padStart(2,'0');
+  const ord = o => { const r = {}; Object.keys(o).sort().forEach(k=>{ r[k] = JSON.parse(JSON.stringify(o[k])); }); return r; };
+  return {
+    formato: CFG_FORMATO, version: CFG_VERSION,
+    generado: `${f.getFullYear()}-${p(f.getMonth()+1)}-${p(f.getDate())}T${p(f.getHours())}:${p(f.getMinutes())}:${p(f.getSeconds())}`,
+    herramienta: typeof renderGlosario==='function' ? 'completa' : 'rrhh',
+    parametros: leerParametrosForm(),
+    perfiles: ord(PERFILES),
+    confianza: [...CONFIANZA].sort(),
+    autorizaciones: ord(AUTOR),
+    dispositivos: ord(DISPOSITIVOS),
+    ajustesHorario: [],
+    alcance: { deptosExcluidos: [...KPI_EXCL].sort() },
+    rotacion: { mesesNoConfiables: [...ROT.noConf].sort() },
+    columnas: { detalle: [...COLS_OCULTAS].sort(), consolidado: [...COLS_CONS_OCULTAS].sort(), asistencia: [...COLS_ASIS_OCULTAS].sort() }
+  };
+}
+function exportarConfig(){
+  const f = new Date(), nombre = configNombre(f);
+  const blob = new Blob([JSON.stringify(configArmar(f), null, 2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = nombre;
+  a.click(); URL.revokeObjectURL(a.href);
+  toast('Configuración exportada: '+nombre);
+}
+
+/* ── importar: validar todo antes de aplicar nada ── */
+function configValidar(texto){
+  const errores = [], avisos = [], d = {};
+  const falla = m => ({ ok:false, errores:[m], avisos, datos:null, meta:null });
+  let o;
+  try{ o = JSON.parse(texto); }catch(e){ return falla('El archivo no es un JSON legible ('+e.message+').'); }
+  const esObj = x => !!x && typeof x==='object' && !Array.isArray(x);
+  if(!esObj(o) || o.formato!==CFG_FORMATO)
+    return falla(`No es un archivo de configuración de esta herramienta (falta el formato «${CFG_FORMATO}»).`);
+  if(typeof o.version!=='number' || !Number.isInteger(o.version) || o.version<1)
+    return falla('La versión del archivo no es válida.');
+  if(o.version>CFG_VERSION)
+    return falla(`El archivo es de la versión ${o.version} y esta herramienta solo entiende hasta la ${CFG_VERSION}. Actualice la herramienta.`);
+  Object.keys(o).forEach(k=>{ if(!CFG_CLAVES.includes(k)) avisos.push(`Clave desconocida «${k}»: se ignora.`); });
+  /* un id plausible (el proyecto los trata con normId: sin espacios ni ceros a la izquierda); nunca un nombre */
+  const idOk = s => /^[\w.-]{1,32}$/.test(s) && s!=='__proto__';
+  const fechaOk = s => { if(typeof s!=='string' || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+    const t = new Date(s+'T00:00:00Z'); return !isNaN(t) && t.toISOString().slice(0,10)===s; };
+  /* lista de textos no vacíos, sin repetidos; `valido` revisa cada uno ya normalizado */
+  const lista = (x, etq, norm, valido)=>{
+    if(!Array.isArray(x) || x.some(s=>typeof s!=='string' || !s.trim())){
+      errores.push(`${etq}: debe ser una lista de textos no vacíos.`); return null; }
+    const r = [...new Set(x.map(s=>norm ? norm(s.trim()) : s.trim()))];
+    const mal = valido ? r.filter(s=>!valido(s)) : [];
+    if(mal.length){ errores.push(`${etq}: valor(es) no válido(s): ${mal.join(', ')}.`); return null; }
+    return r;
+  };
+  /* objeto id → valor; `f` devuelve el valor normalizado, o undefined (con su error ya anotado) */
+  const mapa = (x, etq, f, esId)=>{
+    if(!esObj(x)){ errores.push(`${etq}: debe ser un objeto.`); return null; }
+    const r = {};
+    Object.keys(x).forEach(k0=>{
+      const k = esId ? normId(k0) : k0;
+      if(!k.trim() || k==='__proto__' || (esId && !idOk(k))){ errores.push(`${etq}: clave no válida «${k0}»${esId ? ' (el archivo solo lleva ids)' : ''}.`); return; }
+      if(Object.prototype.hasOwnProperty.call(r, k)){ errores.push(`${etq}: el id «${k}» está repetido.`); return; }
+      const v = f(x[k0], k);
+      if(v!==undefined) r[k] = v;
+    });
+    return r;
+  };
+  if(o.parametros!==undefined){
+    if(!esObj(o.parametros)) errores.push('Parámetros: debe ser un objeto.');
+    else{
+      d.parametros = {};
+      Object.keys(o.parametros).forEach(k=>{
+        if(!PARAM_GUARDAR.includes(k) || !document.getElementById(k)){ avisos.push(`Parámetro desconocido «${k}»: se ignora.`); return; }
+        if(paramValido(k, o.parametros[k])) d.parametros[k] = o.parametros[k];
+        else errores.push(`Parámetro «${k}»: el valor ${JSON.stringify(o.parametros[k])} no es válido para ese campo.`);
+      });
+    }
+  }
+  if(o.perfiles!==undefined){
+    const r = mapa(o.perfiles, 'Perfiles', (v,k)=>{
+      if(CFG_PERFILES.includes(v)) return v;
+      errores.push(`Perfiles: «${k}» trae un perfil no válido (${JSON.stringify(v)}).`); }, true);
+    if(r) d.perfiles = r;
+  }
+  if(o.confianza!==undefined){
+    const r = lista(o.confianza, 'Dirección y confianza', normId, idOk);
+    if(r) d.confianza = r;
+  }
+  if(o.autorizaciones!==undefined){
+    const r = mapa(o.autorizaciones, 'Autorizaciones de extras', (v,k)=>{
+      if(!Array.isArray(v)){ errores.push(`Autorizaciones de extras: «${k}» debe ser una lista de rangos.`); return; }
+      const rangos = [];
+      v.forEach((x,i)=>{
+        const donde = `Autorizaciones de extras: «${k}», rango ${i+1}`;
+        if(!esObj(x)){ errores.push(`${donde}: debe ser un objeto.`); return; }
+        if(!fechaOk(x.ini) || !fechaOk(x.fin) || x.ini>x.fin){ errores.push(`${donde}: fechas «ini» y «fin» no válidas.`); return; }
+        if(x.estado!=='AUT' && x.estado!=='NO'){ errores.push(`${donde}: el estado debe ser AUT o NO.`); return; }
+        if(x.motivo!==undefined && typeof x.motivo!=='string'){ errores.push(`${donde}: el motivo debe ser texto.`); return; }
+        rangos.push({ ini:x.ini, fin:x.fin, estado:x.estado, motivo:x.motivo||'' });
+      });
+      return rangos.length ? rangos : undefined; }, true);
+    if(r) d.autorizaciones = r;
+  }
+  if(o.dispositivos!==undefined){
+    const r = mapa(o.dispositivos, 'Dispositivos', (v,k)=>{
+      if(ROLES.some(x=>x[0]===v)) return v;
+      errores.push(`Dispositivos: «${k}» trae un rol no válido (${JSON.stringify(v)}).`); });
+    if(r) d.dispositivos = r;
+  }
+  if(o.ajustesHorario!==undefined){
+    /* Clave reservada para los ajustes de horario: esta versión la tolera pero no la aplica. */
+    if(!Array.isArray(o.ajustesHorario)) errores.push('Ajustes de horario: debe ser una lista.');
+    else{
+      d.ajustesHorario = o.ajustesHorario.length;
+      if(d.ajustesHorario) avisos.push(`Ajustes de horario: ${d.ajustesHorario} en el archivo; esta versión todavía no los aplica y se ignoran.`);
+    }
+  }
+  if(o.alcance!==undefined){
+    if(!esObj(o.alcance)) errores.push('Alcance: debe ser un objeto.');
+    else{
+      Object.keys(o.alcance).forEach(k=>{ if(k!=='deptosExcluidos') avisos.push(`Alcance: clave desconocida «${k}»: se ignora.`); });
+      if(o.alcance.deptosExcluidos!==undefined){
+        const r = lista(o.alcance.deptosExcluidos, 'Alcance · departamentos excluidos', s=>s.toUpperCase());
+        if(r) d.deptosExcluidos = r;
+      }
+    }
+  }
+  if(o.rotacion!==undefined){
+    if(!esObj(o.rotacion)) errores.push('Rotación: debe ser un objeto.');
+    else{
+      Object.keys(o.rotacion).forEach(k=>{ if(k!=='mesesNoConfiables') avisos.push(`Rotación: clave desconocida «${k}»: se ignora.`); });
+      if(o.rotacion.mesesNoConfiables!==undefined){
+        const r = lista(o.rotacion.mesesNoConfiables, 'Rotación · meses no confiables', null, s=>/^\d{4}-(0[1-9]|1[0-2])$/.test(s));
+        if(r) d.mesesNoConfiables = r;
+      }
+    }
+  }
+  if(o.columnas!==undefined){
+    if(!esObj(o.columnas)) errores.push('Columnas: debe ser un objeto.');
+    else{
+      d.columnas = {};
+      Object.keys(o.columnas).forEach(k=>{ if(!['detalle','consolidado','asistencia'].includes(k)) avisos.push(`Columnas: clave desconocida «${k}»: se ignora.`); });
+      ['detalle','consolidado','asistencia'].forEach(k=>{
+        if(o.columnas[k]===undefined) return;
+        const r = lista(o.columnas[k], 'Columnas ocultas · '+k, null, s=>COLS_CLAVE.test(s));
+        if(r) d.columnas[k] = r;
+      });
+    }
+  }
+  return { ok: errores.length===0, errores, avisos, datos: errores.length ? null : d,
+           meta: { generado:o.generado, herramienta:o.herramienta, version:o.version } };
+}
+/** Parámetros del archivo que hoy tienen otro valor: [{id, etiqueta, actual, nuevo}]. */
+function configCambios(d){
+  const act = leerParametrosForm(), nuevo = d.parametros || {};
+  return Object.keys(nuevo).filter(k=>act[k]!==nuevo[k]).map(k=>({ id:k, etiqueta:paramEtiqueta(k),
+    actual:paramTexto(k, act[k]), nuevo:paramTexto(k, nuevo[k]) }));
+}
+function configVistaPrevia(r, nombre){
+  const meta = r.meta ? ` · generado ${esc(r.meta.generado||'?')} · herramienta ${esc(r.meta.herramienta||'?')}` : '';
+  let h = `<h3 style="margin:0 0 4px">Importar configuración</h3>`+
+          `<p class="muted" style="margin:0 0 10px">${esc(nombre||'')}${meta}</p>`;
+  if(r.errores.length){
+    h += `<p><span class="tag t-err">No se puede importar</span> No se aplicó nada. Corrija el archivo y vuelva a intentarlo.</p>`+
+         `<ul>${r.errores.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`;
+  }
+  if(r.avisos.length)
+    h += `<p class="muted" style="margin:8px 0 2px"><b>Avisos</b></p><ul>${r.avisos.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`;
+  if(r.ok){
+    const D = r.datos, rangos = o=>Object.values(o).reduce((s,l)=>s+l.length,0);
+    const fila = (etq, nuevo, ahora)=>`<li>${etq}: <b>${nuevo}</b> <span class="muted">(ahora: ${ahora})</span></li>`;
+    const cambios = D.parametros ? configCambios(D) : [], filas = [], ausentes = [];
+    /* una sección que el archivo no trae no se toca: se avisa para que no parezca que se borró */
+    const tiene = (c, etq, f)=>{ if(D[c]!==undefined) filas.push(f(etq)); else ausentes.push(etq.toLowerCase()); };
+    if(D.parametros) filas.push(`<li>Parámetros: <b>${Object.keys(D.parametros).length}</b>, de los cuales <b>${cambios.length}</b> cambian</li>`);
+    else ausentes.push('parámetros');
+    tiene('perfiles', 'Perfiles manuales', q=>fila(q, Object.keys(D.perfiles).length, Object.keys(PERFILES).length));
+    tiene('confianza', 'Dirección y confianza', q=>fila(q, D.confianza.length, CONFIANZA.size));
+    tiene('autorizaciones', 'Autorizaciones de extras', q=>fila(q, `${Object.keys(D.autorizaciones).length} personas, ${rangos(D.autorizaciones)} rangos`,
+      `${Object.keys(AUTOR).length} personas, ${rangos(AUTOR)} rangos`));
+    tiene('dispositivos', 'Roles de dispositivos', q=>fila(q, Object.keys(D.dispositivos).length, Object.keys(DISPOSITIVOS).length));
+    if(D.ajustesHorario) filas.push(`<li>Ajustes de horario: <b>${D.ajustesHorario}</b> <span class="muted">(esta versión no los aplica)</span></li>`);
+    tiene('deptosExcluidos', 'Departamentos excluidos del alcance', q=>fila(q, D.deptosExcluidos.length, KPI_EXCL.size));
+    tiene('mesesNoConfiables', 'Meses de rotación no confiables', q=>fila(q, D.mesesNoConfiables.length, ROT.noConf.size));
+    if(D.columnas && Object.keys(D.columnas).length)
+      filas.push(`<li>Columnas ocultas: ` + [['detalle','Detalle',COLS_OCULTAS],['consolidado','Consolidado',COLS_CONS_OCULTAS],['asistencia','Asistencia',COLS_ASIS_OCULTAS]]
+        .filter(([k])=>D.columnas[k]).map(([k,n,s])=>`${n} <b>${D.columnas[k].length}</b> <span class="muted">(ahora: ${s.size})</span>`).join(' · ') + `</li>`);
+    else ausentes.push('columnas ocultas');
+    h += `<p style="margin:8px 0 2px"><b>Qué trae el archivo</b></p><ul>${filas.join('')}</ul>`;
+    if(ausentes.length) h += `<p class="muted" style="margin:0 0 8px">No incluido en el archivo (se conserva lo actual): ${esc(ausentes.join(', '))}.</p>`;
+    h += cambios.length
+      ? `<p style="margin:8px 0 4px"><b>Parámetros que cambian</b></p><div class="scroll" style="max-height:34vh"><table><thead><tr><th>Parámetro</th><th>Ahora</th><th>Nuevo</th></tr></thead><tbody>`+
+        cambios.map(c=>`<tr><td>${esc(c.etiqueta)} <span class="muted mono">${esc(c.id)}</span></td><td>${esc(c.actual)}</td><td><b>${esc(c.nuevo)}</b></td></tr>`).join('')+`</tbody></table></div>`
+      : (D.parametros ? `<p class="muted" style="margin:8px 0 4px">Ningún parámetro cambia.</p>` : '');
+    h += `<p class="muted" style="margin:10px 0 0">«Reemplazar» sustituye esas secciones por lo del archivo. No se recarga la página ni se tocan los Excel cargados.</p>`;
+  }
+  return h;
+}
+let CFG_PEND = null;      // configuración ya validada, esperando el «Reemplazar»
+function abrirImportCfg(texto, nombre){
+  const r = configValidar(texto);
+  CFG_PEND = r.ok ? r.datos : null;
+  $('#cfgImpBody').innerHTML = configVistaPrevia(r, nombre);
+  $('#btnCfgImpOk').disabled = !r.ok;
+  $('#dlgImportCfg').showModal();
+  return r;
+}
+/** Aplica una configuración YA validada. Los globales se mutan en sitio (PERFILES, AUTOR y
+ *  DISPOSITIVOS son objetos compartidos); lo que es `let` se reasigna. No recarga la página. */
+function configAplicar(d){
+  const guardar = (k, v)=>{ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} };
+  const reemplazar = (obj, nuevo)=>{ Object.keys(obj).forEach(k=>delete obj[k]); Object.assign(obj, nuevo); };
+  if(d.parametros){
+    Object.keys(d.parametros).forEach(k=>{ document.getElementById(k).value = d.parametros[k]; });
+    guardarParametros();
+  }
+  if(d.perfiles){ reemplazar(PERFILES, d.perfiles); guardar('mb_perfiles', PERFILES); }
+  if(d.confianza){ CONFIANZA = new Set(d.confianza); guardar('mb_confianza', [...CONFIANZA]); }
+  if(d.autorizaciones){ reemplazar(AUTOR, d.autorizaciones); guardar('mb_autor', AUTOR); }
+  if(d.dispositivos){ reemplazar(DISPOSITIVOS, d.dispositivos); guardar('mb_dispositivos', DISPOSITIVOS); }
+  if(d.deptosExcluidos){
+    KPI_EXCL = new Set(d.deptosExcluidos); guardar('mb_kpi_excl', [...KPI_EXCL]);
+    if(KPI_EXCL.size) ALC.modoDep = 'excluir';          // igual que al arrancar con exclusiones guardadas
+  }
+  if(d.mesesNoConfiables){
+    ROT.noConf.clear(); d.mesesNoConfiables.forEach(m=>ROT.noConf.add(m));
+    guardar('mb_rot_meses', [...ROT.noConf]);
+  }
+  const c = d.columnas || {};
+  if(c.detalle){ COLS_OCULTAS = new Set(c.detalle); guardar('mb_colsDet', [...COLS_OCULTAS]); }
+  if(c.consolidado){ COLS_CONS_OCULTAS = new Set(c.consolidado); guardar('mb_colsCons', [...COLS_CONS_OCULTAS]); }
+  if(c.asistencia){ COLS_ASIS_OCULTAS = new Set(c.asistencia); guardar('mb_colsAsis', [...COLS_ASIS_OCULTAS]); }
+  aplicarCols(); aplicarColsCons(); aplicarColsAsis(); renderCols(); renderColsCons(); renderColsAsis();
+  if(CUR_EMP){ $('#selPerfil').value = PERFILES[CUR_EMP] || ''; $('#chkConfianza').checked = CONFIANZA.has(CUR_EMP); }
+  renderDisp();
+  if(RESULT){
+    const m = $('body').dataset.modo;                    // recalcular no debe cambiar de pantalla
+    runCalc(); if(m) modo(m);
+    alcPanel();
+  }
+}
+function confirmarImportCfg(){
+  if(!CFG_PEND) return;
+  configAplicar(CFG_PEND); CFG_PEND = null;
+  $('#dlgImportCfg').close();
+  toast('Configuración importada.');
+}
+function hookConfig(){
+  const on = (sel, prop, fn)=>{ const x = $(sel); if(x) x[prop] = fn; };
+  on('#btnExportCfg', 'onclick', exportarConfig);
+  on('#btnImportCfg', 'onclick', ()=>{ const f = $('#fImportCfg'); if(f) f.click(); });
+  on('#fImportCfg', 'onchange', async ev=>{
+    const f = ev.target.files && ev.target.files[0]; if(!f) return;
+    try{ abrirImportCfg(await f.text(), f.name); }
+    catch(err){ toast('No se pudo leer '+f.name+': '+err.message); }
+    ev.target.value = '';                                // permite elegir de nuevo el mismo archivo
+  });
+  on('#btnCfgImpOk', 'onclick', confirmarImportCfg);
+  on('#btnCfgImpCancel', 'onclick', ()=>{ CFG_PEND = null; $('#dlgImportCfg').close(); });
 }
 
 /** Depura marcaciones crudas: quita duplicadas exactas (A-06) y agrupa doble-toque (A-07).
@@ -2953,7 +3351,7 @@ const COLS_ASIS = [['nom','Nombres'],['ape','Apellidos'],['cia','Compañía'],['
   ['cargo','Cargo'],['ing','Fecha de ingreso'],['perfil','Perfil'],['vinc','Vínculo'],['estado','Estado'],['marcas','Marcaciones'],
   ['asist','Asistencia'],['pct','% asistencia'],['faltas','Días sin asistir'],
   ['sinturno','Marcó sin turno'],['ultima','Última marcación'],['sin','Días hábiles sin marcar']];
-let COLS_ASIS_OCULTAS = new Set(JSON.parse(localStorage.getItem('mb_colsAsis')||'[]'));
+let COLS_ASIS_OCULTAS = colsLeer('mb_colsAsis');
 
 function aplicarColsAsis(){
   $('#colAsisStyle').textContent = [...COLS_ASIS_OCULTAS]
@@ -5486,7 +5884,7 @@ function renderCons(){
 /* ── Columnas visibles del Detalle ────────────────────────────────────────────────
    Se guarda la lista de OCULTAS, no la de visibles: asi una columna nueva aparece
    sola en vez de quedar invisible para quien ya tenia una preferencia guardada. */
-let COLS_OCULTAS = new Set(JSON.parse(localStorage.getItem('mb_colsDet')||'[]'));
+let COLS_OCULTAS = colsLeer('mb_colsDet');
 
 const COLS_FIJAS = [['dia','Día'],['tipo','Tipo de día'],['turno','Turno'],
   ['prog','Programado'],['marcas','Marcaciones'],['ent','Entró'],['sal','Salió'],
@@ -5524,7 +5922,7 @@ function renderCols(){
    Mismo patron que Detalle y Asistencia: se guarda la lista de OCULTAS (una columna nueva
    aparece sola) y solo afecta la pantalla; el Excel sigue completo. COD_EMPLEADO y NOMBRE
    nunca se ocultan porque identifican la fila. */
-let COLS_CONS_OCULTAS = new Set(JSON.parse(localStorage.getItem('mb_colsCons')||'[]'));
+let COLS_CONS_OCULTAS = colsLeer('mb_colsCons');
 const COLS_CONS_DATOS = [['dep','Departamento'],['cargo','Cargo'],['cia','Compañía']];
 const COLS_CONS_HORAS = [['hrs','Horas trabajadas'],['ord','Ordinarias'],['pend','Pendientes'],['extra','Extras']];
 const COLS_CONS_OTROS = [['perfil','Perfil'],['lact','Lactancia'],['aut','Autorización'],['estado','Estado']];
@@ -6060,6 +6458,7 @@ function runCalc(){
   try{
     MODEL  = buildModel();
     const cfg = readConfig();
+    guardarParametros();
     marcarIngresosMasivos(MODEL, cfg);
     marcarRetirosMasivos(MODEL, cfg);
     RESULT = compute(MODEL, cfg);
@@ -6090,7 +6489,12 @@ document.addEventListener('DOMContentLoaded',()=>{
   $('#btnGear2').onclick = ()=>dlgConfig.showModal();
   $('#btnGearClose').onclick  = ()=>dlgConfig.close();
   $('#btnGearClose2').onclick = ()=>dlgConfig.close();
-  $('#btnGearApply').onclick  = ()=>{ dlgConfig.close(); if(RESULT) runCalc(); };
+  $('#btnGearApply').onclick  = ()=>{ dlgConfig.close(); guardarParametros(); if(RESULT) runCalc(); };
+  /* Aquí restaurar solo repone el formulario: los parámetros se aplican con "Aplicar y recalcular". */
+  $('#btnParamsReset').onclick = ()=>{
+    if(!confirm('¿Restaurar todos los parámetros del cálculo a sus valores por defecto?')) return;
+    restaurarParametros();
+    toast('Parámetros restaurados. Pulse "Aplicar y recalcular" para usarlos.'); };
   hook('fEmp','emp'); hook('fTur','tur'); hook('fHor','hor'); hook('fMar','mar');
   hook('fRen','ren');
   hookLact();
@@ -6204,7 +6608,7 @@ document.addEventListener('DOMContentLoaded',()=>{
       guardarXLS(`Asistencia_calendario_${stamp()}.xls`, `Asistencia día por día — ${rango}`,
                  aoaAsistencia(), colorAsisCal);
   };
-  hookAlcance(); hookInd(); hookCob(); hookCalidad(); hookRot();
+  hookAlcance(); hookInd(); hookCob(); hookCalidad(); hookRot(); hookConfig();
   $('#expCal').onclick  = ()=>{ if(!RESULT) return;
     const id=$('#selEmpCal').value, m=$('#selMes').value;
     save({Calendario:aoaCal(id,m)},`Calendario_${id}_${m}.xlsx`); };

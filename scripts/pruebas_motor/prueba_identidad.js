@@ -31,7 +31,7 @@ const PREEXISTENTES = ['rolEfectivo', 'runCalc'];
 const difieren = [...fa.out.keys()].filter(k => fb.out.has(k) && !PREEXISTENTES.includes(k) && fa.out.get(k) !== fb.out.get(k));
 ok(`funciones compartidas byte a byte (${[...fa.out.keys()].filter(k => fb.out.has(k)).length})`, difieren.length === 0, difieren.join(','));
 // constantes y estado del motor
-const consts = ['CONCEPTS', 'CKEYS', 'DOW_ES', 'NOV', 'CONC_DESC', 'MATRIZ', 'LACT_ETAPAS', 'LACT_PATS', 'DATA', 'AS_LABEL', 'COLS_FIJAS', 'COLS_ASIS', 'ROLES', 'DOW_CAL', 'IND_UMBRAL', 'IND_RAMPA', 'IND_DIAS', 'IND_DIA_NOM', 'IND_METS', 'ALC_TABS', 'SIN_DEP', 'SIN_CARGO', 'COLS_CONS_DATOS', 'COLS_CONS_HORAS', 'COLS_CONS_OTROS', 'ROT_MESES', 'ROT_TIPOS', 'ROT_UMBRAL', 'ROT_COL', 'ROT_HEAD'];
+const consts = ['CONCEPTS', 'CKEYS', 'DOW_ES', 'NOV', 'CONC_DESC', 'MATRIZ', 'LACT_ETAPAS', 'LACT_PATS', 'DATA', 'AS_LABEL', 'COLS_FIJAS', 'COLS_ASIS', 'ROLES', 'DOW_CAL', 'IND_UMBRAL', 'IND_RAMPA', 'IND_DIAS', 'IND_DIA_NOM', 'IND_METS', 'ALC_TABS', 'SIN_DEP', 'SIN_CARGO', 'COLS_CONS_DATOS', 'COLS_CONS_HORAS', 'COLS_CONS_OTROS', 'ROT_MESES', 'ROT_TIPOS', 'ROT_UMBRAL', 'ROT_COL', 'ROT_HEAD', 'PARAM_IDS', 'PARAM_CICLO', 'PARAM_GUARDAR', 'PARAM_DEFAULTS', 'CFG_FORMATO', 'CFG_VERSION', 'CFG_CLAVES', 'CFG_PERFILES', 'COLS_CLAVE'];
 function bloque(src, n) {
   const m = new RegExp('^(?:const|let) ' + n + '\\b', 'm').exec(src); if (!m) return null;
   const rest = src.slice(m.index);
@@ -57,6 +57,8 @@ const nuevas = ['fechaLact', 'idsConocidos', 'leerLactancia', 'faseLactancia', '
   'alcSetCia', 'alcSetModoDep', 'alcToggleDep', 'alcAddPers', 'alcQuitarPers', 'alcSetModoPer', 'alcSetPerfil', 'alcSetVinc', 'alcSetSinTurno', 'alcLimpiar',
   'tabActiva', 'renderTab', 'alcCambio', 'alcResumen', 'alcPanel', 'alcSugerir', 'hookAlcance',
   'cargoDe', 'fillCargos', 'aplicarColsCons', 'renderColsCons',
+  'colsLeer', 'escalera', 'leerParametrosForm', 'paramDefaultDe', 'paramDefaults', 'paramValido', 'paramEtiqueta', 'paramTexto', 'aplicarParametrosGuardados', 'guardarParametros', 'restaurarParametros',
+  'configNombre', 'configArmar', 'exportarConfig', 'configValidar', 'configCambios', 'configVistaPrevia', 'abrirImportCfg', 'configAplicar', 'confirmarImportCfg', 'hookConfig',
   'calidadFiltrada', 'renderCalidad', 'aoaCalidad', 'aoaCalidadEmp', 'hookCalidad', 'estadoCob', 'cobFiltrado', 'cobCalc', 'renderCob', 'aoaCobertura', 'aoaCoberturaDep', 'hookCob'];
 // retiradas con la pestaña KPI Cumplimiento: no deben quedar ni sus funciones ni sus elementos
 for (const n of ['kpiCalcular', 'kpiPorDepto', 'kpiFiltrarEmpleados', 'svgKpiChart', 'renderKpi', 'renderCobertura', 'aoaKpiDep', 'aoaKpiEmp', 'KPI_EXCLUIDOS_ULTIMO', 'indFiltro', 'svgIndDispersion', 'renderCalidadEmp'])
@@ -66,6 +68,12 @@ for (const n of ['tab-kpi', 'fCiaKpi', 'fExclDeptos', 'kpiChart', 'tKpiDep', 'tK
 ok('KPI_EXCL se conserva (es la llave de las exclusiones guardadas)', /let KPI_EXCL = new Set\(JSON\.parse\(localStorage\.getItem\('mb_kpi_excl'\)/.test(A) && /let KPI_EXCL/.test(B));
 
 nuevas.forEach(n => ok(`nueva funcion ${n} en ambos y identica`, fa.out.has(n) && fb.out.has(n) && fa.out.get(n) === fb.out.get(n)));
+// estado de la importacion pendiente y arranque de parametros guardados: tambien identicos
+ok('CFG_PEND declarado igual en ambos', /^let CFG_PEND = null;.*$/m.exec(A)[0] === /^let CFG_PEND = null;.*$/m.exec(B)[0]);
+ok('aplicarParametrosGuardados() se invoca al cargar, una vez, en ambos', (A.match(/^aplicarParametrosGuardados\(\);/gm) || []).length === 1 && (B.match(/^aplicarParametrosGuardados\(\);/gm) || []).length === 1);
+const guardaAlCalcular = /readConfig\(\);\n    guardarParametros\(\);/;
+ok('runCalc guarda los parametros con los que calcula, en ambos', guardaAlCalcular.test(A) && guardaAlCalcular.test(B));
+ok('hookConfig() se cablea en ambos', /hookRot\(\); hookConfig\(\);/.test(A) && /hookRot\(\); hookConfig\(\);/.test(B));
 // sintaxis
 for (const [n, s] of [['completo', A], ['rrhh', B]]) { try { new Function(s); ok(`sintaxis JS ${n}`, true); } catch (e) { ok(`sintaxis JS ${n}`, false, e.message); } }
 // ids duplicados en el HTML
@@ -73,7 +81,7 @@ for (const f of ['reporte-horas.html', 'reporte-horas-rrhh.html']) {
   const ids = [...lee(f).matchAll(/\bid="([\w-]+)"/g)].map(m => m[1]); const vistos = new Set(), dup = [];
   ids.forEach(i => { if (vistos.has(i)) dup.push(i); vistos.add(i); });
   ok(`ids HTML unicos en ${f}`, dup.length === 0, dup.join(','));
-  for (const i of ['fLac', 'btnLactPlantilla', 'btnLactVal', 'dlgLact', 'tLact', 'lactValResumen', 'btnLactValClose', 'fLact', 'cLactMin6', 'cLactMin24', 'fCargo', 'btnColsCons', 'dlgColsCons', 'colsConsBox', 'btnColsConsAll', 'btnColsConsClose', 'colConsStyle'])
+  for (const i of ['fLac', 'btnLactPlantilla', 'btnLactVal', 'dlgLact', 'tLact', 'lactValResumen', 'btnLactValClose', 'fLact', 'cLactMin6', 'cLactMin24', 'fCargo', 'btnColsCons', 'dlgColsCons', 'colsConsBox', 'btnColsConsAll', 'btnColsConsClose', 'colConsStyle', 'btnExportCfg', 'btnImportCfg', 'fImportCfg', 'dlgImportCfg', 'cfgImpBody', 'btnCfgImpOk', 'btnCfgImpCancel', 'btnParamsReset'])
     ok(`  ${i} declarado una vez en ${f}`, ids.filter(x => x === i).length === 1);
 }
 console.log(fallos ? 'FALLOS: ' + fallos : 'IDENTIDAD OK');
