@@ -47,7 +47,7 @@ function cargar(htmlPath, opciones = {}) {
     getElementById: i => fuente.includes(`id="${i}"`) ? mk('#' + i) : null,
     body: { classList: { add() {}, remove() {} }, dataset: {} } };
   const store = Object.assign({}, opciones.store || {});     // localStorage inicial (p. ej. un mb_params guardado)
-  global.localStorage = { getItem: k => store[k] ?? null, setItem(k, v) { store[k] = v; } };
+  global.localStorage = { getItem: k => store[k] ?? null, setItem(k, v) { store[k] = v; }, removeItem(k) { delete store[k]; } };
   global.Blob = function (p) { this.p = p; }; global.URL = { createObjectURL: () => 'b', revokeObjectURL() {} };
   global.confirm = () => true;
   global.console = { ...console, error: (...a) => errores.push(a.map(String).join(' ')) };

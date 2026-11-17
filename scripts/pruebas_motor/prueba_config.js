@@ -62,11 +62,12 @@ function poblar(api) {
   api.__ev("KPI_EXCL.add('TARJETA'); KPI_EXCL.add('SNAPIT')");
   api.__ev("ROT.noConf.add('2026-04'); ROT.noConf.add('2026-07')");
   api.__ev("COLS_OCULTAS.add('acum'); COLS_CONS_OCULTAS.add('cargo'); COLS_ASIS_OCULTAS.add('pct')");
+  api.__ev("AJ_HORARIO.push({id:'aj-cfg-1',emp:'9501',desde:'2026-09-14',hasta:'2026-09-16',turno:'T_DIA',motivo:'EQUIVOCADO',nota:'',autor:'Prueba',creado:'2026-11-17T10:30:00',anulado:null}); ajPersistir()");
 }
 function limpiar(api) {
   api.restaurarParametros();
   api.__ev("Object.keys(PERFILES).forEach(k=>delete PERFILES[k]); Object.keys(AUTOR).forEach(k=>delete AUTOR[k]); Object.keys(DISPOSITIVOS).forEach(k=>delete DISPOSITIVOS[k])");
-  api.__ev("CONFIANZA = new Set(); KPI_EXCL = new Set(); ROT.noConf.clear(); COLS_OCULTAS = new Set(); COLS_CONS_OCULTAS = new Set(); COLS_ASIS_OCULTAS = new Set()");
+  api.__ev("CONFIANZA = new Set(); KPI_EXCL = new Set(); ROT.noConf.clear(); COLS_OCULTAS = new Set(); COLS_CONS_OCULTAS = new Set(); COLS_ASIS_OCULTAS = new Set(); AJ_HORARIO.length = 0");
 }
 const sinFecha = t => t.replace(/"generado":"[^"]*"/, '"generado":"X"');
 const textosExportados = {};
@@ -154,7 +155,8 @@ for (const [nombre, html] of Object.entries(FILES)) {
   ok('claves en el orden del plan', J(Object.keys(cfg)) === J(['formato', 'version', 'generado', 'herramienta', 'parametros', 'perfiles', 'confianza', 'autorizaciones', 'dispositivos', 'ajustesHorario', 'alcance', 'rotacion', 'columnas']));
   ok('formato mod_bio-config, version 1, generado AAAA-MM-DDTHH:MM:SS', cfg.formato === 'mod_bio-config' && cfg.version === 1 && cfg.generado === '2026-11-17T10:30:05');
   ok(`herramienta = ${esFull ? 'completa' : 'rrhh'}`, cfg.herramienta === (esFull ? 'completa' : 'rrhh'));
-  ok('ajustesHorario existe y es []', Array.isArray(cfg.ajustesHorario) && cfg.ajustesHorario.length === 0);
+  ok('ajustesHorario trae el ajuste poblado (forma exacta, claves en orden)', Array.isArray(cfg.ajustesHorario) && cfg.ajustesHorario.length === 1
+    && J(cfg.ajustesHorario[0]) === '{"id":"aj-cfg-1","emp":"9501","desde":"2026-09-14","hasta":"2026-09-16","turno":"T_DIA","motivo":"EQUIVOCADO","nota":"","autor":"Prueba","creado":"2026-11-17T10:30:00","anulado":null}');
   ok('las 9 secciones traen lo poblado', cfg.parametros.cUmbral === '40' && cfg.perfiles['9501'] === 'ADMINISTRATIVO' && J(cfg.confianza) === '["9503"]'
     && cfg.autorizaciones['9504'].length === 2 && cfg.dispositivos['Dispositivo-LECTOR 1'] === 'INTERIOR'
     && J(cfg.alcance) === '{"deptosExcluidos":["SNAPIT","TARJETA"]}' && J(cfg.rotacion) === '{"mesesNoConfiables":["2026-04","2026-07"]}'
@@ -162,7 +164,8 @@ for (const [nombre, html] of Object.entries(FILES)) {
   ok('los parametros exportados no incluyen el rango del ciclo y son todos texto', !('cIni' in cfg.parametros) && !('cFin' in cfg.parametros) && Object.keys(cfg.parametros).length === guardar.length && Object.values(cfg.parametros).every(v => typeof v === 'string'));
   ok('el nombre es mod_bio_config_AAAA-MM-DD_HHmm.json', api.configNombre(new Date(2026, 10, 17, 10, 30, 5)) === 'mod_bio_config_2026-11-17_1030.json' && api.configNombre(new Date(2026, 0, 5, 9, 7)) === 'mod_bio_config_2026-01-05_0907.json');
   const texto0 = J(cfg);
-  ok('no lleva los Excel ni la lactancia ni nombres de personas', !/"(emp|tur|hor|mar|ren|lac|nombre|nombres)"/.test(texto0) && !/PRUEBA|CFG95/.test(texto0));
+  const sinAj = J({ ...JSON.parse(texto0), ajustesHorario: [] });   // "emp" es la clave del ajuste (solo el id de la persona), no los Excel
+  ok('no lleva los Excel ni la lactancia ni nombres de personas', !/"(emp|tur|hor|mar|ren|lac|nombre|nombres)"/.test(sinAj) && !/PRUEBA|CFG95/.test(texto0));
 
   /* exportarConfig: descarga real contra el mock */
   let blob = null, descarga = null;
@@ -175,7 +178,7 @@ for (const [nombre, html] of Object.entries(FILES)) {
   textosExportados[nombre] = blob.p[0];
 
   /* E. ida y vuelta de las 9 secciones */
-  const antes = sinFecha(estado(api)), almacenAntes = ['mb_perfiles', 'mb_confianza', 'mb_autor', 'mb_dispositivos', 'mb_kpi_excl', 'mb_rot_meses', 'mb_colsDet', 'mb_colsCons', 'mb_colsAsis'];
+  const antes = sinFecha(estado(api)), almacenAntes = ['mb_ajustes_horario', 'mb_perfiles', 'mb_confianza', 'mb_autor', 'mb_dispositivos', 'mb_kpi_excl', 'mb_rot_meses', 'mb_colsDet', 'mb_colsCons', 'mb_colsAsis'];
   api.__set('cUmbral', '40'); api.runCalc(); const huellaCon = huella(api);
   limpiar(api); api.runCalc();
   ok('limpiar deja todo en blanco', sinFecha(estado(api)) !== antes && Object.keys(api.configArmar().perfiles).length === 0 && api.configArmar().parametros.cUmbral === '42');
@@ -193,6 +196,7 @@ for (const [nombre, html] of Object.entries(FILES)) {
   ok('vista previa: lista los parametros que cambian "ahora → nuevo"', /Parámetros que cambian/.test(vista) && /cUmbral[^]*<td>42<\/td><td><b>40<\/b>/.test(vista) && /cAdmin[^]*<td>T_ADM<\/td><td><b>T_X<\/b>/.test(vista));
   ok('vista previa: el select se muestra con su texto, no con su valor (cDom 1 -> 0)', /cDom/.test(vista) && /<td>Sí<\/td><td><b>No<\/b><\/td>/.test(vista));
   ok('vista previa: dice que no se recarga la pagina ni se tocan los Excel', /No se recarga la página/.test(vista));
+  ok('vista previa: los ajustes se AGREGAN, no se reemplazan (nunca se borra ninguno)', /Ajustes de horario: <b>1<\/b> en el archivo[^]*<b>1<\/b> nuevo\(s\)[^]*nunca se borra ninguno/.test(vista));
   api.confirmarImportCfg();
   ok('Reemplazar: cierra el dialogo y deja el estado identico al exportado', cerrado === 1 && sinFecha(estado(api)) === antes);
   ok('los globales se mutaron EN SITIO (mismos objetos PERFILES, AUTOR, DISPOSITIVOS, ROT.noConf)', P === api.__ev('PERFILES') && A === api.__ev('AUTOR') && DSP === api.__ev('DISPOSITIVOS') && NC === api.__ev('ROT').noConf
@@ -270,10 +274,14 @@ for (const [nombre, html] of Object.entries(FILES)) {
   ok('secciones vacias son validas', vacia.ok && vacia.avisos.length === 0);
   const raras = api.configValidar(J({ formato: 'mod_bio-config', version: 1, futuro: 1, alcance: { otra: 1 }, columnas: { otra: [] }, parametros: { cZzz: '1', cIni: '2020-01-01' } }));
   ok('claves y parametros desconocidos: aviso y se ignoran (no es error)', raras.ok && raras.avisos.length === 5 && !('cZzz' in raras.datos.parametros) && !('cIni' in raras.datos.parametros), raras.avisos.length + '');
-  const conAj = api.configValidar(J({ formato: 'mod_bio-config', version: 1, ajustesHorario: [{ emp: '9501' }, { emp: '9502' }] }));
-  ok('ajustesHorario con datos: se tolera, se avisa y no se aplica', conAj.ok && conAj.datos.ajustesHorario === 2 && conAj.avisos.some(a => /ajustes de horario/i.test(a)));
-  api.abrirImportCfg(J({ formato: 'mod_bio-config', version: 1, ajustesHorario: [{ emp: '9501' }] }), 'aj.json'); api.confirmarImportCfg();
-  ok('ajustesHorario no escribe ninguna llave nueva en localStorage', ls('mb_ajustes_horario') === null && api.configArmar().ajustesHorario.length === 0);
+  const A1 = { id: 'aj-v-1', emp: '9502', desde: '2026-09-01', hasta: '2026-09-02', turno: '', motivo: 'NO_CARGADO', nota: 'x', autor: 'A', creado: '2026-11-01T08:00:00', anulado: null };
+  const conAj = api.configValidar(J({ formato: 'mod_bio-config', version: 1, ajustesHorario: [A1, { ...A1, id: 'aj-v-2', emp: '0385' }] }));
+  ok('ajustesHorario valido: se valida entrada por entrada y el emp pasa por normId', conAj.ok && Array.isArray(conAj.datos.ajustesHorario) && conAj.datos.ajustesHorario.length === 2 && conAj.datos.ajustesHorario[1].emp === '385');
+  const nAntes = api.__ev('AJ_HORARIO.length');
+  api.abrirImportCfg(J({ formato: 'mod_bio-config', version: 1, ajustesHorario: [A1] }), 'aj.json'); api.confirmarImportCfg();
+  ok('ajustesHorario se importa: se agrega y se guarda en mb_ajustes_horario', api.__ev('AJ_HORARIO.length') === nAntes + 1 && JSON.parse(ls('mb_ajustes_horario')).some(a => a.id === 'aj-v-1'));
+  api.abrirImportCfg(J({ formato: 'mod_bio-config', version: 1, ajustesHorario: [] }), 'aj0.json'); api.confirmarImportCfg();
+  ok('una lista vacia NO borra los ajustes que ya existen (un archivo no puede borrar la auditoria)', api.__ev('AJ_HORARIO.length') === nAntes + 1);
   api.abrirImportCfg(J({ formato: 'mod_bio-config', version: 1, 'clave<img src=x onerror=1>': 1 }), '<b>n</b>.json');
   const cuerpo = api.__mk('#cfgImpBody').innerHTML;
   ok('lo que viene del archivo se escapa en la vista previa (sin HTML inyectado)', !/<img/.test(cuerpo) && !/<b>n<\/b>/.test(cuerpo) && /&lt;img/.test(cuerpo));
