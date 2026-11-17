@@ -31,7 +31,7 @@ const PREEXISTENTES = ['rolEfectivo', 'runCalc'];
 const difieren = [...fa.out.keys()].filter(k => fb.out.has(k) && !PREEXISTENTES.includes(k) && fa.out.get(k) !== fb.out.get(k));
 ok(`funciones compartidas byte a byte (${[...fa.out.keys()].filter(k => fb.out.has(k)).length})`, difieren.length === 0, difieren.join(','));
 // constantes y estado del motor
-const consts = ['CONCEPTS', 'CKEYS', 'DOW_ES', 'NOV', 'CONC_DESC', 'MATRIZ', 'LACT_ETAPAS', 'LACT_PATS', 'DATA', 'AS_LABEL', 'COLS_FIJAS', 'COLS_ASIS', 'ROLES', 'DOW_CAL', 'IND_UMBRAL', 'IND_RAMPA', 'IND_DIAS', 'IND_DIA_NOM', 'IND_METS', 'ALC_TABS', 'SIN_DEP', 'SIN_CARGO', 'COLS_CONS_DATOS', 'COLS_CONS_HORAS', 'COLS_CONS_OTROS', 'ROT_MESES', 'ROT_TIPOS', 'ROT_UMBRAL', 'ROT_COL', 'ROT_HEAD', 'PARAM_IDS', 'PARAM_CICLO', 'PARAM_GUARDAR', 'PARAM_DEFAULTS', 'CFG_FORMATO', 'CFG_VERSION', 'CFG_CLAVES', 'CFG_PERFILES', 'COLS_CLAVE', 'AJ_MOTIVOS', 'AJ_ESTADOS', 'AJ_MAX_DIAS', 'AJ_REC', 'AJ_HORARIO', 'AJ_SIN_LEER', 'AJ_CARGA', 'ajH', 'ajDelta'];
+const consts = ['CONCEPTS', 'CKEYS', 'DOW_ES', 'NOV', 'CONC_DESC', 'MATRIZ', 'LACT_ETAPAS', 'LACT_PATS', 'DATA', 'AS_LABEL', 'COLS_FIJAS', 'COLS_ASIS', 'ROLES', 'DOW_CAL', 'IND_UMBRAL', 'IND_RAMPA', 'IND_DIAS', 'IND_DIA_NOM', 'IND_METS', 'ALC_TABS', 'SIN_DEP', 'SIN_CARGO', 'COLS_CONS_DATOS', 'COLS_CONS_HORAS', 'COLS_CONS_OTROS', 'ROT_MESES', 'ROT_TIPOS', 'ROT_UMBRAL', 'ROT_COL', 'ROT_HEAD', 'PARAM_IDS', 'PARAM_CICLO', 'PARAM_GUARDAR', 'PARAM_DEFAULTS', 'CFG_FORMATO', 'CFG_VERSION', 'CFG_CLAVES', 'CFG_PERFILES', 'COLS_CLAVE', 'AJ_MOTIVOS', 'AJ_ESTADOS', 'AJ_MAX_DIAS', 'AJ_REC', 'AJ_HORARIO', 'AJ_SIN_LEER', 'AJ_CARGA', 'ajH', 'ajDelta', 'fmtPts', 'AJ_CAMBIO', 'AJ_DIAS_TXT'];
 function bloque(src, n) {
   const m = new RegExp('^(?:const|let) ' + n + '\\b', 'm').exec(src); if (!m) return null;
   const rest = src.slice(m.index);
@@ -62,6 +62,7 @@ const nuevas = ['fechaLact', 'idsConocidos', 'leerLactancia', 'faseLactancia', '
   'ajA', 'ajAhora', 'ajNuevoId', 'ajFechaOk', 'ajMomentoOk', 'ajNormalizar', 'ajFusionar', 'ajCargarInicial', 'ajPersistir', 'ajAutorRecordado', 'ajLimite', 'ajMismoCuerpo', 'ajMasNuevo', 'ajAvisosTxt', 'ajAvisoSegmento', 'ajActualizarAviso', 'ajIndexar', 'ajFueraVigencia', 'ajDe',
   'shiftBase', 'shiftFor', 'computeBase', 'ajDaProgramacion', 'ajSobrepuesto', 'ajRedundante', 'ajEstado', 'ajAntes', 'ajExcepciones', 'ajMedidas', 'ajImpactoDia', 'ajImpactoEmp', 'ajDeltaTxt', 'ajPares', 'ajTextoAj', 'ajTextoDia', 'ajChip',
   'ajDiasCiclo', 'cardAjDet', 'ajCeldaTurno', 'ajFilaDet', 'aoaAjustes', 'ajAbrirDialogo', 'ajRevertir', 'ajCancelarDialogo', 'ajCambioSelect', 'ajClickDet', 'ajAbrirAnular', 'ajGuardarDialogo', 'renderAjustes', 'abrirAjustes', 'ajClickHist', 'hookAjustes',
+  'ajHayCambio', 'ajNotaAlcance', 'ajCambiaDia', 'ajDiasCambiados', 'resultadoOriginal', 'calidadComparar',
   'calidadFiltrada', 'renderCalidad', 'aoaCalidad', 'aoaCalidadEmp', 'hookCalidad', 'estadoCob', 'cobFiltrado', 'cobCalc', 'renderCob', 'aoaCobertura', 'aoaCoberturaDep', 'hookCob'];
 // retiradas con la pestaña KPI Cumplimiento: no deben quedar ni sus funciones ni sus elementos
 for (const n of ['kpiCalcular', 'kpiPorDepto', 'kpiFiltrarEmpleados', 'svgKpiChart', 'renderKpi', 'renderCobertura', 'aoaKpiDep', 'aoaKpiEmp', 'KPI_EXCLUIDOS_ULTIMO', 'indFiltro', 'svgIndDispersion', 'renderCalidadEmp'])
@@ -80,6 +81,13 @@ ok('hookAjustes() se cablea en ambos', /hookConfig\(\); hookAjustes\(\);/.test(A
 ok('OVERRIDES / mb_overrides / btnClrOvr ya no existen como estado ni boton (solo la migracion lee mb_overrides)', !/OVERRIDES/.test(A + B) && !/btnClrOvr/.test(lee('reporte-horas.html') + lee('reporte-horas-rrhh.html')) && (A.match(/mb_overrides/g) || []).length === (B.match(/mb_overrides/g) || []).length);
 ok('const AJ_HORARIO se declara una vez, igual en ambos', (A.match(/^const AJ_HORARIO/gm) || []).length === 1 && (B.match(/^const AJ_HORARIO/gm) || []).length === 1);
 ok('hookConfig() se cablea en ambos', /hookRot\(\); hookConfig\(\);/.test(A) && /hookRot\(\); hookConfig\(\);/.test(B));
+// Adopcion mide BioTime original (Fase C): estadoCob usa shiftBase y cobCalc las filas de la linea base; ningun indicador vuelve a llamar shiftFor desde ahi
+const cuerpo = (src, n) => funciones(src).out.get(n);
+for (const [nom, src] of [['completo', A], ['rrhh', B]]) {
+  ok(`estadoCob mide el turno ORIGINAL (shiftBase, no shiftFor) en ${nom}`, /shiftBase\(M, id, iso\)/.test(cuerpo(src, 'estadoCob')) && !/shiftFor/.test(cuerpo(src, 'estadoCob')));
+  ok(`cobCalc le pasa a Adopcion las filas de la linea base (resultadoOriginal) en ${nom}`, /alcanceR\(resultadoOriginal\(RESULT\)\)/.test(cuerpo(src, 'cobCalc')));
+  ok(`computeCalidad / computeCobertura no leen RESULT.base directamente en ${nom}`, !/\.base/.test(cuerpo(src, 'computeCalidad')) && !/\.base/.test(cuerpo(src, 'computeCobertura')));
+}
 // sintaxis
 for (const [n, s] of [['completo', A], ['rrhh', B]]) { try { new Function(s); ok(`sintaxis JS ${n}`, true); } catch (e) { ok(`sintaxis JS ${n}`, false, e.message); } }
 // ids duplicados en el HTML
