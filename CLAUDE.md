@@ -61,6 +61,7 @@ AJ_MOTIVOS, AJ_ESTADOS, AJ_MAX_DIAS, AJ_REC, AJ_HORARIO, AJ_SIN_LEER, AJ_CARGA, 
 ajA, ajAhora, ajLimite, ajNuevoId, ajFechaOk, ajMomentoOk, ajNormalizar, ajMismoCuerpo, ajFusionar, ajCargarInicial, ajPersistir, ajAutorRecordado, ajAvisosTxt   (validación y persistencia)
 ajMasNuevo, ajIndexar, ajFueraVigencia, ajDe, computeBase, ajDaProgramacion, ajSobrepuesto, ajRedundante, ajEstado, ajAntes, ajExcepciones   (motor: modelo, vigencia, línea base, AJ-H)
 ajMedidas, ajImpactoDia, ajImpactoEmp, ajDeltaTxt, ajPares, ajTextoAj, ajTextoDia, ajChip, ajDiasCiclo, cardAjDet, ajCeldaTurno, ajFilaDet, aoaAjustes   (impacto, pantalla y Excel)
+ajHayCambio, AJ_CAMBIO, AJ_DIAS_TXT, ajNotaAlcance, ajCambiaDia, ajDiasCambiados, resultadoOriginal   (indicadores: días con el turno cambiado y el resultado con la plantilla original)
 ajAvisoSegmento, ajActualizarAviso, ajAbrirDialogo, ajRevertir, ajCancelarDialogo, ajCambioSelect, ajClickDet, ajAbrirAnular, ajGuardarDialogo, renderAjustes, abrirAjustes, ajClickHist, hookAjustes   (diálogos e historial)
 round05, dayType, classify, atomize                     (clasificación y redondeo)
 escalera, quitarDescanso, tramosAcreditados             (jornada fija + escalera de sobretiempo)
@@ -84,7 +85,7 @@ asisResumenFilas, aoaAsisResumen, renderAsisResumen, habilesEntre
 COLS_ASIS, COLS_ASIS_OCULTAS, aplicarColsAsis, renderColsAsis, tagVinculo, estadoAsis
 celdaIngreso                                            (fecha de ingreso en el resumen, marca las compartidas)
 guardarXLS, colorAsisCal, colorAsisRes, nivelPct, nivelSil (exportacion con colores)
-computeCalidad, calidadFiltrada, renderCalidad, nivelQ, Q_DEP   (Calidad de marcación)
+computeCalidad, calidadFiltrada, calidadComparar, fmtPts, renderCalidad, nivelQ, Q_DEP   (Calidad de marcación, con el delta por ajustes)
 aoaCalidad, aoaCalidadEmp, calidadDeEmpleado, hookCalidad
 KPI_EXCL                                                (departamentos excluidos, guardados: ahora parte del Alcance)
 barPath, fmtPct, fmtN                                   (helpers de gráficos y porcentajes)
@@ -1251,8 +1252,7 @@ borra `mb_overrides`. Sin nada guardado **no se escribe ninguna llave** al abrir
   (antes: Y). Motivo… Autor…» (con el estado si no es «vigente») y ADV «Ajuste de turno NO aplicado» para el código inexistente. Entra en `NOV`
   (el chip dice qué es). **Nada es BLOQ.** Se añadió a `CATALOGO-CONDICIONES.md`.
 - **Quién usa el turno ajustado:** nómina (Consolidado, Detalle, Sinergy, Resumen del ciclo), **Asistencia** (`computeAsistencia` llama `shiftFor`) y
-  **Calidad de marcación** (sale de las filas de `RESULT`). **Pendiente de la Fase C:** *Adopción* debe seguir midiendo el turno **original de BioTime**,
-  pero `estadoCob()` todavía llama `shiftFor`, así que **hoy los ajustes se filtran a Adopción**; la Fase C le pasa el modelo sin ajustes y las filas base.
+  **Calidad de marcación** (sale de las filas de `RESULT`). *Adopción* sigue midiendo el turno **original de BioTime** (Fase C, abajo).
 
 **Detalle (los dos archivos).** La celda del turno es un `<select class="ajsel">` con los turnos del archivo de Turno y «Sin turno (descanso)» (valor mostrado =
 el aplicado). Cambiarlo **no aplica directo**: abre `#dlgAjuste` (motivo obligatorio, nota obligatoria con «Otro», «Aplicar hasta» —por defecto el mismo
@@ -1289,6 +1289,27 @@ rompería la auditoría. La vista previa lo dice («N nuevos, M ya existen, K se
 aplicado, código inexistente aplicado, motivo/nota sin exigir (en el diálogo **y** en el validador: son dos capas), Cancelar sin revertir, sin volver al mismo día, columnas
 siempre presentes, base con ajustes, `ajA` sin comillas, migración sin borrar `mb_overrides`, anular borrando, validador sin motivo, importar que borra, `shiftFor` sin ajustes: todos
 mueren. **Sin verificar:** datos reales (huella con ~1.000 empleados), el aspecto visual (color `--adj`, el diálogo, el tachado) y el comportamiento en un navegador real.
+
+---
+
+## Indicadores de los ajustes de horario (nov-2026, Fase C de `PLAN-AJUSTES-Y-CONFIGURACION.md`)
+
+**Tres lecturas del mismo ciclo, con dueños distintos.** Sin pestaña nueva. Decisión del usuario: un turno mal cargado no es culpa de quien marca, pero Adopción existe justamente para ver la programación mal cargada.
+
+| Pestaña | Qué turno mide | Qué muestra de los ajustes |
+|---|---|---|
+| Nómina (Consolidado, Detalle, Sinergy, Resumen, Asistencia) | el **ajustado** | columna «Ajustes» (días con el turno cambiado) y `DIAS CON AJUSTE DE HORARIO` al final del Excel |
+| Calidad de marcación | el **ajustado** (la principal) | la misma calidad con el turno **original** y el delta en puntos: tarjeta, columna «Δ por ajustes (pts)», Excel |
+| Adopción | el **original de BioTime**, siempre | solo la columna/tarjeta «Días ajustados» (ordenable); ninguna cifra cambia |
+
+- **«Días ajustados» son días de calendario** (fines de semana y festivos incluidos), no jornadas: se dice en el tooltip de la tarjeta y de los encabezados, y en la fila «Días ajustados» de la hoja «Alcance» de los Excel de Adopción y Calidad (`AJ_DIAS_TXT`; el Excel del Consolidado no tiene hoja «Alcance»: ahí solo el tooltip de la pantalla).
+- **Una sola definición de «día ajustado»** (`ajCambiaDia`/`ajDiasCambiados`): día del ciclo, dentro de la vigencia de la persona, cuyo turno aplicado salió de un ajuste **y es distinto del de BioTime**. No cuentan el anulado, el de turno inexistente, el sobrepuesto (lo tapa uno más nuevo de turno inexistente), el fuera de vigencia ni el **redundante** (ya coincide con BioTime). Los solapados cuentan cada día una vez. *Ojo:* la tarjeta del encabezado del Detalle (`ajDiasCiclo`, Fase B) cuenta cualquier día con ajuste aplicado, redundantes incluidos; es una lectura distinta, de la persona.
+- **Adopción (C.2).** `estadoCob` usa `shiftBase`, no `shiftFor`, y `cobCalc` evalúa el alcance sobre `resultadoOriginal(RESULT)`: para quien tiene ajustes usa sus filas de `RESULT.base` (la corrida sin ajustes) y para los demás las suyas. Así, con o sin ajustes, **toda cifra es idéntica** (persona, departamento, total, pantalla, Excel, cualquier alcance); una prueba lo exige. Consecuencia buscada: el alcance (perfil, «ocultar sin turno») se evalúa sobre el turno de BioTime en Adopción, y sobre el ajustado en las otras pestañas. **Y lo que Adopción dice de su alcance también:** `alcanceInfo(R)`, `alcanceTexto(R)` y `aoaAlcance(R)` reciben el resultado sobre el que se cuenta (por omisión el ajustado); Adopción pasa `resultadoOriginal(RESULT)` en su encabezado impreso, en la hoja «Alcance» de su Excel y en la barra de alcance cuando su pestaña está abierta (`alcResumen`), así «N de M personas» y «Personas sin turno asignado» son los de BioTime y coinciden con su lista (antes decían «11 de 11» con 10 en la lista). `computeCobertura` solo suma `diasAj`. «Días ajustados» ordena como las otras métricas (`COB_ORD = 'aj'`, clic en la tarjeta o el encabezado; sin ajustes ese orden no existe y cae en «turno»).
+- **Calidad (C.1).** `calidadFiltrada()` calcula la calidad del alcance (membresía por el resultado ajustado) y, si hay ajustes, `calidadComparar` le suma `calidadOrig`, `dPts`, `diasAj` en total, departamentos y personas, midiendo las **mismas personas** con `resultadoOriginal(R2, RESULT.base)`. `computeCalidad` no cambia. Tarjeta «Efecto de los ajustes de horario» (solo si algún día del alcance cambió de turno): *Calidad 100.0% · con la plantilla original 92.9% · por 5 días ajustados · +7.1 pts*. La lista de personas muestra además a quien tiene ajustes aunque ya no tenga días interpretados (su calidad pudo mejorar hasta salir de la lista de los 15 con más): primero las 15 con más días interpretados y después las ajustadas, ordenadas por días interpretados y luego por días ajustados, **hasta 50 filas en pantalla** con el aviso «Mostrando N de M personas con ajustes; el resto está en el Excel» (el Excel trae a todas). **El delta (`dPts`) se calcula con las dos calidades redondeadas a 1 decimal**, que son las que se ven (tarjeta, tablas y Excel), para que X − Y == Δ exacto y no a veces 0,1 de diferencia; frente al delta sin redondear difiere a lo sumo 0,1. **Por qué sube:** un turno nocturno sin turno cargado deja marcaciones impares a los extremos de la racha (A-04, bloqueadas); con el turno cargado se emparejan bien. Caso a mano de la prueba: DEPTO A (9801 limpio, 22 días; 9802 sin turno, 5 noches) = 26 de 28 = 92,86 % sin el ajuste y 27 de 27 = 100 % con él (+7,14 pts). **No siempre sube:** un ajuste a un turno que no coincide con lo marcado puede bajarla; el delta lo muestra con signo.
+- **Consolidado (C.3).** Columna «Ajustes» (`data-col="aj"`, en «Otros» del selector, solo con ajustes) y `DIAS CON AJUSTE DE HORARIO` **última** en `aoaCons`. El Sinergy no cambia de formato (lleva lo ajustado porque es la nómina).
+- **Solo si algún día cambió.** Todas las columnas, tarjetas y hojas nuevas de la Fase C dependen de `ajHayCambio()`: verdadero si en **todo el modelo** (no depende del Alcance, para que la estructura de los Excel no cambie con los filtros) alguna persona del ciclo tiene al menos un día con el turno cambiado (`ajDiasCambiados > 0`; se calcula una vez por `RESULT`, `AJ_CAMBIO`). Van **al final**. Con ajustes anulados, redundantes, de turno inexistente, fuera de vigencia o fuera del ciclo —solos o juntos— pantallas y exportaciones de la Fase C son idénticas byte a byte a las de antes (una prueba lo exige; Fase B sigue dejando su AJ-H y su Detalle con su propio criterio `MODEL.ajustes.size`). La tarjeta de Calidad es la excepción dentro de la Fase C: sale solo si algún día cambió **dentro del alcance**. Resumen del ciclo y Rotación no cambian (el Resumen sale del resultado ajustado, como la nómina; Rotación solo lee empleados y renuncias); la hoja «Alcance» tampoco, salvo «Personas sin turno asignado», que sale del resultado ajustado.
+- **Costo** (1.000 personas × 22 días, ajustes en 100 / en todas): `calidadFiltrada` ≈ 6 → 14 / 26 ms; Adopción ≈ 38 → 38 / 43 ms; pintar las tres pestañas ≈ 57 → 61 / 104 ms.
+- **Pruebas:** `scripts/pruebas_motor/prueba_indicadores_ajustes.js` (ver su fila en el README); 7 mutaciones (Adopción con `shiftFor`, sin filas base, el redundante contando, original == ajustada, columna siempre presente, sin vigencia, delta invertido) la hacen fallar. **Sin verificar:** datos reales (1.000 empleados), el aspecto (tarjeta violeta, columnas nuevas, ancho) en un navegador real.
 
 ---
 
