@@ -12,17 +12,20 @@ function cargar(htmlPath, opciones = {}) {
   const defaults = {};
   for (const m of fuente.matchAll(/<input\b[^>]*\bid="([\w-]+)"[^>]*>/g)) {
     const v = /\bvalue="([^"]*)"/.exec(m[0]);
-    defaults[m[1]] = { value: v ? v[1] : '', checked: /\bchecked\b/.test(m[0]) };
+    const t = /\btype="([\w-]+)"/.exec(m[0]);
+    defaults[m[1]] = { value: v ? v[1] : '', checked: /\bchecked\b/.test(m[0]), type: t ? t[1] : 'text', dv: v ? v[1] : '', min: (/\bmin="([^"]*)"/.exec(m[0]) || [])[1], max: (/\bmax="([^"]*)"/.exec(m[0]) || [])[1] };
   }
   for (const m of fuente.matchAll(/<select\b[^>]*\bid="([\w-]+)"[^>]*>([\s\S]*?)<\/select>/g)) {
     const opts = [...m[2].matchAll(/<option\b([^>]*)>([^<]*)/g)].map(o => {
       const v = /\bvalue="([^"]*)"/.exec(o[1]);
-      return { sel: /\bselected\b/.test(o[1]), v: v ? v[1] : o[2].trim() };
+      return { sel: /\bselected\b/.test(o[1]), v: v ? v[1] : o[2].trim(), text: o[2].trim() };
     });
     const o = opts.find(x => x.sel) || opts[0];
-    defaults[m[1]] = { value: o ? o.v : '' };
+    // "options" imita al DOM real (value, text, defaultSelected) para las pruebas de parametros; los select
+    // que se llenan por codigo (sin <option> en el HTML) quedan sin "options", como antes.
+    defaults[m[1]] = { value: o ? o.v : '', options: opts.length ? opts.map(x => ({ value: x.v, text: x.text, defaultSelected: x.sel })) : undefined };
   }
-  Object.assign(defaults, opciones.inputs ? Object.fromEntries(Object.entries(opciones.inputs).map(([k, v]) => [k, { value: v }])) : {});
+  Object.assign(defaults, opciones.inputs ? Object.fromEntries(Object.entries(opciones.inputs).map(([k, v]) => [k, { ...(defaults[k] || {}), value: v, checked: false }])) : {});
   const el = {};
   const errores = [];
   const descargas = [];
@@ -30,7 +33,7 @@ function cargar(htmlPath, opciones = {}) {
     if (!el[s]) {
       const id = /^#([\w-]+)$/.exec(s);
       const d = (id && defaults[id[1]]) || {};
-      el[s] = { value: d.value || '', checked: !!d.checked, dataset: {}, innerHTML: '', textContent: '', hidden: false, style: {},
+      el[s] = { value: d.value || '', checked: !!d.checked, type: d.type, min: d.min, max: d.max, options: d.options, defaultValue: d.dv, dataset: {}, innerHTML: '', textContent: '', hidden: false, style: {},
         files: [], disabled: false, showModal() {}, close() {}, addEventListener() {}, appendChild() {}, before() {}, click() {}, remove() {}, scrollIntoView() {},
         classList: { add() {}, remove() {}, toggle() {}, contains: () => false }, getBoundingClientRect: () => ({ left: 0, top: 0, bottom: 0, width: 0, height: 0 }) };
     }
@@ -43,7 +46,7 @@ function cargar(htmlPath, opciones = {}) {
     querySelector: s => existe(s) ? mk(s.trim()) : null, querySelectorAll: () => [],
     getElementById: i => fuente.includes(`id="${i}"`) ? mk('#' + i) : null,
     body: { classList: { add() {}, remove() {} }, dataset: {} } };
-  const store = {};
+  const store = Object.assign({}, opciones.store || {});     // localStorage inicial (p. ej. un mb_params guardado)
   global.localStorage = { getItem: k => store[k] ?? null, setItem(k, v) { store[k] = v; } };
   global.Blob = function (p) { this.p = p; }; global.URL = { createObjectURL: () => 'b', revokeObjectURL() {} };
   global.confirm = () => true;

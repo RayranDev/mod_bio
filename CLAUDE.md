@@ -112,6 +112,9 @@ fmtH, computeInd, indBarras, indEscala, indColPath, indTrunc, indOpt   (Resumen:
 svgIndBarras, svgIndSemana, svgIndPareto, svgIndApilada, indTabla   (Resumen: gráficos y tabla gemela)
 renderInd, indAbrir, indDiaLargo, aoaIndRes, aoaInd, aoaIndEmp, aoaIndSem, aoaIndAlert, hookInd   (Resumen: pantalla y Excel)
 aoaCons, aoaDet, aoaExc, aoaCal, sinergyTxt
+PARAM_IDS, PARAM_CICLO, PARAM_GUARDAR, PARAM_DEFAULTS, CFG_FORMATO, CFG_VERSION, CFG_CLAVES, CFG_PERFILES, CFG_PEND   (Configuración: constantes y estado)
+leerParametrosForm, paramDefaultDe, paramDefaults, paramValido, paramEtiqueta, paramTexto, aplicarParametrosGuardados, guardarParametros, restaurarParametros   (parámetros persistentes)
+configNombre, configArmar, exportarConfig, configValidar, configCambios, configVistaPrevia, abrirImportCfg, configAplicar, confirmarImportCfg, hookConfig   (archivo de configuración)
 checkReady, hook, runCalc
 ```
 
@@ -1115,6 +1118,68 @@ ninguna otra parte del motor — se guarda y no se usa. Con el modelo nuevo la p
 respondida de hecho: **la escalera se mide siempre desde el fin del turno asignado**, que es la opción
 "relativo". El `<option>` de "reloj absoluto" no tiene implementación detrás. Lo honesto sería quitar
 el dropdown; se dejó por ahora para no cambiar la interfaz sin pedirlo, pero **no confiar en él**.
+
+---
+
+## Archivo de configuración y parámetros persistentes (nov-2026, Fase A de `PLAN-AJUSTES-Y-CONFIGURACION.md`)
+
+**Por qué.** `localStorage` sobrevive a recargas pero vive en un solo navegador de un solo PC, y **los parámetros del
+formulario no se guardaban en ningún lado**: una recarga los devolvía al default. Ahora se persisten y se pueden llevar a
+otro navegador o a otra persona de RRHH en un `.json`.
+
+**Parámetros persistentes (`mb_params`).**
+- `PARAM_IDS` (compartida) es la lista de **todos** los ids que lee `readConfig()` (34). El cableado `change → runCalc` del archivo
+  completo se genera desde ella: ya no hay una lista copiada a mano que se desactualice (la anterior omitía 11 ids).
+  Una prueba comprueba que `PARAM_IDS` == lo que lee `readConfig` == los controles `c*` del HTML.
+- **`cIni`/`cFin` (el rango del ciclo) NO se guardan ni se exportan** (`PARAM_CICLO`, `PARAM_GUARDAR = PARAM_IDS` sin ellos).
+  Decisión de implementación: el ciclo cambia cada mes, y uno viejo persistido dejaría vacío el ciclo nuevo porque `checkReady()` solo
+  sugiere el rango si el campo está vacío. Sí recalculan al cambiar (en los dos archivos).
+- `PARAM_DEFAULTS` se captura **al cargar, antes de aplicar lo guardado**, desde los atributos del HTML (`defaultValue` / opción
+  `defaultSelected`), no desde `.value`: así un navegador que restaure formularios al recargar no los contamina.
+- Al abrir se aplica `mb_params`; un id que ya no existe o un valor que ya no es válido para ese control se descarta sin error
+  (un JSON corrupto también). `paramValido` es tan estricto como el navegador y lo usan por igual lo guardado y lo importado:
+  select = solo sus opciones; número = `^-?\d+(\.\d+)?$` (sin espacios, `0x10`, `1e308`, `NaN`, `Infinity`), dentro del `min`/`max` del
+  control y con un tope duro de 1e6; hora = `HH:MM[:SS]` con 00-23 y 00-59; fecha = `AAAA-MM-DD` que exista en el calendario
+  (2026-13-45 y 2026-02-30 se rechazan). `escalera()` además es segura ante una gracia no finita o enorme (se acota a [0, 29] y el bucle
+  tiene tope): con los valores normales da exactamente lo de siempre.
+- Se guarda **solo lo que difiere de `PARAM_DEFAULTS`** (sin cambios, `mb_params` es `{}`): así un default que cambie en una versión
+  nueva le llega a quien nunca tocó ese parámetro. Se guarda al cambiar un parámetro (archivo completo) o al pulsar «Aplicar y
+  recalcular» (RRHH), y además **`runCalc()` guarda los parámetros con los que calcula** (cubre «Calcular ciclo» tras editar en RRHH sin
+  haber aplicado). El archivo exportado, en cambio, lleva **todos** los parámetros.
+- RRHH conserva su semántica: los parámetros solo se aplican con «Aplicar y recalcular» (solo `cIni`/`cFin` recalculan al cambiar). El
+  botón «Restaurar parámetros por defecto» (con `confirm`) repone el formulario y borra lo guardado; en el completo además recalcula, en
+  RRHH deja el cálculo para «Aplicar y recalcular». Esa diferencia está en el cableado de cada archivo, no es una divergencia del motor.
+
+**El archivo (`mod_bio_config_AAAA-MM-DD_HHmm.json`).** Mismo formato en las dos versiones; claves en este orden:
+`formato` (`mod_bio-config`), `version` (1), `generado`, `herramienta` (`completa` | `rrhh`, según exista `renderGlosario`),
+`parametros`, `perfiles`, `confianza`, `autorizaciones`, `dispositivos`, `ajustesHorario`, `alcance.deptosExcluidos`,
+`rotacion.mesesNoConfiables`, `columnas.{detalle,consolidado,asistencia}` (las listas de columnas **ocultas**, como en `localStorage`).
+Todo ordenado, así que dos exportaciones del mismo estado salen iguales. **Nunca** incluye los Excel ni el archivo de lactancia, y solo
+lleva ids (los textos libres son los motivos de las autorizaciones de extras). `OVERRIDES` (`mb_overrides`) **no** se exporta: se migrará en
+la Fase B. `ajustesHorario` se exporta como `[]` y se tolera al importar: si trae datos se avisa y se ignoran (esta fase no los aplica ni
+escribe ninguna llave nueva).
+
+**Importar (`#dlgImportCfg`).**
+- `configValidar(texto)` valida **todo antes de aplicar nada**: JSON legible, `formato`, `version` entera ≥ 1 y ≤ `CFG_VERSION`, y el tipo de
+  cada sección (rol de perfil/dispositivo permitido, fechas reales y `ini ≤ fin` en autorizaciones, meses `AAAA-MM`, valores de parámetros
+  válidos para su control, clave `__proto__` rechazada). **Ids** (claves de `perfiles` y `autorizaciones`, entradas de `confianza`): se
+  recortan, pasan por `normId` (sin ceros a la izquierda), deben cumplir `^[\w.-]{1,32}$` y no pueden repetirse tras normalizar; un nombre o
+  una clave vacía es un error (el archivo solo lleva ids). **Claves de columna** deben cumplir `^[\w-]+$` (`COLS_CLAVE`): acaban dentro de un
+  selector CSS (`#tDet [data-col="k"]{display:none}`), y una clave con comillas o llaves permitiría inyectar CSS. Por la misma razón
+  `colsLeer()` descarta esas claves al leer `mb_colsDet`/`mb_colsCons`/`mb_colsAsis`, así un localStorage ya envenenado no puede dejar la
+  página en blanco. Cualquier error ⇒ no se aplica **nada**, ni parcialmente, y el diálogo los lista todos.
+  Claves o parámetros desconocidos ⇒ aviso, se ignoran (también `cIni`/`cFin` si vinieran en el archivo).
+- **Una sección ausente no se toca** (el archivo puede ser parcial); solo se reemplaza lo que trae. Único modo: «Reemplazar» (la fusión queda
+  para después). La vista previa cuenta cada sección («ahora: N») y lista los parámetros que cambian «ahora → nuevo» (el select con su texto).
+- `configAplicar` **muta en sitio** `PERFILES`, `AUTOR`, `DISPOSITIVOS` y `ROT.noConf` (objetos compartidos) y reasigna lo que es `let`
+  (`CONFIANZA`, `KPI_EXCL`, las tres listas de columnas); escribe cada llave en `localStorage`, repone el formulario, re-aplica las columnas,
+  y si hay `RESULT` llama `runCalc()` **conservando la pantalla en la que estaba la persona**. **Nunca recarga la página** (se perderían los
+  Excel cargados). Importar exclusiones de departamentos pone el Alcance en «todos menos estos», igual que al arrancar con exclusiones guardadas.
+- El archivo es **texto plano en claro**: con ids de personas y motivos escritos a mano. Por eso `mod_bio_config_*.json` está en `.gitignore`.
+
+**Pruebas.** `scripts/pruebas_motor/prueba_config.js` (ver su fila en el README de las pruebas); `lib.js` ahora acepta `store` (un `localStorage`
+inicial) y los elementos simulados traen `type`, `options` y `defaultValue` tomados del HTML. **Sin verificar:** el aspecto del diálogo y de
+los botones del encabezado en un navegador real, y el comportamiento con los Excel reales (huella con ~1.000 empleados).
 
 ---
 
