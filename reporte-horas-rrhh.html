@@ -15,6 +15,8 @@
        validada con scripts/validate_palette.js (dataviz skill): 3 series, todos los chequeos pasan */
     --cat-1:#2a78d6; --cat-2:#eb6834; --cat-3:#1baf7a;
     --chart-grid:#e1e0d9; --chart-axis:#c3c2b7;
+    /* color PROPIO de los ajustes de horario (violeta): un ajuste es una decision, no una alerta, asi que no usa --warn */
+    --adj:#6d28d9; --adj-soft:#ede9fe;
   }
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--ink);
@@ -101,7 +103,8 @@
   .cal .d .n{font-weight:700;font-size:12px}
   .cal .d .s{font-family:var(--mono);font-size:10px;color:var(--accent);font-weight:700}
   .cal .d .h{font-size:10px;color:var(--muted)}
-  .cal .d.ovr{outline:2px solid var(--warn)}
+  .cal .d.aj{outline:2px solid var(--adj)}
+  .cal .d.aj .s{color:var(--adj)}
   .cal .d.marcosin{background:var(--err-soft);border-color:#fca5a5}
   .cal .d.fv{opacity:.55;background:#f7f8fa}
   .cal .d .m{font-size:9px;color:var(--err);font-weight:700;margin-top:1px}
@@ -127,15 +130,23 @@
   td.cross{box-shadow:inset 3px 0 0 var(--ok)}
   td.over{color:var(--ok);font-weight:700}
   td.noaut{background:var(--err-soft);color:var(--err);text-decoration:line-through}
+  .tag.t-adj{background:var(--adj-soft);color:var(--adj)}
+  tr.aj td[data-col="turno"]{background:var(--adj-soft);box-shadow:inset 3px 0 0 var(--adj)}
+  s.aj-orig{color:var(--adj);opacity:.85}
+  select.ajsel{width:auto;max-width:150px;padding:2px 4px;font-size:11px}
+  button.aj-quitar{padding:1px 7px;font-size:10px;border-color:var(--adj);color:var(--adj)}
+  .aj-err{color:var(--err);font-weight:700;margin:8px 0 0}
+  dialog#dlgAjuste h3,dialog#dlgAjustes h3{font-size:13px;margin:0 0 4px;text-transform:uppercase;letter-spacing:.6px;color:var(--adj)}
+  dialog#dlgAjuste label.f{margin-top:9px}
   /* Dos modos de pantalla. En reportes desaparecen carga y parametros, asi el unico
      scroll de la ventana es el del resultado. Los <dialog> quedan FUERA de esto a
      proposito: se abren en cualquiera de los dos modos. */
   body[data-modo="reportes"] .setup{display:none}
   body[data-modo="setup"] #reportes{display:none}
   #btnVolver[hidden]{display:none}
-  dialog#dlgDisp,dialog#dlgAutor,dialog#dlgCols,dialog#dlgColsAs,dialog#dlgColsCons,dialog#dlgLact,dialog#dlgImportCfg{border:1px solid var(--line);border-radius:8px;padding:16px 18px;
+  dialog#dlgDisp,dialog#dlgAutor,dialog#dlgCols,dialog#dlgColsAs,dialog#dlgColsCons,dialog#dlgLact,dialog#dlgImportCfg,dialog#dlgAjuste,dialog#dlgAjustes{border:1px solid var(--line);border-radius:8px;padding:16px 18px;
     max-width:860px;width:92vw;max-height:86vh;overflow:auto;background:#fff;color:var(--fg)}
-  dialog#dlgDisp::backdrop,dialog#dlgAutor::backdrop,dialog#dlgCols::backdrop,dialog#dlgColsAs::backdrop,dialog#dlgColsCons::backdrop,dialog#dlgLact::backdrop,dialog#dlgImportCfg::backdrop{background:rgba(10,14,20,.55)}
+  dialog#dlgDisp::backdrop,dialog#dlgAutor::backdrop,dialog#dlgCols::backdrop,dialog#dlgColsAs::backdrop,dialog#dlgColsCons::backdrop,dialog#dlgLact::backdrop,dialog#dlgImportCfg::backdrop,dialog#dlgAjuste::backdrop,dialog#dlgAjustes::backdrop{background:rgba(10,14,20,.55)}
   dialog#dlgAutor h3{font-size:13px;margin:0 0 4px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted)}
   .aut{background:#fff;border:1px solid var(--line);border-radius:6px;padding:10px 12px;margin-bottom:10px}
   .aut h3{font-size:12px;margin:0 0 8px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted)}
@@ -549,6 +560,51 @@
   </div>
 </dialog>
 
+<dialog id="dlgAjuste">
+  <h3 id="ajTitulo">Ajuste de horario</h3>
+  <p class="muted" id="ajResumen" style="margin:0 0 6px;max-width:520px"></p>
+  <div id="ajCamposCrear">
+    <label class="f" for="ajMotivo">Motivo (obligatorio)</label>
+    <select id="ajMotivo">
+      <option value="">Elija un motivo…</option>
+      <option value="NO_CARGADO">Turno no cargado en BioTime</option>
+      <option value="EQUIVOCADO">Turno equivocado</option>
+      <option value="CAMBIO_NO_REGISTRADO">Cambio de turno no registrado en BioTime</option>
+      <option value="OTRO">Otro</option>
+    </select>
+    <label class="f" for="ajHasta">Aplicar hasta (inclusive)</label>
+    <input type="date" id="ajHasta">
+  </div>
+  <label class="f" id="ajNotaEtq" for="ajNota">Nota</label>
+  <input type="text" id="ajNota" maxlength="500" placeholder="No escribas datos personales" autocomplete="off">
+  <label class="f" for="ajAutor">Quién lo hace</label>
+  <input type="text" id="ajAutor" maxlength="80" autocomplete="off">
+  <p class="muted" id="ajAvisoSeg" hidden style="color:var(--adj);font-weight:700;margin:8px 0 0;max-width:520px"></p>
+  <p class="aj-err" id="ajError" hidden></p>
+  <div class="bar" style="margin-top:12px">
+    <button class="primary" id="btnAjOk">Guardar</button>
+    <button id="btnAjCancel">Cancelar</button>
+  </div>
+</dialog>
+
+<dialog id="dlgAjustes">
+  <h3>Ajustes de horario</h3>
+  <p class="muted" style="margin:0 0 8px;max-width:640px;font-size:12px">
+    Correcciones al turno que cargó BioTime. El turno original nunca se borra y un ajuste nunca se elimina:
+    se anula con un motivo y queda en el historial. Se guardan en este navegador y viajan en el archivo de configuración.</p>
+  <p class="aj-err" id="ajAviso" hidden style="max-width:640px"></p>
+  <div class="bar">
+    <input type="text" id="fAjEmp" placeholder="Filtrar por código o nombre…" style="max-width:260px">
+    <span class="muted" id="ajConteo"></span>
+  </div>
+  <div class="scroll" style="max-height:52vh"><table id="tAjustes"><thead><tr>
+    <th>Código</th><th>Desde</th><th>Hasta</th><th>Turno</th><th>Motivo</th><th>Autor y fecha</th><th>Estado</th><th></th>
+  </tr></thead><tbody></tbody></table></div>
+  <div class="bar" style="margin-top:12px">
+    <button id="btnAjustesClose">Cerrar</button>
+  </div>
+</dialog>
+
 <!-- ============ CONFIG ============ -->
 <section class="panel setup">
   <h2>2 &middot; Ciclo a procesar</h2>
@@ -796,16 +852,16 @@
     <select id="selMes" style="max-width:170px"></select>
     <span class="sp"></span>
     <button id="expCal">Exportar calendario (Excel)</button>
-    <button id="btnClrOvr">Limpiar cambios puntuales</button>
+    <button id="btnAjustes">Ajustes de horario</button>
   </div>
   <div class="panel" style="margin-bottom:10px">
     <div class="cal" id="calHd"></div>
     <div class="cal" id="calGrid" style="margin-top:4px"></div>
     <p class="muted" style="font-size:11px;margin:10px 0 0">
-      Clic en un día para asignar o quitar turno (cambio puntual, B-04). Los cambios se guardan en este
-      navegador y prevalecen sobre la programación regular. Naranja = festivo &middot; azul = domingo &middot;
+      Clic en un día para abrirlo en el Detalle: ahí se corrige el turno con la lista desplegable (ajuste de horario auditado, B-04).
+      Los ajustes se guardan en este navegador y prevalecen sobre la programación de BioTime. Naranja = festivo &middot; azul = domingo &middot;
       gris = sin turno &middot; rojo = sin turno pero SÍ marcó (revisar por qué falta asignar el turno) &middot;
-      borde ámbar = cambio puntual &middot; atenuado = fuera del período de vigencia (antes del ingreso o después
+      borde violeta = turno ajustado &middot; atenuado = fuera del período de vigencia (antes del ingreso o después
       del retiro; no aplica a fechas de ingreso masivas, ver ING-MASIVO en el glosario).
     </p>
   </div>
@@ -1187,6 +1243,10 @@ const NOV = {
    q:'Este dia se le reconocieron minutos de lactancia como tiempo trabajado (etapa de 6 o de 24 meses, segun el archivo de lactancia).',
    p:'La empleada figura en el archivo de lactancia con una etapa vigente ese dia y le falto tiempo dentro de su turno (llego tarde, salio antes o salio y volvio), una vez reconocido el cafe.',
    a:'Se reconoce solo lo que de verdad le falto, hasta el tope diario de la etapa (parametros: 60 min en la de 6 meses, 30 min en la de 24), asi que no genera horas pendientes. Esos minutos se pagan como ordinarios SIN recargo (nocturno, dominical o festivo): solo lleva recargo lo que realmente trabajo. Es un derecho, no una obligacion: quien trabaja la jornada completa no recibe ningun credito. El cafe (B-12) y la lactancia son topes separados y acumulables.'},
+ 'AJ-H':{s:'INFO',t:'Turno ajustado',
+   q:'El turno de este dia no es el que cargo BioTime: una persona lo corrigio desde el Detalle y quedo auditado.',
+   p:'BioTime no tenia cargado el turno, estaba equivocado o hubo un cambio que no se registro. Cada ajuste guarda motivo, nota, autor y fecha, y el turno original se conserva (aparece tachado).',
+   a:'La nomina, la asistencia y la calidad de marcacion usan el turno ajustado. Cuando BioTime se corrija, anule el ajuste desde «Ajustes de horario» (Calendario): nunca se borra, queda en el historial.'},
  'F-09':{s:'ADV',t:'Extra sin autorizacion previa',
    q:'El dia genero tiempo suplementario y no existe una autorizacion registrada que cubra esa fecha.',
    p:'El catalogo exige decision explicita: las extras se calculan igual, pero no deberian pagarse sin que el jefe las autorice.',
@@ -1335,7 +1395,6 @@ const isHoliday = iso => holidaysCO(+iso.slice(0,4))[iso] || null;
    ══════════════════════════════════════════════════════════════════ */
 const DATA = { emp:null, tur:null, hor:null, mar:null, ren:null, lac:null };
 let MODEL = null, RESULT = null, CUR_EMP = null, ASISTENCIA = null;
-const OVERRIDES = JSON.parse(localStorage.getItem('mb_overrides')||'{}'); // "id|fecha" -> shiftCode|""
 const PERFILES  = JSON.parse(localStorage.getItem('mb_perfiles')||'{}');
 const AUTOR     = JSON.parse(localStorage.getItem('mb_autor')||'{}');  // id -> [{ini,fin,estado,motivo}]
 /* Direccion, confianza y manejo (Art. 162 CST): no estan sujetos a la jornada maxima,
@@ -1590,7 +1649,7 @@ function buildModel(){
   /* Lactancia (archivo OPCIONAL): se valida contra los empleados que acaba de armar. */
   const lactancia = DATA.lac ? leerLactancia(DATA.lac, employees) : null;
 
-  return { employees, shifts, sched, punches, orphan, dispositivos, lactancia };
+  return { employees, shifts, sched, punches, orphan, dispositivos, lactancia, ...ajIndexar(AJ_HORARIO, shifts) };
 }
 
 /** Detecta fechas de ingreso compartidas por muchísima gente: eso no es gente contratada el
@@ -1634,15 +1693,554 @@ function activoEnCiclo(M, id, cfg){
    MOTOR DE CÁLCULO
    ══════════════════════════════════════════════════════════════════ */
 
-/** Turno vigente de un empleado en una fecha. B-04/B-05, con overrides puntuales. */
-function shiftFor(M, id, iso){
-  const ovr = OVERRIDES[id+'|'+iso];
-  if(ovr!==undefined) return { code: ovr||null, source:'OVERRIDE' };
+/* ══════════════════════════════════════════════════════════════════
+   AJUSTES DE HORARIO (auditados)
+   Corrigen el turno de una persona cuando BioTime lo cargó mal o no lo cargó. El turno de
+   BioTime NUNCA se pisa: shiftFor() resuelve día por día y devuelve, junto al turno
+   aplicado, el original. Un ajuste es un INSUMO corregido, no una hora editada: el motor
+   sigue siendo una función pura (Excel + parámetros + ajustes = mismo resultado) y lee
+   M.ajustes, nunca el global, así que la línea base (computeBase) se calcula pasándole un
+   modelo sin ajustes. Anular NO borra: queda en el historial con quién, cuándo y por qué.
+   ══════════════════════════════════════════════════════════════════ */
+const AJ_MOTIVOS = { NO_CARGADO:'Turno no cargado en BioTime', EQUIVOCADO:'Turno equivocado',
+  CAMBIO_NO_REGISTRADO:'Cambio de turno no registrado en BioTime', OTRO:'Otro' };
+const AJ_ESTADOS = { VIGENTE:'Vigente', ANULADO:'Anulado',
+  REDUNDANTE:'Ya coincide con BioTime: se puede anular',
+  TURNO_INEXISTENTE:'El turno no existe en el archivo de Turno cargado: no se aplica',
+  FUERA_VIGENCIA:'Todos sus días caen fuera de la vigencia de la persona: sin efecto',
+  SIN_PERSONA:'La persona no figura en los archivos cargados',
+  SOBREPUESTO:'Sobrepuesto por un ajuste más nuevo con turno inexistente: en esos días manda BioTime' };
+const AJ_MAX_DIAS = 3660;      // un rango mayor a ~10 años es un error de captura, no un ajuste
+const AJ_REC = ['REC_N','REC_F','REC_FN'];
+let AJ_DLG = null;             // diálogo abierto: {modo, origen, emp, iso, turno, prev, sel, id}
+
+/** Atributo HTML seguro: esc() solo cubre &, < y >, y dentro de un atributo también hay que cerrar las comillas. */
+function ajA(s){ return esc(s).replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+function ajAhora(f){
+  f = f || new Date();
+  return `${f.getFullYear()}-${pad(f.getMonth()+1)}-${pad(f.getDate())}T${pad(f.getHours())}:${pad(f.getMinutes())}:${pad(f.getSeconds())}`;
+}
+/** Límite de «creado» y «anulado.en»: ahora + 1 día (tolera relojes y husos distintos; más allá es un dato inventado). */
+function ajLimite(){ return ajAhora(new Date(Date.now()+864e5)); }
+function ajNuevoId(){ return 'aj-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,8); }
+function ajFechaOk(s){
+  if(typeof s!=='string' || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  const t = new Date(s+'T00:00:00Z'); return !isNaN(t) && t.toISOString().slice(0,10)===s;
+}
+function ajMomentoOk(s){ return typeof s==='string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(s) && ajFechaOk(s.slice(0,10))
+  && +s.slice(11,13)<24 && +s.slice(14,16)<60 && +s.slice(17,19)<60; }
+
+/** Valida y normaliza UN ajuste (de localStorage, del archivo de configuración o del diálogo).
+ *  Nunca lanza: devuelve {aj, errores}. `aj` solo trae las claves conocidas, en orden fijo.
+ *  Los textos libres (nota, autor, turno) son del usuario: aquí solo se acota su tamaño; se escapan al pintarlos. */
+function ajNormalizar(x, opc){
+  opc = opc || {};                  // opc.futuro: tolera fechas adelantadas (solo al leer lo ya guardado)
+  const errores = [];
+  if(!x || typeof x!=='object' || Array.isArray(x)) return { aj:null, errores:['debe ser un objeto.'] };
+  if(Object.prototype.hasOwnProperty.call(x, '__proto__')) return { aj:null, errores:['trae la clave __proto__.'] };
+  const texto = (v, etq, max, obligatorio)=>{
+    if(v===undefined || v===null){ if(obligatorio) errores.push(`«${etq}» es obligatorio.`); return ''; }
+    if(typeof v!=='string'){ errores.push(`«${etq}» debe ser texto.`); return ''; }
+    const t = v.trim();
+    if(t.length>max){ errores.push(`«${etq}» supera los ${max} caracteres.`); return ''; }
+    if(/[\u0000-\u001f]/.test(t)){ errores.push(`«${etq}» trae caracteres de control.`); return ''; }
+    if(obligatorio && !t) errores.push(`«${etq}» es obligatorio.`);
+    return t;
+  };
+  const id = texto(x.id, 'id', 64, true);
+  if(id && (!/^[\w.:-]{1,64}$/.test(id) || id==='__proto__')) errores.push('«id» no es válido.');
+  let emp = texto(x.emp, 'emp', 32, true);
+  if(emp){ emp = normId(emp); if(!/^[\w.-]{1,32}$/.test(emp) || emp==='__proto__') errores.push('«emp» no es un id de empleado válido (el archivo solo lleva ids).'); }
+  const desde = x.desde, hasta = x.hasta;
+  if(!ajFechaOk(desde)) errores.push('«desde» no es una fecha AAAA-MM-DD válida.');
+  if(!ajFechaOk(hasta)) errores.push('«hasta» no es una fecha AAAA-MM-DD válida.');
+  if(ajFechaOk(desde) && ajFechaOk(hasta)){
+    if(desde>hasta) errores.push('«desde» no puede ser posterior a «hasta».');
+    else if(dnum(hasta)-dnum(desde) >= AJ_MAX_DIAS) errores.push(`el rango no puede superar ${AJ_MAX_DIAS} días.`);
+  }
+  const turno = texto(x.turno, 'turno', 64, false);
+  const motivo = typeof x.motivo==='string' && Object.prototype.hasOwnProperty.call(AJ_MOTIVOS, x.motivo) ? x.motivo : null;
+  if(!motivo) errores.push('«motivo» no es uno de los permitidos ('+Object.keys(AJ_MOTIVOS).join(', ')+').');
+  const nota = texto(x.nota, 'nota', 500, false);
+  if(motivo==='OTRO' && !nota) errores.push('con el motivo OTRO la «nota» es obligatoria.');
+  const autor = texto(x.autor, 'autor', 80, false);
+  if(!ajMomentoOk(x.creado)) errores.push('«creado» no es una fecha y hora AAAA-MM-DDTHH:MM:SS válida.');
+  else if(!opc.futuro && x.creado > ajLimite()) errores.push('«creado» está en el futuro.');
+  let anulado = null;
+  if(x.anulado!==null && x.anulado!==undefined){
+    const y = x.anulado;
+    if(typeof y!=='object' || Array.isArray(y)) errores.push('«anulado» debe ser null o un objeto {autor, en, motivo}.');
+    else{
+      const a = texto(y.autor, 'anulado.autor', 80, false), m = texto(y.motivo, 'anulado.motivo', 500, true);
+      if(!ajMomentoOk(y.en)) errores.push('«anulado.en» no es una fecha y hora AAAA-MM-DDTHH:MM:SS válida.');
+      else if(!opc.futuro && y.en > ajLimite()) errores.push('«anulado.en» está en el futuro.');
+      anulado = { autor:a, en:y.en, motivo:m };
+    }
+  }
+  if(errores.length) return { aj:null, errores };
+  return { aj:{ id, emp, desde, hasta, turno, motivo, nota, autor, creado:x.creado, anulado }, errores };
+}
+/** Une dos listas por id, SIN borrar nada y SIN reescribir nada: lo que ya existe se conserva. Un ajuste del archivo con un id
+ *  que ya existe solo cuenta como «ya existe» si es IDÉNTICO en persona, fechas, turno, motivo, nota, autor y creación; en ese caso (y
+ *  solo en ese) se adopta una anulación nueva. Si difiere en cualquier otro campo es un CONFLICTO: se ignora y se avisa (un archivo
+ *  no puede cambiar ni anular a escondidas un ajuste ya auditado). Es lo que usa la importación. */
+function ajMismoCuerpo(a, b){
+  return ['id','emp','desde','hasta','turno','motivo','nota','autor','creado'].every(k=>a[k]===b[k]);
+}
+function ajFusionar(actual, nuevos){
+  const lista = actual.slice(), idx = new Map(lista.map((a,i)=>[a.id,i])), conflictos = [];
+  let agregados = 0, existentes = 0, anulados = 0;
+  nuevos.forEach(n=>{
+    if(!idx.has(n.id)){ idx.set(n.id, lista.length); lista.push(n); agregados++; return; }
+    const i = idx.get(n.id), a = lista[i];
+    if(!ajMismoCuerpo(a, n)){ conflictos.push(n.id); return; }
+    existentes++;
+    if(!a.anulado && n.anulado){ lista[i] = { ...a, anulado:{ ...n.anulado } }; anulados++; }
+  });
+  return { lista, agregados, existentes, anulados, conflictos };
+}
+
+/** Lo que no se pudo leer NO se pierde: las entradas guardadas que no pasan ajNormalizar (o repiten un id) quedan en AJ_SIN_LEER y
+ *  ajPersistir las vuelve a escribir tal cual; un almacenamiento que ni siquiera es una lista se copia a mb_ajustes_horario_ilegible
+ *  antes de que nada lo pise. El historial lo avisa (ajAvisosTxt). */
+const AJ_SIN_LEER = [];
+const AJ_CARGA = { ilegible:false, sinMigrar:0, overridesIlegible:false, relojFuturo:0 };
+/** Lee los ajustes guardados y migra los viejos «cambios puntuales» (mb_overrides, que ninguna pantalla escribía)
+ *  a ajustes de un día con motivo OTRO. Solo escribe en localStorage si migró algo. Las claves que no se pueden migrar
+ *  se conservan en mb_overrides_sin_migrar (mb_overrides solo se borra cuando ya no queda nada por conservar en él). */
+function ajCargarInicial(){
+  const lista = [];
+  try{
+    const crudo = localStorage.getItem('mb_ajustes_horario');
+    if(crudo!==null){
+      let g = null;
+      try{ g = JSON.parse(crudo); }catch(e){}
+      if(Array.isArray(g)){
+        const vistos = new Set(), lim = ajLimite();
+        g.forEach(x=>{
+          const r = ajNormalizar(x, { futuro:true });        // lo ya guardado con el reloj mal puesto SE CONSERVA y se aplica; solo se avisa
+          if(r.aj && !vistos.has(r.aj.id)){
+            vistos.add(r.aj.id); lista.push(r.aj);
+            if(r.aj.creado > lim || (r.aj.anulado && r.aj.anulado.en > lim)) AJ_CARGA.relojFuturo++;
+          } else AJ_SIN_LEER.push(x);
+        });
+      }else{
+        AJ_CARGA.ilegible = true;
+        for(let n=1; n<=50; n++){                          // _ilegible, _ilegible_2, _ilegible_3…: nunca se pisa una copia
+          const k = n===1 ? 'mb_ajustes_horario_ilegible' : 'mb_ajustes_horario_ilegible_'+n, previo = localStorage.getItem(k);
+          if(previo===crudo) break;                        // ya copiado
+          if(previo===null){ localStorage.setItem(k, crudo); break; }
+        }
+      }
+    }
+  }catch(e){}
+  try{
+    const crudo = localStorage.getItem('mb_overrides');
+    if(crudo!==null){
+      let o = null;
+      try{ o = JSON.parse(crudo); }catch(e){}
+      if(o && typeof o==='object' && !Array.isArray(o)){
+        const vistos = new Set(lista.map(a=>a.id)), fallan = {};
+        Object.keys(o).sort().forEach(k=>{
+          const m = /^(.+)\|(\d{4}-\d{2}-\d{2})$/.exec(k), v = o[k];
+          const r = m && (typeof v==='string' || v===null) ? ajNormalizar({ id:'aj-migrado-'+m[1]+'-'+m[2], emp:m[1], desde:m[2], hasta:m[2], turno:v||'', motivo:'OTRO',
+            nota:'Migrado de un cambio puntual anterior', autor:'(migrado)', creado:ajAhora(), anulado:null }) : null;
+          if(!r || !r.aj){ fallan[k] = v; return; }
+          if(!vistos.has(r.aj.id)){ vistos.add(r.aj.id); lista.push(r.aj); }
+        });
+        localStorage.setItem('mb_ajustes_horario', JSON.stringify(lista.concat(AJ_SIN_LEER)));
+        if(Object.keys(fallan).length){
+          let previo = {};
+          try{ const p = JSON.parse(localStorage.getItem('mb_overrides_sin_migrar')||'{}'); if(p && typeof p==='object' && !Array.isArray(p)) previo = p; }catch(e){}
+          localStorage.setItem('mb_overrides_sin_migrar', JSON.stringify({ ...previo, ...fallan }));
+        }
+        localStorage.removeItem('mb_overrides');
+      }else AJ_CARGA.overridesIlegible = true;      // ni siquiera es un objeto: se deja donde está, sin tocar
+    }
+    try{
+      const sm = JSON.parse(localStorage.getItem('mb_overrides_sin_migrar')||'{}');
+      AJ_CARGA.sinMigrar = sm && typeof sm==='object' && !Array.isArray(sm) ? Object.keys(sm).length : 0;
+    }catch(e){}
+  }catch(e){}
+  return lista;
+}
+const AJ_HORARIO = ajCargarInicial();
+function ajPersistir(){ try{ localStorage.setItem('mb_ajustes_horario', JSON.stringify(AJ_HORARIO.concat(AJ_SIN_LEER))); }catch(e){} }
+function ajAutorRecordado(){ try{ return localStorage.getItem('mb_ajuste_autor')||''; }catch(e){ return ''; } }
+/** Avisos de lo que no se pudo leer ni migrar (se muestran en el historial). '' si no hay nada. */
+function ajAvisosTxt(){
+  const p = [];
+  if(AJ_SIN_LEER.length) p.push(`${AJ_SIN_LEER.length} entrada(s) guardada(s) en este navegador no se pudieron leer (formato inválido o id repetido): no se aplican, pero se conservan sin tocar para no perder la auditoría.`);
+  if(AJ_CARGA.ilegible) p.push('El almacenamiento de ajustes estaba ilegible: su contenido original se copió a mb_ajustes_horario_ilegible (o a la siguiente copia libre: _2, _3…).');
+  if(AJ_CARGA.relojFuturo) p.push(`${AJ_CARGA.relojFuturo} ajuste(s) guardado(s) tienen fecha de creación o de anulación en el futuro (el reloj de este PC estaba mal al crearlos). Se siguen aplicando, pero esa fecha puede imponerlos sobre ajustes más nuevos: revíselos.`);
+  if(AJ_CARGA.sinMigrar) p.push(`${AJ_CARGA.sinMigrar} cambio(s) puntual(es) antiguos no se pudieron migrar y quedan guardados en mb_overrides_sin_migrar.`);
+  if(AJ_CARGA.overridesIlegible) p.push('mb_overrides (cambios puntuales antiguos) está ilegible: se dejó sin tocar y no se migró.');
+  return p.join(' ');
+}
+
+/** ¿x es más nuevo que y? Por `creado`; si empatan, por id (orden total: el resultado no depende del orden de la lista). */
+function ajMasNuevo(x, y){ return x.creado!==y.creado ? x.creado>y.creado : x.id>y.id; }
+/** Índice para el motor: ajustes vigentes (no anulados) por persona, del más antiguo al más reciente (gana el último).
+ *  Un ajuste cuyo turno no existe en el archivo de Turno no se aplica y nunca se inventa un turno: se separa para avisarlo (ADV) y,
+ *  además, se guarda en ajustesBloqueo: mientras sea el más reciente de un día, en ese día manda BioTime (no un ajuste anterior). */
+function ajIndexar(lista, shifts){
+  const ajustes = new Map(), ajustesBloqueo = new Map(), ajustesInvalidos = [], ajustesPorId = new Map();
+  lista.forEach(a=>{
+    const c = { ...a, anulado: a.anulado ? { ...a.anulado } : null };
+    ajustesPorId.set(c.id, c);
+    if(c.anulado) return;
+    const invalido = c.turno && !shifts.has(c.turno);
+    if(invalido) ajustesInvalidos.push(c);
+    const m = invalido ? ajustesBloqueo : ajustes;
+    if(!m.has(c.emp)) m.set(c.emp, []);
+    m.get(c.emp).push(c);
+  });
+  const ord = (x,y)=>ajMasNuevo(x,y) ? 1 : ajMasNuevo(y,x) ? -1 : 0;
+  ajustes.forEach(L=>L.sort(ord)); ajustesBloqueo.forEach(L=>L.sort(ord));
+  return { ajustes, ajustesBloqueo, ajustesInvalidos, ajustesPorId };
+}
+
+/** ¿Ese día cae fuera de la vigencia real de la persona? (antes de su ingreso real, después de vigFin). Un ajuste no lo revive. */
+function ajFueraVigencia(M, id, iso){
+  const e = M.employees && M.employees.get(id); if(!e) return false;
+  const masivo = e.ingreso && M.ingresoMasivo && M.ingresoMasivo.has(e.ingreso);
+  return !!((e.ingreso && !masivo && iso < e.ingreso) || (e.vigFin && iso > e.vigFin));
+}
+/** Ajuste que manda ese día (el más reciente de los que lo cubren), o null. Si el más reciente es uno con turno inexistente,
+ *  manda BioTime: un ajuste anterior NO ocupa su lugar. */
+function ajDe(M, id, iso){
+  const cubre = a=>a.desde<=iso && iso<=a.hasta;
+  let a = null;
+  const L = M.ajustes && M.ajustes.get(id);
+  if(L) for(let i=L.length-1; i>=0; i--) if(cubre(L[i])){ a = L[i]; break; }
+  const V = M.ajustesBloqueo && M.ajustesBloqueo.get(id);
+  if(V) for(let i=V.length-1; i>=0; i--) if(cubre(V[i])){ if(!a || ajMasNuevo(V[i], a)) return null; break; }
+  return a && !ajFueraVigencia(M, id, iso) ? a : null;
+}
+
+/** Turno de BioTime sin ajustes. B-04/B-05. */
+function shiftBase(M, id, iso){
   const asg = (M.sched.get(id)||[]).filter(a=>a.ini<=iso && iso<=a.fin);
   if(!asg.length) return { code:null, source:'NONE' };
   if(asg.length>1) return { code: asg[asg.length-1].code, source:'MULTI' };  // B-03
   return { code: asg[0].code, source:'PLAN' };
 }
+/** Turno vigente de un empleado en una fecha: el ajuste si lo hay (con el original de BioTime al lado), si no la programación. */
+function shiftFor(M, id, iso){
+  const aj = ajDe(M, id, iso);
+  if(!aj) return shiftBase(M, id, iso);
+  return { code: aj.turno||null, source:'AJUSTE', ajuste:aj, original:shiftBase(M, id, iso) };
+}
+/** ¿Tiene la persona, DENTRO del ciclo, al menos un día con turno puesto por un ajuste aplicable (turno válido, no anulado, no sobrepuesto, vigente)?
+ *  Un ajuste fuera del ciclo o solo de «sin turno» no le da programación. */
+function ajDaProgramacion(M, id, cfg){
+  if(!M.ajustes || !M.ajustes.has(id)) return false;
+  return rangeDays(cfg.ini, cfg.fin).some(iso=>{ const sf = shiftFor(M, id, iso); return sf.source==='AJUSTE' && !!sf.code; });
+}
+/** Línea base: el mismo cálculo SIN ajustes y solo con las personas que los tienen (la bolsa semanal es por
+ *  persona, así que recortar el universo no altera a nadie). Sirve para medir el impacto de cada ajuste. */
+function computeBase(M, cfg){
+  const ids = new Set(M.ajustes ? M.ajustes.keys() : []);
+  const employees = new Map([...M.employees].filter(([id])=>ids.has(id)));
+  return compute({ ...M, employees, ajustes:new Map(), ajustesBloqueo:new Map(), ajustesInvalidos:[], orphan:[] }, cfg);
+}
+
+/** ¿Todos los días (vigentes) de su rango ya tienen en BioTime ese mismo turno? Entonces el ajuste no cambia nada. */
+function ajRedundante(M, a){
+  let hubo = false;
+  for(let iso=a.desde; iso<=a.hasta; iso=addDays(iso,1)){
+    if(ajFueraVigencia(M, a.emp, iso)) continue;
+    hubo = true;
+    if((shiftBase(M, a.emp, iso).code||null) !== (a.turno||null)) return false;
+  }
+  return hubo;
+}
+/** Días (vigentes) de un ajuste en los que otro MÁS NUEVO, de turno inexistente, lo deja sin efecto (ahí manda BioTime). */
+function ajSobrepuesto(M, a){
+  const V = M.ajustesBloqueo && M.ajustesBloqueo.get(a.emp); if(!V || !V.length) return 0;
+  let n = 0;
+  for(let iso=a.desde; iso<=a.hasta; iso=addDays(iso,1)){
+    if(ajFueraVigencia(M, a.emp, iso)) continue;
+    if(V.some(b=>b.desde<=iso && iso<=b.hasta && ajMasNuevo(b, a))) n++;
+  }
+  return n;
+}
+/** Estado de un ajuste frente a lo cargado: {k, txt}. Sin modelo (aún no se calcula) solo distingue anulado de vigente. */
+function ajEstado(M, a){
+  let k = 'VIGENTE';
+  if(a.anulado) k = 'ANULADO';
+  else if(M){
+    if(a.turno && !M.shifts.has(a.turno)) k = 'TURNO_INEXISTENTE';
+    else if(!M.employees.has(a.emp)) k = 'SIN_PERSONA';
+    else{
+      let vigente = false;
+      for(let iso=a.desde; iso<=a.hasta && !vigente; iso=addDays(iso,1)) if(!ajFueraVigencia(M, a.emp, iso)) vigente = true;
+      k = !vigente ? 'FUERA_VIGENCIA' : ajSobrepuesto(M, a) ? 'SOBREPUESTO' : ajRedundante(M, a) ? 'REDUNDANTE' : 'VIGENTE';
+    }
+  }
+  return { k, txt:AJ_ESTADOS[k] };
+}
+/** Turnos que daba BioTime en el rango de un ajuste (distintos, para el mensaje «antes: …»). */
+function ajAntes(M, a){
+  const v = new Set();
+  for(let iso=a.desde; iso<=a.hasta; iso=addDays(iso,1)){
+    if(ajFueraVigencia(M, a.emp, iso)) continue;
+    v.add(shiftBase(M, a.emp, iso).code || 'sin turno');
+    if(v.size>4) break;
+  }
+  return [...v].join(', ') + (v.size>4 ? '…' : '') || 'sin turno';
+}
+/** Excepciones AJ-H de una persona: UNA por ajuste (no por día, igual que A-16 y A-18). INFO si se aplica, ADV si no. */
+function ajExcepciones(M, id, cfg){
+  const out = [], cruza = a=>a.hasta>=cfg.ini && a.desde<=cfg.fin;
+  const quien = a=>`Motivo: ${AJ_MOTIVOS[a.motivo]}${a.nota?' — '+a.nota:''}. Autor: ${a.autor||'(sin autor)'} (${a.creado.slice(0,10)}).`;
+  ((M.ajustes && M.ajustes.get(id)) || []).filter(cruza).forEach(a=>{
+    const est = ajEstado(M, a);
+    out.push({ sev:'INFO', fecha:a.desde, msg: est.k==='SOBREPUESTO'
+      ? `Ajuste de turno SOBREPUESTO del ${a.desde} al ${a.hasta} (${a.turno||'sin turno (descanso)'}): ${est.txt} (${ajSobrepuesto(M, a)} día(s)). ${quien(a)}`
+      : `Turno ajustado del ${a.desde} al ${a.hasta}: ${a.turno||'sin turno (descanso)'} (antes: ${ajAntes(M, a)}). ${quien(a)}`+
+          (est.k==='VIGENTE' ? '' : ' '+est.txt+'.') });
+  });
+  ((M.ajustesInvalidos||[]).filter(a=>a.emp===id && cruza(a))).forEach(a=>{
+    out.push({ sev:'ADV', fecha:a.desde,
+      msg:`Ajuste de turno NO aplicado (${a.desde} a ${a.hasta}): el turno «${a.turno}» no existe en el archivo de Turno cargado. `+
+          `Se mantiene lo de BioTime (y mientras sea el más reciente de un día, en ese día no se aplica ningún ajuste anterior). ${quien(a)}` });
+  });
+  return out;
+}
+
+/* ── impacto: antes → ahora, contra RESULT.base ── */
+function ajMedidas(rows){
+  const m = { ord:0, extra:0, rec:0, pend:0 };
+  rows.forEach(r=>{
+    m.ord += r.ordH||0; m.extra += r.extraH||0; m.pend += (r.pendienteMin||0)/60;
+    AJ_REC.forEach(k=>{ m.rec += (r.conc && r.conc[k])||0; });
+  });
+  return m;
+}
+function ajImpactoDia(R, id, iso){
+  const e = R && R.byEmp.get(id), b = R && R.base && R.base.byEmp.get(id);
+  if(!e || !b) return null;
+  const f = rows=>rows.filter(r=>r.iso===iso);
+  return { antes:ajMedidas(f(b.rows)), ahora:ajMedidas(f(e.rows)) };
+}
+function ajImpactoEmp(R, id){
+  const e = R && R.byEmp.get(id), b = R && R.base && R.base.byEmp.get(id);
+  if(!e || !b) return null;
+  const med = x=>({ ord:x.ordH||0, extra:x.extraH||0, pend:x.pendH||0, rec:AJ_REC.reduce((s,k)=>s+(x.tot[k]||0),0) });
+  return { antes:med(b), ahora:med(e) };
+}
+const ajH = n => (Math.round(n*100)/100).toString().replace('.',',');
+const ajDelta = n => { const r = Math.round(n*100)/100; return r===0 ? '0' : (r>0?'+':'−')+ajH(Math.abs(r)); };
+/** «extras −2 h, recargos +1 h, pendientes −8 h»: solo lo que cambia; 'sin cambios' si nada cambia. */
+function ajDeltaTxt(I){
+  const p = [['ordinarias','ord'],['extras','extra'],['recargos','rec'],['pendientes','pend']]
+    .map(([n,k])=>[n, I.ahora[k]-I.antes[k]]).filter(([,d])=>Math.abs(d)>=0.005).map(([n,d])=>`${n} ${ajDelta(d)} h`);
+  return p.length ? p.join(', ') : 'sin cambios en horas';
+}
+function ajPares(I){
+  return [['ordinarias','ord'],['extras','extra'],['recargos','rec'],['pendientes','pend']]
+    .map(([n,k])=>`${n} ${ajH(I.antes[k])} → ${ajH(I.ahora[k])}`).join(', ');
+}
+function ajTextoAj(a, original){
+  return `Turno ajustado a ${a.turno||'sin turno (descanso)'} (BioTime: ${original||'sin turno'}). Motivo: ${AJ_MOTIVOS[a.motivo]}`+
+    `${a.nota?' — '+a.nota:''}. Autor: ${a.autor||'(sin autor)'}, ${a.creado.replace('T',' ')}.`+
+    (a.desde!==a.hasta ? ` El ajuste cubre del ${a.desde} al ${a.hasta}.` : '');
+}
+/** Texto del calendario para un día ajustado (sf = lo que devolvió shiftFor). */
+function ajTextoDia(sf){ return ajTextoAj(sf.ajuste, sf.original && sf.original.code); }
+/** Chip AJ-H de una fila del Detalle, con el impacto de ESE día contra la línea base. */
+function ajChip(r){
+  const a = MODEL && MODEL.ajustesPorId && MODEL.ajustesPorId.get(r.ajuste); if(!a) return '';
+  const I = ajImpactoDia(RESULT, r.id, r.iso);
+  const tip = ajTextoAj(a, r.turnoOriginal) +
+    (I ? ` Impacto de este día (antes → ahora): ${ajPares(I)}. Con la bolsa semanal de los rotativos el efecto puede caer en otro día de la misma semana; el total del ciclo está en la tarjeta del encabezado.`
+       : ' No hay línea base para medir el impacto.');
+  return `<span class="tag t-adj" data-nov="AJ-H" data-emp="${ajA(r.id)}" data-fecha="${ajA(r.iso)}" data-tip="${ajA(tip)}">AJ-H</span>`;
+}
+/** Días del ciclo con turno ajustado de una persona. */
+function ajDiasCiclo(M, id, cfg){
+  let n = 0;
+  if(M.ajustes && M.ajustes.has(id)) rangeDays(cfg.ini, cfg.fin).forEach(iso=>{ if(shiftFor(M, id, iso).source==='AJUSTE') n++; });
+  return n;
+}
+/** Tarjeta del encabezado del Detalle: días ajustados e impacto en el ciclo (solo si la persona tiene ajustes). */
+function cardAjDet(e){
+  if(!MODEL || !RESULT) return '';
+  const n = ajDiasCiclo(MODEL, e.emp.id, RESULT.cfg);
+  if(!n) return '';
+  const I = ajImpactoEmp(RESULT, e.emp.id);
+  const imp = I ? ajDeltaTxt(I) : 'sin línea base';
+  const tip = `Días del ciclo con turno ajustado: ${n}. Impacto en el ciclo contra lo que daba BioTime: ${imp}. `+
+    (I ? `Antes → ahora: ${ajPares(I)}. ` : '') + 'Cada ajuste está en «Ajustes de horario» (Calendario) con su motivo y autor.';
+  return `<div data-tip="${ajA(tip)}"><div class="k">Ajustes de horario</div>`+
+    `<div class="v" style="color:var(--adj)">${n}<small>día(s) · ${esc(imp)}</small></div></div>`;
+}
+/** Celda del turno en el Detalle: lista desplegable con los turnos cargados, y el original tachado si hay ajuste.
+ *  Fuera de la vigencia de la persona no se ofrece (un ajuste no revive esos días). */
+function ajCeldaTurno(r){
+  const aplicado = r.turno && r.turno!=='—' ? r.turno : '';
+  if(!MODEL || !MODEL.shifts || ajFueraVigencia(MODEL, r.id, r.iso))
+    return `<td class="mono" data-col="turno">${esc(r.turno)}</td>`;
+  const codigos = [...MODEL.shifts.keys()].sort((a,b)=>a.localeCompare(b,'es',{numeric:true}));
+  if(aplicado && !codigos.includes(aplicado)) codigos.push(aplicado);
+  const opts = [''].concat(codigos).map(c=>`<option value="${ajA(c)}"${c===aplicado?' selected':''}>${c?esc(c):'Sin turno (descanso)'}</option>`).join('');
+  const orig = r.ajuste ? `<s class="aj-orig" data-tip="Turno que traía BioTime ese día">${esc(r.turnoOriginal||'sin turno')}</s> ` : '';
+  const quitar = r.ajuste ? ` <button class="aj-quitar" data-aj-quitar="${ajA(r.ajuste)}" data-iso="${ajA(r.iso)}" data-tip="Anular este ajuste (queda en el historial)">Quitar ajuste</button>` : '';
+  return `<td class="mono" data-col="turno">${orig}<select class="ajsel" data-aj-sel="1" data-iso="${ajA(r.iso)}" data-prev="${ajA(aplicado)}" `+
+         `data-tip="Corregir el turno de este día. Pide un motivo y queda auditado; el turno de BioTime no se borra.">${opts}</select>${quitar}</td>`;
+}
+/** Columnas del Excel del Detalle (solo si hay ajustes): TURNO ORIGINAL, AJUSTE MOTIVO, AJUSTE AUTOR. */
+function ajFilaDet(r){
+  const a = r.ajuste && MODEL && MODEL.ajustesPorId ? MODEL.ajustesPorId.get(r.ajuste) : null;
+  return a ? [r.turnoOriginal||'SIN TURNO', AJ_MOTIVOS[a.motivo]+(a.nota?': '+a.nota:''), a.autor] : ['','',''];
+}
+/** Hoja «Ajustes de horario» del Excel combinado: TODOS los ajustes (también anulados), solo ids. `ids` filtra por persona. */
+function aoaAjustes(ids){
+  const head = ['COD_EMPLEADO','FECHA DESDE','FECHA HASTA','TURNO AJUSTADO','MOTIVO','NOTA','AUTOR','CREADO','ESTADO',
+                'ANULADO POR','ANULADO EN','MOTIVO DE ANULACION','ID AJUSTE'];
+  const body = AJ_HORARIO.filter(a=>!ids || ids.has(a.emp)).map(a=>[
+    a.emp, a.desde, a.hasta, a.turno||'SIN TURNO', AJ_MOTIVOS[a.motivo], a.nota, a.autor, a.creado, ajEstado(MODEL, a).txt,
+    a.anulado ? a.anulado.autor : '', a.anulado ? a.anulado.en : '', a.anulado ? a.anulado.motivo : '', a.id ]);
+  return [head, ...body];
+}
+
+/** Aviso (no bloqueante) del diálogo: días del rango en los que el turno elegido no tiene jornada (por día de la semana). '' si no hay nada que avisar. */
+function ajAvisoSegmento(M, turno, desde, hasta){
+  if(!turno || !M || !M.shifts || !M.shifts.has(turno) || !ajFechaOk(desde)) return '';
+  if(!ajFechaOk(hasta) || hasta<desde || dnum(hasta)-dnum(desde)>=AJ_MAX_DIAS) hasta = desde;
+  const dias = rangeDays(desde, hasta), sin = dias.filter(iso=>!segmentFor(M, turno, iso));
+  if(!sin.length) return '';
+  const rotulo = iso=>`${DOW_ES[dow(iso)]} ${iso}`;
+  if(sin[0]===desde)
+    return `Ese turno no tiene jornada el día ${rotulo(desde)}: el día quedará sin turno.` +
+      (dias.length>1 ? ` En total ${sin.length} de los ${dias.length} días del rango no tienen jornada con ese turno.` : '');
+  return `${sin.length} de los ${dias.length} días del rango no tienen jornada con ese turno (por ejemplo ${rotulo(sin[0])}): esos días quedarán sin turno.`;
+}
+function ajActualizarAviso(){
+  const el = $('#ajAvisoSeg'); if(!el) return;
+  const D = AJ_DLG, t = D && D.modo==='crear' ? ajAvisoSegmento(MODEL, D.turno, D.iso, ($('#ajHasta') && $('#ajHasta').value) || D.iso) : '';
+  el.textContent = t; el.hidden = !t;
+}
+
+/* ── diálogo de ajuste (crear / anular) e historial ── */
+function ajAbrirDialogo(D){
+  AJ_DLG = D;
+  const anular = D.modo==='anular', e = MODEL && MODEL.employees.get(D.emp);
+  const quien = `${D.emp}${e&&e.nombre?' — '+e.nombre:''}`;
+  $('#ajTitulo').textContent = anular ? 'Anular ajuste de horario' : 'Ajuste de horario';
+  $('#ajResumen').textContent = anular
+    ? `${quien}. Este ajuste cubre del ${D.desde} al ${D.hasta} y se anula completo (queda en el historial).`
+    : `${quien} · ${D.iso}: de ${D.prev||'sin turno'} a ${D.turno||'sin turno (descanso)'}.`;
+  $('#ajCamposCrear').hidden = anular;
+  $('#ajNotaEtq').textContent = anular ? 'Motivo de la anulación (obligatorio)' : 'Nota (obligatoria si el motivo es «Otro»)';
+  $('#ajMotivo').value = ''; $('#ajNota').value = ''; $('#ajHasta').value = D.iso||'';
+  $('#ajAutor').value = ajAutorRecordado();
+  $('#ajError').textContent = ''; $('#ajError').hidden = true;
+  ajActualizarAviso();
+  $('#dlgAjuste').showModal();
+}
+/** Devuelve la lista desplegable a su valor anterior y olvida el diálogo (Cancelar, Esc o cierre sin guardar). */
+function ajRevertir(){
+  const D = AJ_DLG; AJ_DLG = null;
+  if(D && D.sel) D.sel.value = D.prev||'';
+}
+function ajCancelarDialogo(){ ajRevertir(); $('#dlgAjuste').close(); }
+/** Cambio de la lista desplegable de un día: NO aplica directo, abre el diálogo con el motivo obligatorio. */
+function ajCambioSelect(ev){
+  const t = ev && ev.target;
+  if(!t || !t.dataset || t.dataset.ajSel===undefined || !CUR_EMP) return;
+  if((t.value||'') === (t.dataset.prev||'')) return;
+  ajAbrirDialogo({ modo:'crear', origen:'det', emp:CUR_EMP, iso:t.dataset.iso, turno:t.value||'', prev:t.dataset.prev||'', sel:t });
+}
+function ajClickDet(ev){
+  const t = ev && ev.target;
+  if(!t || !t.dataset || t.dataset.ajQuitar===undefined) return;
+  ajAbrirAnular(t.dataset.ajQuitar, 'det', t.dataset.iso);
+}
+function ajAbrirAnular(id, origen, iso){
+  const a = AJ_HORARIO.find(x=>x.id===id);
+  if(!a || a.anulado){ toast('Ese ajuste ya está anulado o no existe.'); return; }
+  ajAbrirDialogo({ modo:'anular', origen, id, emp:a.emp, iso:iso||a.desde, desde:a.desde, hasta:a.hasta, sel:null });
+}
+function ajGuardarDialogo(){
+  const D = AJ_DLG; if(!D) return false;
+  const err = m=>{ $('#ajError').textContent = m; $('#ajError').hidden = !m; return false; };
+  const autor = $('#ajAutor').value.trim(), nota = $('#ajNota').value.trim();
+  if(!autor) return err('Escriba quién hace el cambio.');
+  if(D.modo==='anular'){
+    if(!nota) return err('Escriba el motivo de la anulación.');
+    const a = AJ_HORARIO.find(x=>x.id===D.id);
+    if(!a || a.anulado) return err('Ese ajuste ya está anulado o no existe.');
+    const r = ajNormalizar({ ...a, anulado:{ autor, en:ajAhora(), motivo:nota } });
+    if(r.errores.length) return err(r.errores.join(' '));
+    a.anulado = r.aj.anulado;
+  }else{
+    const motivo = $('#ajMotivo').value;
+    if(!motivo || !Object.prototype.hasOwnProperty.call(AJ_MOTIVOS, motivo)) return err('Elija el motivo del ajuste.');
+    if(motivo==='OTRO' && !nota) return err('Con el motivo «Otro» la nota es obligatoria.');
+    const r = ajNormalizar({ id:ajNuevoId(), emp:D.emp, desde:D.iso, hasta:$('#ajHasta').value||D.iso, turno:D.turno,
+                             motivo, nota, autor, creado:ajAhora(), anulado:null });
+    if(r.errores.length) return err(r.errores.join(' '));
+    AJ_HORARIO.push(r.aj);
+  }
+  ajPersistir();
+  try{ localStorage.setItem('mb_ajuste_autor', autor); }catch(e){}
+  AJ_DLG = null;                                   // guardado: el cierre ya no revierte la lista desplegable
+  $('#dlgAjuste').close();
+  runCalc();
+  if(D.origen==='det') irADetalle(D.emp, D.iso);   // vuelve a la misma persona y al mismo día
+  else renderAjustes();
+  return true;
+}
+function renderAjustes(){
+  const body = $('#tAjustes tbody'); if(!body) return;
+  const q = $('#fAjEmp') ? $('#fAjEmp').value.trim() : '';
+  const lista = AJ_HORARIO.filter(a=>{
+    if(!q) return true;
+    const e = MODEL && MODEL.employees.get(a.emp);
+    return coincideEmp(e || { id:a.emp, nombre:'' }, q);
+  }).slice().sort((x,y)=>x.creado<y.creado?1:x.creado>y.creado?-1:0);
+  if($('#ajAviso')){ const av = ajAvisosTxt(); $('#ajAviso').textContent = av; $('#ajAviso').hidden = !av; }
+  if($('#ajConteo')) $('#ajConteo').textContent = `${lista.length} de ${AJ_HORARIO.length}`;
+  body.innerHTML = lista.map(a=>{
+    const est = ajEstado(MODEL, a);
+    const tag = est.k==='VIGENTE' ? 't-adj' : est.k==='ANULADO' ? 't-mut' : 't-warn';
+    const anul = a.anulado ? `<div class="muted">Anulado ${esc(a.anulado.en.replace('T',' '))} por ${esc(a.anulado.autor||'(sin autor)')}: ${esc(a.anulado.motivo)}</div>` : '';
+    return `<tr><td class="mono">${esc(a.emp)}</td><td class="mono">${esc(a.desde)}</td><td class="mono">${esc(a.hasta)}</td>`+
+      `<td class="mono">${a.turno ? esc(a.turno) : '<span class="muted">sin turno</span>'}</td>`+
+      `<td>${esc(AJ_MOTIVOS[a.motivo])}${a.nota?`<div class="muted">${esc(a.nota)}</div>`:''}</td>`+
+      `<td>${esc(a.autor||'')}<div class="muted mono">${esc(a.creado.replace('T',' '))}</div></td>`+
+      `<td style="white-space:normal;min-width:180px"><span class="tag ${tag}">${esc(est.k==='VIGENTE'?'Vigente':est.k==='ANULADO'?'Anulado':'Revisar')}</span>`+
+      `${est.k==='VIGENTE'||est.k==='ANULADO' ? '' : `<div class="muted">${esc(est.txt)}</div>`}${anul}</td>`+
+      `<td><button data-aj-ir="${ajA(a.id)}">Ver día</button>${a.anulado ? '' : ` <button data-aj-anular="${ajA(a.id)}">Anular</button>`}</td></tr>`;
+  }).join('') || `<tr><td colspan="8" class="muted" style="padding:14px">Sin ajustes de horario.</td></tr>`;
+}
+function abrirAjustes(){ renderAjustes(); $('#dlgAjustes').showModal(); }
+function ajClickHist(ev){
+  const t = ev && ev.target; if(!t || !t.dataset) return;
+  if(t.dataset.ajAnular!==undefined){ ajAbrirAnular(t.dataset.ajAnular, 'hist'); return; }
+  if(t.dataset.ajIr!==undefined){
+    const a = AJ_HORARIO.find(x=>x.id===t.dataset.ajIr); if(!a) return;
+    $('#dlgAjustes').close();
+    irADetalle(a.emp, a.desde);
+  }
+}
+function hookAjustes(){
+  const on = (sel, prop, fn)=>{ const x = $(sel); if(x) x[prop] = fn; };
+  const ev = (sel, tipo, fn)=>{ const x = $(sel); if(x) x.addEventListener(tipo, fn); };
+  ev('#tDet', 'change', ajCambioSelect);
+  ev('#tDet', 'click', ajClickDet);
+  ev('#tAjustes', 'click', ajClickHist);
+  ev('#dlgAjuste', 'close', ajRevertir);           // Esc o cualquier cierre sin guardar
+  on('#btnAjustes', 'onclick', abrirAjustes);
+  on('#btnAjustesClose', 'onclick', ()=>$('#dlgAjustes').close());
+  on('#fAjEmp', 'oninput', renderAjustes);
+  on('#ajHasta', 'onchange', ajActualizarAviso); on('#ajHasta', 'oninput', ajActualizarAviso);
+  on('#btnAjOk', 'onclick', ajGuardarDialogo);
+  on('#btnAjCancel', 'onclick', ajCancelarDialogo);
+}
+
 
 /** Segmento del turno aplicable a esa fecha (por día de semana). */
 function segmentFor(M, code, iso){
@@ -2198,7 +2796,7 @@ function configArmar(fecha){
     confianza: [...CONFIANZA].sort(),
     autorizaciones: ord(AUTOR),
     dispositivos: ord(DISPOSITIVOS),
-    ajustesHorario: [],
+    ajustesHorario: AJ_HORARIO.map(a=>JSON.parse(JSON.stringify(a))),
     alcance: { deptosExcluidos: [...KPI_EXCL].sort() },
     rotacion: { mesesNoConfiables: [...ROT.noConf].sort() },
     columnas: { detalle: [...COLS_OCULTAS].sort(), consolidado: [...COLS_CONS_OCULTAS].sort(), asistencia: [...COLS_ASIS_OCULTAS].sort() }
@@ -2297,11 +2895,18 @@ function configValidar(texto){
     if(r) d.dispositivos = r;
   }
   if(o.ajustesHorario!==undefined){
-    /* Clave reservada para los ajustes de horario: esta versión la tolera pero no la aplica. */
     if(!Array.isArray(o.ajustesHorario)) errores.push('Ajustes de horario: debe ser una lista.');
     else{
-      d.ajustesHorario = o.ajustesHorario.length;
-      if(d.ajustesHorario) avisos.push(`Ajustes de horario: ${d.ajustesHorario} en el archivo; esta versión todavía no los aplica y se ignoran.`);
+      /* mismas reglas que el diálogo y que localStorage (ajNormalizar): id, persona (solo ids), fechas reales con
+         desde <= hasta, motivo permitido, nota obligatoria con «Otro», turno, anulación completa. Un error ⇒ nada se aplica. */
+      const lista = [], vistos = new Set();
+      o.ajustesHorario.forEach((x,i)=>{
+        const r = ajNormalizar(x), donde = `Ajustes de horario: ajuste ${i+1}`;
+        if(r.errores.length){ r.errores.forEach(m=>errores.push(`${donde}: ${m}`)); return; }
+        if(vistos.has(r.aj.id)){ errores.push(`${donde}: el id «${r.aj.id}» está repetido.`); return; }
+        vistos.add(r.aj.id); lista.push(r.aj);
+      });
+      d.ajustesHorario = lista;
     }
   }
   if(o.alcance!==undefined){
@@ -2359,6 +2964,7 @@ function configVistaPrevia(r, nombre){
     const D = r.datos, rangos = o=>Object.values(o).reduce((s,l)=>s+l.length,0);
     const fila = (etq, nuevo, ahora)=>`<li>${etq}: <b>${nuevo}</b> <span class="muted">(ahora: ${ahora})</span></li>`;
     const cambios = D.parametros ? configCambios(D) : [], filas = [], ausentes = [];
+    const choques = D.ajustesHorario ? ajFusionar(AJ_HORARIO, D.ajustesHorario).conflictos : [];
     /* una sección que el archivo no trae no se toca: se avisa para que no parezca que se borró */
     const tiene = (c, etq, f)=>{ if(D[c]!==undefined) filas.push(f(etq)); else ausentes.push(etq.toLowerCase()); };
     if(D.parametros) filas.push(`<li>Parámetros: <b>${Object.keys(D.parametros).length}</b>, de los cuales <b>${cambios.length}</b> cambian</li>`);
@@ -2368,7 +2974,11 @@ function configVistaPrevia(r, nombre){
     tiene('autorizaciones', 'Autorizaciones de extras', q=>fila(q, `${Object.keys(D.autorizaciones).length} personas, ${rangos(D.autorizaciones)} rangos`,
       `${Object.keys(AUTOR).length} personas, ${rangos(AUTOR)} rangos`));
     tiene('dispositivos', 'Roles de dispositivos', q=>fila(q, Object.keys(D.dispositivos).length, Object.keys(DISPOSITIVOS).length));
-    if(D.ajustesHorario) filas.push(`<li>Ajustes de horario: <b>${D.ajustesHorario}</b> <span class="muted">(esta versión no los aplica)</span></li>`);
+    /* los ajustes NO se reemplazan: se agregan los que no existen. Un archivo no puede borrar la auditoría. */
+    if(D.ajustesHorario){
+      const F = ajFusionar(AJ_HORARIO, D.ajustesHorario);
+      filas.push(`<li>Ajustes de horario: <b>${D.ajustesHorario.length}</b> en el archivo → <b>${F.agregados}</b> nuevo(s), ${F.existentes} ya existen${F.anulados?`, ${F.anulados} se marcan como anulados`:''}${F.conflictos.length?`, <b>${F.conflictos.length}</b> chocan y se ignoran`:''} <span class="muted">(ahora: ${AJ_HORARIO.length}; nunca se borra ninguno)</span></li>`);
+    }else ausentes.push('ajustes de horario');
     tiene('deptosExcluidos', 'Departamentos excluidos del alcance', q=>fila(q, D.deptosExcluidos.length, KPI_EXCL.size));
     tiene('mesesNoConfiables', 'Meses de rotación no confiables', q=>fila(q, D.mesesNoConfiables.length, ROT.noConf.size));
     if(D.columnas && Object.keys(D.columnas).length)
@@ -2376,6 +2986,7 @@ function configVistaPrevia(r, nombre){
         .filter(([k])=>D.columnas[k]).map(([k,n,s])=>`${n} <b>${D.columnas[k].length}</b> <span class="muted">(ahora: ${s.size})</span>`).join(' · ') + `</li>`);
     else ausentes.push('columnas ocultas');
     h += `<p style="margin:8px 0 2px"><b>Qué trae el archivo</b></p><ul>${filas.join('')}</ul>`;
+    if(choques.length) h += `<p class="muted" style="margin:0 0 2px"><b>Ajustes que chocan con uno existente</b></p><ul>${choques.map(id=>`<li>El ajuste «${esc(id)}» ya existe con otro contenido (persona, fechas, turno, motivo, nota, autor o creación): se ignora; un archivo no puede cambiar ni anular un ajuste ya auditado.</li>`).join('')}</ul>`;
     if(ausentes.length) h += `<p class="muted" style="margin:0 0 8px">No incluido en el archivo (se conserva lo actual): ${esc(ausentes.join(', '))}.</p>`;
     h += cambios.length
       ? `<p style="margin:8px 0 4px"><b>Parámetros que cambian</b></p><div class="scroll" style="max-height:34vh"><table><thead><tr><th>Parámetro</th><th>Ahora</th><th>Nuevo</th></tr></thead><tbody>`+
@@ -2407,6 +3018,7 @@ function configAplicar(d){
   if(d.confianza){ CONFIANZA = new Set(d.confianza); guardar('mb_confianza', [...CONFIANZA]); }
   if(d.autorizaciones){ reemplazar(AUTOR, d.autorizaciones); guardar('mb_autor', AUTOR); }
   if(d.dispositivos){ reemplazar(DISPOSITIVOS, d.dispositivos); guardar('mb_dispositivos', DISPOSITIVOS); }
+  if(d.ajustesHorario){ const F = ajFusionar(AJ_HORARIO, d.ajustesHorario); AJ_HORARIO.splice(0, AJ_HORARIO.length, ...F.lista); ajPersistir(); }   // se agregan, nunca se borran
   if(d.deptosExcluidos){
     KPI_EXCL = new Set(d.deptosExcluidos); guardar('mb_kpi_excl', [...KPI_EXCL]);
     if(KPI_EXCL.size) ALC.modoDep = 'excluir';          // igual que al arrancar con exclusiones guardadas
@@ -2482,6 +3094,7 @@ function compute(M, cfg){
   for(const [id,emp] of M.employees){
     const punches = (M.punches.get(id)||[]);
     if(!activoEnCiclo(M, id, cfg)) continue;
+    ajExcepciones(M, id, cfg).forEach(x=>add(x.sev,'AJ-H',id,emp.nombre,x.fecha,x.msg));   // una por ajuste, no por dia
 
     /* ── A-05/A-06/A-07: depurar marcaciones ── */
     const {clean, removidas} = limpiarMarcaciones(punches, cfg);
@@ -2503,7 +3116,8 @@ function compute(M, cfg){
       if(!seg) return;
       const base = dnum(iso)*1440;
       windows.push({ iso, code:sf.code, source:sf.source, seg,
-                     ini: base+seg.ent, fin: base+seg.sal + (seg.cross?1440:0) });
+                     ini: base+seg.ent, fin: base+seg.sal + (seg.cross?1440:0),
+                     ...(sf.ajuste ? { ajuste:sf.ajuste, original:sf.original } : {}) });
     });
     windows.sort((a,b)=>a.ini-b.ini);
     if(multiDays.length)                                            // B-03
@@ -2550,6 +3164,15 @@ function compute(M, cfg){
                     marcas: ps.map(p=>hhmm(p.min)).join(' '),
                     pares:[], workMin:0, tramos:[], flags:[], inferido:false,
                     conc:Object.fromEntries(CKEYS.map(k=>[k,0])) };
+
+      /* Ajuste de horario: la fila lleva el id del ajuste y el turno que traia BioTime (el dia sin
+         turno tambien: si hay marcaciones sueltas, su fila sale de looseByDay y no tiene ventana). */
+      const sfAj = W ? (W.ajuste ? { ajuste:W.ajuste, original:W.original } : null)
+                     : (M.ajustes && M.ajustes.has(id) ? shiftFor(M,id,iso) : null);
+      if(sfAj && sfAj.ajuste){
+        row.ajuste = sfAj.ajuste.id; row.turnoOriginal = (sfAj.original && sfAj.original.code) || '';
+        row.flags.push('AJ-H');
+      }
 
       /* vigencia laboral: E-01/E-02/A-15/A-16. Las fechas de ingreso masivas (migración del
          sistema, no contratación real) no bloquean — ver marcarIngresosMasivos(). */
@@ -2657,7 +3280,10 @@ function compute(M, cfg){
     });
 
     /* ── PERFIL: administrativo vs rotativo ── */
-    const codes = rows.map(r=>r.turno).filter(c=>c&&c!=='—');
+    /* El perfil se infiere de los turnos de BIOTIME (el original), no de los ajustados: un ajuste de un dia no puede volver ROTATIVO a un
+       administrativo para todo el ciclo. Solo si la persona no tiene ninguno cargado en el ciclo se infiere de los ajustados. */
+    const codesBT = rows.map(r=>r.ajuste ? r.turnoOriginal : r.turno).filter(c=>c&&c!=='—');
+    const codes = codesBT.length ? codesBT : rows.map(r=>r.turno).filter(c=>c&&c!=='—');
     const esAdmin = codes.length>0 &&
       codes.every(c=>cfg.adminPref && c.toUpperCase().startsWith(cfg.adminPref.toUpperCase()));
     const perfilAuto = esAdmin ? 'ADMINISTRATIVO' : 'ROTATIVO';
@@ -2951,7 +3577,7 @@ function compute(M, cfg){
 
     if(!tieneMarcasCiclo && windows.some(w=>w.iso>=cfg.ini && w.iso<=cfg.fin))
       add('INFO','E-03',id,emp.nombre,'','Empleado activo con turnos programados y sin ninguna marcación en todo el ciclo.');
-    if(!M.sched.has(id) && punches.length)
+    if(!M.sched.has(id) && punches.length && !ajDaProgramacion(M, id, cfg))   // un ajuste aplicable, con turno, dentro del ciclo le da programacion
       add('BLOQ','A-09',id,emp.nombre,'','Empleado con marcaciones pero sin ninguna programación de turno.');
     if(emp.estado && /deshab/i.test(emp.estado) && ciclo.some(r=>r.workMin>0))
       add('ADV','E-10',id,emp.nombre,'','Empleado deshabilitado con marcaciones en el ciclo.');
@@ -2975,7 +3601,8 @@ function compute(M, cfg){
     .sort((a,b)=>a.emp.nombre.localeCompare(b.emp.nombre,'es'));
   const cons = todos.filter(e=>e.tieneConceptos);                    // H-02: archivo de nómina
 
-  return { byEmp, cons, todos, exc, cfg, days };
+  return { byEmp, cons, todos, exc, cfg, days,
+           base: (M.ajustes && M.ajustes.size) ? computeBase(M, cfg) : null };   // linea base sin ajustes, solo de quienes los tienen
 }
 
 /* ══════════════════════════════════════════════════════════════════
@@ -3012,7 +3639,7 @@ function computeAsistencia(M, cfg){
     const marcasRango = clean.filter(p=>p.iso>=cfg.ini && p.iso<=cfg.fin).length;
     const ultima = (M.punches.get(id)||[]).reduce((a,p)=>!a||p.iso>a?p.iso:a, null);
 
-    /* ventanas programadas del rango extendido (respeta OVERRIDES vía shiftFor) */
+    /* ventanas programadas del rango extendido (respeta los ajustes de horario vía shiftFor) */
     const windows = [];
     extDates.forEach(iso=>{
       const sf  = shiftFor(M, id, iso);
@@ -3142,6 +3769,8 @@ function tipHTML(code){
 /** Chip de novedad: tooltip al pasar el cursor, clic lleva a la excepción. */
 function chip(code, r){
   const n = NOV[code];
+  /* AJ-H con ajuste: el tooltip dice motivo, autor y el impacto de ESE dia contra la linea base. */
+  if(code==='AJ-H' && r && r.ajuste){ const c = ajChip(r); if(c) return c; }
   /* E-04 con etapa: el texto de ESE dia dice la etapa y los minutos acreditados. */
   if(code==='E-04' && r && r.lactEtapa && r.lactPagadoMin>0)
     return `<span class="tag ${sevCls('INFO')}" data-nov="E-04" data-emp="${esc(r.id)}" data-fecha="${esc(r.iso)}" data-tip="${esc(textoLact(r))}">E-04 · ${r.lactEtapa} · ${r.lactPagadoMin} min</span>`;
@@ -6094,6 +6723,7 @@ function renderDet(){
      <div data-nov="TARDE"><div class="k">Dias con desvio</div><div class="v">${e.tardes}</div></div>` +
     calidadDeEmpleado(e) +
     cardLactDet(e) +
+    cardAjDet(e) +
     cols.filter(c=>e.tot[c.key]>0).map(c=>
       `<div data-tip="${esc(c.tip)}"><div class="k">${esc(c.code)} · ${esc(c.short)}</div>
        <div class="v">${fmt(e.tot[c.key])}</div></div>`).join('');
@@ -6118,10 +6748,10 @@ function renderDet(){
               : r.tipoDia==='DES' ? 't-mut' : 't-mut';
     const flags = [...new Set(r.flags)].map(f=>chip(f,r)).join(' ') +
       (r.inferido?' '+chip('INFERIDO',r):'');
-    return `<tr data-iso="${r.iso}">
+    return `<tr data-iso="${r.iso}"${r.ajuste?' class="aj"':''}>
       <td class="mono" data-col="fecha">${r.iso}</td><td data-col="dia">${r.dow}</td>
       <td data-col="tipo"><span class="tag ${tag}">${esc(r.tipoLabel)}</span></td>
-      <td class="mono" data-col="turno">${esc(r.turno)}</td><td class="mono" data-col="prog">${esc(r.prog)}</td>
+      ${ajCeldaTurno(r)}<td class="mono" data-col="prog">${esc(r.prog)}</td>
       <td class="mono" data-col="marcas">${esc(r.marcas||'—')}${r.descartadas?
           ` <span class="desc" data-nov="SUGERIDO">${esc(r.descartadas.join(' '))}</span>`:''}</td>
       ${marcarCol('ent',celdaHora(r,'ent'))}${marcarCol('sal',celdaHora(r,'sal'))}
@@ -6187,14 +6817,14 @@ function renderCal(){
     else if(fes) cls.push('fes'); else if(dow(iso)===0) cls.push('dom');
     if(!seg && !fv) cls.push('desc');
     if(marcoSinTurno) cls.push('marcosin');
-    if(OVERRIDES[id+'|'+iso]!==undefined) cls.push('ovr');
+    if(sf.source==='AJUSTE') cls.push('aj');
     const tip = fv
       ? `Fuera del período de vigencia (${iso<(emp?.ingreso||'') ? 'antes del ingreso '+emp.ingreso : 'después del retiro '+emp.retiro}).` +
         (r&&r.marcas ? ` Aun así hay marcaciones ese día: ${r.marcas} — revisar (A-15/A-16).` : '')
       : marcoSinTurno
       ? `Sin turno programado, pero marcó: ${r.marcas}. Por eso no se le ha cargado turno, o el turno falta por asignar (A-19).`
-      : '';
-    html += `<div class="${cls.join(' ')}" data-iso="${iso}"${tip?` data-tip="${esc(tip)}"`:''}>
+      : (sf.source==='AJUSTE' ? ajTextoDia(sf) : '');
+    html += `<div class="${cls.join(' ')}" data-iso="${iso}"${tip?` data-tip="${ajA(tip)}"`:''}>
       <div class="n">${+iso.slice(-2)}</div>
       ${fv ? `<div class="h muted">${r&&r.marcas?'⚠ marcó':'fuera de vigencia'}</div>`
        : seg?`<div class="s">${esc(sf.code)}</div><div class="h">${hhmm(seg.ent)}–${hhmm(seg.sal)}</div>`
@@ -6335,13 +6965,15 @@ function aoaCons(){
 function aoaDet(e){
   const cols = conceptCols(RESULT.cfg);
   const conLact = !!(MODEL && MODEL.lactancia);
+  const conAj = !!(MODEL && MODEL.ajustes && MODEL.ajustes.size);   // las columnas de ajustes van SOLO con ajustes y siempre al final
   const head = ['COD_EMPLEADO','NOMBRE','COMPANIA','FECHA','DIA','TIPO DE DIA','TURNO','PROGRAMADO',
                 'MARCACIONES','MARCACIONES DESCARTADAS','ENTRO','SALIO',
                 'MIN TARDE ENTRADA','MIN ANTES SALIDA','ALMUERZO',
                 'HORAS TRABAJADAS','JORNADA FIJA','MIN CAFE RECONOCIDO','MIN LACTANCIA RECONOCIDO','MIN TRANSITO INTERIOR','MIN AUSENCIA POR PORTERIA','VENTANA REDONDEADA (T-EXTRA)','HORAS PENDIENTES','HORAS EXTRA','EXTRA NO AUTORIZADA',
                 'PERFIL','ACUMULADO SEMANA','TOTAL SEMANA','UMBRAL SEMANA','AUTORIZACION',
                 ...cols.map(c=>c.head), 'INFERIDO','NOVEDADES','EXPLICACION',
-                ...(conLact ? ['ETAPA LACTANCIA'] : [])];
+                ...(conLact ? ['ETAPA LACTANCIA'] : []),
+                ...(conAj ? ['TURNO ORIGINAL','AJUSTE MOTIVO','AJUSTE AUTOR'] : [])];
   const body = e.ciclo.map(r=>[
     e.emp.id, e.emp.nombre, e.emp.empresa||'', r.iso, r.dow, r.tipoLabel, r.turno, r.prog, r.marcas,
     (r.descartadas||[]).join(' '),
@@ -6361,7 +6993,8 @@ function aoaDet(e){
     r.inferido?'SI':'', [...new Set(r.flags)].join(' '),
     [...new Set(r.flags)].map(f=>(f==='E-04' && r.lactEtapa && r.lactPagadoMin>0) ? `E-04: ${textoLact(r)}`
       : NOV[f]?`${f}: ${NOV[f].t} — ${NOV[f].q}`:f).join(' | '),
-    ...(conLact ? [r.lactEtapa||''] : []) ]);
+    ...(conLact ? [r.lactEtapa||''] : []),
+    ...(conAj ? ajFilaDet(r) : []) ]);
   return [head, ...body];
 }
 function aoaExc(ids){
@@ -6579,6 +7212,7 @@ document.addEventListener('DOMContentLoaded',()=>{
     const hojas = {Consolidado:aoaCons(), Detalle:[head,...body],
                    Excepciones:aoaExc(filtroHay()?ids:null)};
     if(MODEL && MODEL.lactancia) hojas.Lactancia = aoaLactancia(filtroHay()?ids:null);
+    if(AJ_HORARIO.length) hojas['Ajustes de horario'] = aoaAjustes(filtroHay()?ids:null);   // tambien los anulados; solo ids
     save(hojas, `Reporte_Horas_${stamp()}.xlsx`); };
   if($('#expExc'))
     $('#expExc').onclick = ()=>RESULT&&save({Excepciones:aoaExc()},`Excepciones_${stamp()}.xlsx`);
@@ -6608,13 +7242,10 @@ document.addEventListener('DOMContentLoaded',()=>{
       guardarXLS(`Asistencia_calendario_${stamp()}.xls`, `Asistencia día por día — ${rango}`,
                  aoaAsistencia(), colorAsisCal);
   };
-  hookAlcance(); hookInd(); hookCob(); hookCalidad(); hookRot(); hookConfig();
+  hookAlcance(); hookInd(); hookCob(); hookCalidad(); hookRot(); hookConfig(); hookAjustes();
   $('#expCal').onclick  = ()=>{ if(!RESULT) return;
     const id=$('#selEmpCal').value, m=$('#selMes').value;
     save({Calendario:aoaCal(id,m)},`Calendario_${id}_${m}.xlsx`); };
-  $('#btnClrOvr').onclick = ()=>{ if(!confirm('¿Borrar todos los cambios puntuales de turno?')) return;
-    Object.keys(OVERRIDES).forEach(k=>delete OVERRIDES[k]);
-    localStorage.setItem('mb_overrides','{}'); runCalc(); showTab('cal'); renderCal(); };
   /* cIni/cFin quedan a la vista y recalculan al cambiar. El resto de los parámetros vive en el
      modal de configuración avanzada: ahí se aplican todos juntos con el botón "Aplicar y
      recalcular", no uno por uno, para no relanzar el cálculo con cada tecla mientras se ajustan. */

@@ -119,7 +119,7 @@ jornada, diurno o nocturno — nunca dos cosas a la vez (invariante I-02).
 | **B-01** | Turno estándar dentro del mismo día | Implementada | `segmentFor()` por día de semana declarado en el Excel de Turno. |
 | **B-02** | Turno que cruza medianoche → se imputa al día de inicio y se segmenta | Implementada | `seg.cross = sal<=ent`; la ventana se extiende `+1440` min. **Nota real confirmada con el usuario:** un turno puede declarar su **fin antes** de la hora en que la gente realmente sale, a propósito — `T_12H_NOCHE` se llama "6PM a 6AM" pero está configurado 18:00→**03:00**. Esas últimas 3 horas quedan fuera de la ventana y se calculan como extra del mismo día en vez de entrar a la bolsa semanal (D-28). Es una palanca real de configuración, no un error de dato. |
 | **B-03** | Dos turnos el mismo día → excepción, no se calcula hasta resolver | Implementada | Severidad `BLOQ`; mientras tanto se usa la asignación más reciente (`asg[asg.length-1]`). |
-| **B-04** | Cambio puntual de turno (`tempschedule`) prevalece sobre la programación regular | Implementada | `OVERRIDES` (`localStorage.mb_overrides`, clave `id|fecha`), editable desde la pestaña Calendario. |
+| **B-04** | Cambio puntual de turno (`tempschedule`) prevalece sobre la programación regular | Implementada (mecanismo reemplazado) | Ya no es `OVERRIDES`/`mb_overrides` (ninguna pantalla lo escribía): son los **ajustes de horario auditados** (`AJ_HORARIO`, `localStorage.mb_ajustes_horario`), que se crean desde el Detalle con una lista desplegable por día y un motivo obligatorio. `shiftFor()` devuelve el ajuste (`source:'AJUSTE'`, con el turno original de BioTime al lado) y manda sobre la programación regular; ver **AJ-H**. Los cambios puntuales viejos se migran solos a ajustes de un día con motivo `OTRO` (`autor` «(migrado)»). |
 | **B-05** | Cambio de turno permanente a mitad de ciclo → cada día usa el turno vigente a esa fecha | Implementada | `shiftFor()` filtra asignaciones de `M.sched` por rango de vigencia (`ini`/`fin`) para cada fecha. |
 | **B-06** | Cambio de cargo a mitad de ciclo → cambia el perfil laboral, cada día usa el perfil vigente | Reemplazada | El perfil (ROTATIVO/ADMINISTRATIVO) se calcula **una sola vez para todo el ciclo por empleado**, no día a día: `esAdmin = codes.every(c=>c.startsWith(cfg.adminPref))` sobre **todos** los turnos que el empleado tuvo en el ciclo completo. Un cambio de cargo a mitad de ciclo no reclasifica los días ya pasados de forma independiente — ver también **E-05**. El override manual (`mb_perfiles`, selector "Perfil" en Detalle) sigue existiendo y emite `ADV` cuando difiere del detectado automáticamente. |
 | **B-07** | Día de descanso obligatorio programado → sin trabajo, sin conceptos | Implementada | Trivial: sin marcaciones, la fila queda en cero. |
@@ -132,6 +132,7 @@ jornada, diurno o nocturno — nunca dos cosas a la vez (invariante I-02).
 | **B-14** | Empleado sin cargo asignado → excepción bloqueante | Implementada | Severidad `BLOQ`, solo si además tiene horas trabajadas en el ciclo (`ciclo.some(r=>r.workMin>0)`). |
 | **B-16** *(código nuevo, ya usado en el motor — el catálogo original no llegaba a B-15/B-16)* | — | Implementada | "Tránsito interior prolongado": se emite `ADV` cuando un hueco entre marcaciones que abre y cierra en biométricos `INTERIOR` supera `cfg.transAviso` (`cTransAviso`, default 120 min). No topa el perdón — solo avisa, para que un humano confirme si de verdad fue tránsito interno. |
 | **DISPOSITIVO** *(código nuevo, ya usado en el motor)* | — | Implementada | Cada biométrico tiene un rol: `PORTERIA` (salió de la empresa, el hueco pesa completo), `DESCANSO` (café, se perdona hasta el tope), `INTERIOR` (nunca salió, no genera pendiente). `rolAuto()` sugiere por nombre (`VESTIER/CAFETERIA/CASINO`→`DESCANSO`, `PORTERIA/RECEPCION/INGRESO/SALIDA/TORNIQUETE`→`PORTERIA`); todo lo demás queda **sin clasificar** y se trata como `DESCANSO` (el punto medio, con tope) hasta que un humano lo confirme en el botón *Dispositivos* (`localStorage.mb_dispositivos`). **Prioridad ante huecos con extremos de rol distinto:** si cualquiera de los dos extremos es `PORTERIA`, el hueco completo es ausencia — ante la duda se cobra al empleado, nunca a la empresa. |
+| **AJ-H** *(código nuevo, ya usado en el motor)* | — | Implementada | **Turno ajustado** por una persona desde el Detalle (BioTime no lo cargó, lo cargó mal, o hubo un cambio sin registrar). `INFO`, **una por ajuste** (no por día; lección de A-16/A-18): «Turno ajustado del A al B: X (antes: Y). Motivo… Autor…». `ADV` cuando el código de turno del ajuste **no existe** en el archivo de Turno cargado: ese ajuste **no se aplica** (manda BioTime) y nunca se inventa un turno. Un ajuste **redundante** (BioTime ya tiene ese turno) se aplica y se marca «ya coincide con BioTime: se puede anular». Un ajuste no revive días fuera de la vigencia real de la persona (antes del ingreso real, después de `vigFin`). Gana el ajuste más reciente (`creado`); anular no borra (queda `{autor, en, motivo}`). Nómina, Asistencia y Calidad usan el turno ajustado. El impacto («ordinarias, extras, recargos, pendientes: antes → ahora») sale de `RESULT.base` (`computeBase()`: el mismo cálculo sin ajustes, solo de quienes los tienen). Chip `AJ-H` en el día y tarjeta en el encabezado del Detalle. Excel: `TURNO ORIGINAL`, `AJUSTE MOTIVO`, `AJUSTE AUTOR` (últimas columnas, solo si hay ajustes) y hoja «Ajustes de horario» en el detalle completo. |
 | **T-EXTRA** *(código nuevo, ya usado en el motor)* | — | Implementada | Turno de solo extras: código con el prefijo `cExtraPref` (default `T_EXTRA`). No tiene jornada fija ni horas pendientes ni escalera de 25 min: se toma la primera y la última marcación del día, cada una llevada a la media hora más cercana (`pasoExtra()`, paso `cExtraPaso`, default 30 min, redondeo simétrico). Un hueco intermedio no se descuenta — solo importan los dos extremos. Si el resultado da menos de un cuarto de hora, el día no acredita nada. |
 
 ---
@@ -377,7 +378,7 @@ las alimenta es idéntico en ambos.
 | **K-02** | Pestaña **KPI Cumplimiento** | Ambos | `kpiCalcular()`: tres indicadores independientes con denominadores distintos — turno sin marca (% de días programados), turno incompleto (% de días programados), marcó sin turno (% de días evaluables). Exclusión de departamentos completos (`KPI_EXCL`, `localStorage.mb_kpi_excl`, pensada para cuentas no-empleado como `TARJETA`/`SNAPIT`). Aviso automático de cobertura (`#kpiCobertura`) cuando no todos los empleados en pantalla tienen marcación o programación cargada — evita leer huecos de datos como incumplimiento. |
 | **K-03** | Pestaña **Calidad de marcación** *(no documentada hasta esta versión)* | Ambos | `computeCalidad()`: por departamento, % de días "limpios" vs. "sugeridos" (A-04 resuelto) vs. "bloqueados" (A-17 o A-04 sin resolución), horas limpias vs. dudosas, tarde/temprano contra tolerancia de puntualidad. Distingue **tasa** (qué tan bien marca ese departamento) de **peso** (cuánto del problema total representa) — un 69,5% sobre 11.507 días no es comparable a un 47,4% sobre 19. Marca `muestraCorta` a los departamentos con menos de `cMinDias` (default 60) días de datos, para no leer un solo día malo como una tendencia. |
 | **K-04** | Pestaña **Cobertura y calidad** *(no documentada hasta esta versión)* | Ambos | `computeCobertura()`/`estadoCob()`: por empleado, tres porcentajes con denominadores deliberadamente distintos — `pctAsig` (¿le cargaron turno?, sobre días vigentes), `pctMarca` (¿marcó cuando debía?, sobre días con jornada), `pctCalidad` (cuando marcó, ¿marcó bien?, sobre días con marca). Prorrateado por la vigencia real del empleado (ingreso→`vigFin`), para no contar como hueco un día en que la persona no tenía por qué estar. |
-| **K-05** | Pestaña **Calendario de turnos** | Ambos | `renderCal()`: vista mensual por empleado; permite asignar o quitar un cambio puntual de turno (**B-04**, persistido en `mb_overrides`). |
+| **K-05** | Pestaña **Calendario de turnos** | Ambos | `renderCal()`: vista mensual por empleado, solo lectura; los días con turno ajustado se pintan con `--adj` (violeta) y tooltip. El botón **«Ajustes de horario»** (`#btnAjustes`) abre el historial (`#dlgAjustes`): todos los ajustes, vigentes, anulados, redundantes y con turno inexistente, con filtro por persona, «Ver día» y «Anular» con motivo. No hay borrado masivo (**B-04**, **AJ-H**). |
 | **K-06** | Pestaña **Excepciones** | Solo completo (`reporte-horas.html`) | `renderExc()`/`aoaExc()`: listado filtrable de toda fila `exc` (BLOQ/ADV/INFO) generada por `compute()`. La versión RRHH no tiene esta pestaña, pero `renderExc()`/`aoaExc()` siguen viviendo en su código (se blindan solas con `if(!$('#tExc')) return;`) porque la **exportación combinada** de RRHH sí escribe la hoja de Excepciones — es la única vía por la que RRHH accede a ellas. |
 | **K-07** | Pestaña **Glosario** | Solo completo | `renderGlosario()`: única función del motor que es exclusiva de `reporte-horas.html` a propósito — documentación en vivo de `NOV` y de la matriz D-01/D-08 para quien audite el reporte. |
 | **K-08** | Exportaciones a Excel y archivo Sinergy | Ambos | `aoaCons()` (consolidado por empleado), `aoaDet()` (detalle día a día, incluye columnas `MIN CAFE RECONOCIDO`, `MIN LACTANCIA RECONOCIDO`, `MIN TRANSITO INTERIOR`, `MIN AUSENCIA POR PORTERIA`, `VENTANA REDONDEADA (T-EXTRA)`), `aoaExc()` (excepciones), `aoaCal()` (calendario mensual de un empleado), y `sinergyTxt()` (bloque H). |
@@ -440,7 +441,8 @@ máquina.
 
 | Clave | Contenido | Se edita desde |
 |---|---|---|
-| `mb_overrides` | `"id\|fecha" → código de turno \| ''` (cambios puntuales) | Pestaña Calendario (**B-04**) |
+| `mb_ajustes_horario` | Lista de ajustes de horario `{id, emp, desde, hasta, turno, motivo, nota, autor, creado, anulado}` (también los anulados) | Selector de turno en Detalle (**B-04**, **AJ-H**) |
+| `mb_ajuste_autor` | Último autor escrito en el diálogo de ajustes (texto libre, solo comodidad) | Diálogo de ajuste |
 | `mb_perfiles` | `id → 'ROTATIVO' \| 'ADMINISTRATIVO'` (override manual) | Selector "Perfil" en Detalle (**B-06**) |
 | `mb_autor` | `id → [{ini, fin, estado, motivo}]` (autorización de extras) | Panel "Autorización de horas extra" (**F-09**/**F-03**) |
 | `mb_confianza` | Lista de ids marcados como dirección/confianza/manejo | Checkbox en Detalle (**CONFIANZA**) |
@@ -455,12 +457,12 @@ máquina.
 Reemplaza la tabla "RESUMEN (del diseño original)" de v1.0. Cuenta cada fila de este catálogo,
 incluidos los códigos nuevos y los ya usados por el código que no estaban numerados en el diseño
 original (`ING-MASIVO`, `RETIRADO`, `CONFIANZA`, `DISPOSITIVO`, `T-EXTRA`, `TARDE`, `INFERIDO`,
-`SUGERIDO`).
+`SUGERIDO`, `AJ-H`).
 
 | Bloque | Total | Implementada | Reemplazada | Decisión de diseño | Parcial | No implementada | Por verificar |
 |---|---|---|---|---|---|---|---|
 | A · Marcaciones | 24 | 15 | 4 | 0 | 1 | 4 | 0 |
-| B · Jornada programada | 17 | 14 | 1 | 2 | 0 | 0 | 0 |
+| B · Jornada programada | 18 | 15 | 1 | 2 | 0 | 0 | 0 |
 | C · Segmentación | 10 | 8 | 2 | 0 | 0 | 0 | 0 |
 | D · Clasificación | 32 | 22 | 4 | 0 | 1 | 5 | 0 |
 | E · Empleado | 18 | 11 | 1 | 0 | 0 | 6 | 0 |
@@ -470,7 +472,7 @@ original (`ING-MASIVO`, `RETIRADO`, `CONFIANZA`, `DISPOSITIVO`, `T-EXTRA`, `TARD
 | I · Invariantes | 12 | 6 | 0 | 0 | 1 | 5 | 0 |
 | J · Conciliación | 7 | 0 | 0 | 0 | 0 | 7 | 0 |
 | K · Reportes y salidas *(nuevo)* | 12 | 12 | 0 | 0 | 0 | 0 | 0 |
-| **TOTAL** | **167** | **102** | **12** | **2** | **4** | **46** | **1** |
+| **TOTAL** | **168** | **103** | **12** | **2** | **4** | **46** | **1** |
 
 **Lectura honesta de estos números:** los bloques A a D (marcaciones, jornada, segmentación,
 clasificación) e I (invariantes, en la parte que sí se puede probar sin backend) son donde vive el

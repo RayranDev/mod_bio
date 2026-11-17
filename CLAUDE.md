@@ -52,11 +52,16 @@ Verificado línea por línea contra el código actual (no es una lista de memori
 CONCEPTS, CKEYS, DOW_ES, NOV, CONC_DESC, MATRIZ        (diccionarios de datos)
 toISO, toMin, addDays, rangeDays, weekStart             (utilidades de fecha)
 easter, nextMonday, holidaysCO                          (festivos de Colombia)
-DATA, OVERRIDES, PERFILES, AUTOR, CONFIANZA, DISPOSITIVOS (estado global en localStorage)
+DATA, PERFILES, AUTOR, CONFIANZA, DISPOSITIVOS          (estado global en localStorage; OVERRIDES desapareció: ver «Ajustes de horario»)
 autorFor, readSheet, pick, normId                       (parseo de Excel)
 buildModel                                              (construye el modelo desde los Excel cargados)
 marcarIngresosMasivos                                   (detección de fecha de ingreso masiva)
-shiftFor, segmentFor                                    (turno vigente por fecha)
+shiftBase, shiftFor, segmentFor                         (turno de BioTime / turno vigente por fecha, con ajustes)
+AJ_MOTIVOS, AJ_ESTADOS, AJ_MAX_DIAS, AJ_REC, AJ_HORARIO, AJ_SIN_LEER, AJ_CARGA, AJ_DLG, ajH, ajDelta   (Ajustes de horario: constantes y estado)
+ajA, ajAhora, ajLimite, ajNuevoId, ajFechaOk, ajMomentoOk, ajNormalizar, ajMismoCuerpo, ajFusionar, ajCargarInicial, ajPersistir, ajAutorRecordado, ajAvisosTxt   (validación y persistencia)
+ajMasNuevo, ajIndexar, ajFueraVigencia, ajDe, computeBase, ajDaProgramacion, ajSobrepuesto, ajRedundante, ajEstado, ajAntes, ajExcepciones   (motor: modelo, vigencia, línea base, AJ-H)
+ajMedidas, ajImpactoDia, ajImpactoEmp, ajDeltaTxt, ajPares, ajTextoAj, ajTextoDia, ajChip, ajDiasCiclo, cardAjDet, ajCeldaTurno, ajFilaDet, aoaAjustes   (impacto, pantalla y Excel)
+ajAvisoSegmento, ajActualizarAviso, ajAbrirDialogo, ajRevertir, ajCancelarDialogo, ajCambioSelect, ajClickDet, ajAbrirAnular, ajGuardarDialogo, renderAjustes, abrirAjustes, ajClickHist, hookAjustes   (diálogos e historial)
 round05, dayType, classify, atomize                     (clasificación y redondeo)
 escalera, quitarDescanso, tramosAcreditados             (jornada fija + escalera de sobretiempo)
 clasificarHuecos, topeCafe                              (huecos por rol de dispositivo, B-12/B-16)
@@ -1155,9 +1160,8 @@ otro navegador o a otra persona de RRHH en un `.json`.
 `parametros`, `perfiles`, `confianza`, `autorizaciones`, `dispositivos`, `ajustesHorario`, `alcance.deptosExcluidos`,
 `rotacion.mesesNoConfiables`, `columnas.{detalle,consolidado,asistencia}` (las listas de columnas **ocultas**, como en `localStorage`).
 Todo ordenado, así que dos exportaciones del mismo estado salen iguales. **Nunca** incluye los Excel ni el archivo de lactancia, y solo
-lleva ids (los textos libres son los motivos de las autorizaciones de extras). `OVERRIDES` (`mb_overrides`) **no** se exporta: se migrará en
-la Fase B. `ajustesHorario` se exporta como `[]` y se tolera al importar: si trae datos se avisa y se ignoran (esta fase no los aplica ni
-escribe ninguna llave nueva).
+lleva ids (los textos libres son los motivos de las autorizaciones de extras y las notas y autores de los ajustes de horario). `ajustesHorario` lleva
+todos los ajustes (también los anulados) y se importa **agregando, nunca reemplazando** (ver «Ajustes de horario»).
 
 **Importar (`#dlgImportCfg`).**
 - `configValidar(texto)` valida **todo antes de aplicar nada**: JSON legible, `formato`, `version` entera ≥ 1 y ≤ `CFG_VERSION`, y el tipo de
@@ -1169,8 +1173,9 @@ escribe ninguna llave nueva).
   `colsLeer()` descarta esas claves al leer `mb_colsDet`/`mb_colsCons`/`mb_colsAsis`, así un localStorage ya envenenado no puede dejar la
   página en blanco. Cualquier error ⇒ no se aplica **nada**, ni parcialmente, y el diálogo los lista todos.
   Claves o parámetros desconocidos ⇒ aviso, se ignoran (también `cIni`/`cFin` si vinieran en el archivo).
-- **Una sección ausente no se toca** (el archivo puede ser parcial); solo se reemplaza lo que trae. Único modo: «Reemplazar» (la fusión queda
-  para después). La vista previa cuenta cada sección («ahora: N») y lista los parámetros que cambian «ahora → nuevo» (el select con su texto).
+- **Una sección ausente no se toca** (el archivo puede ser parcial); solo se reemplaza lo que trae. Único modo: «Reemplazar», con una excepción deliberada:
+  **`ajustesHorario` se fusiona por id y nunca borra** (un archivo no puede borrar la auditoría; ver «Ajustes de horario»). La fusión del resto
+  queda para después. La vista previa cuenta cada sección («ahora: N») y lista los parámetros que cambian «ahora → nuevo» (el select con su texto).
 - `configAplicar` **muta en sitio** `PERFILES`, `AUTOR`, `DISPOSITIVOS` y `ROT.noConf` (objetos compartidos) y reasigna lo que es `let`
   (`CONFIANZA`, `KPI_EXCL`, las tres listas de columnas); escribe cada llave en `localStorage`, repone el formulario, re-aplica las columnas,
   y si hay `RESULT` llama `runCalc()` **conservando la pantalla en la que estaba la persona**. **Nunca recarga la página** (se perderían los
@@ -1180,6 +1185,110 @@ escribe ninguna llave nueva).
 **Pruebas.** `scripts/pruebas_motor/prueba_config.js` (ver su fila en el README de las pruebas); `lib.js` ahora acepta `store` (un `localStorage`
 inicial) y los elementos simulados traen `type`, `options` y `defaultValue` tomados del HTML. **Sin verificar:** el aspecto del diálogo y de
 los botones del encabezado en un navegador real, y el comportamiento con los Excel reales (huella con ~1.000 empleados).
+
+---
+
+## Ajustes de horario (nov-2026, Fase B de `PLAN-AJUSTES-Y-CONFIGURACION.md`)
+
+**Qué es.** Una persona de RR. HH. corrige el turno de un empleado cuando BioTime lo cargó mal o no lo cargó, desde el **Detalle**, con una lista
+desplegable por día. El turno de BioTime **nunca se pisa**: se resuelve día por día y el original queda visible, tachado. Un ajuste es un
+**insumo corregido**, no una hora editada: el motor sigue siendo una función pura (Excel + parámetros + ajustes = mismo resultado).
+Reemplaza a `OVERRIDES`/`mb_overrides`/`#btnClrOvr` (que ninguna pantalla escribía y no tenían motivo, autor ni turno original).
+
+**Modelo (`AJ_HORARIO`, `localStorage.mb_ajustes_horario`).** Una entrada por ajuste, claves en este orden: `id` (`aj-<tiempo>-<azar>`), `emp`,
+`desde`/`hasta` (rango inclusivo), `turno` (`''` = sin turno/descanso), `motivo` (`NO_CARGADO` | `EQUIVOCADO` | `CAMBIO_NO_REGISTRADO` | `OTRO`,
+etiquetas en `AJ_MOTIVOS`), `nota` (obligatoria con `OTRO`, máx. 500), `autor` (texto libre, máx. 80; se recuerda en `mb_ajuste_autor`), `creado`
+(`AAAA-MM-DDTHH:MM:SS`), `anulado` (`null` o `{autor, en, motivo}`). **Anular no borra** y **no hay borrado masivo**. Una sola función valida un
+ajuste venga de donde venga (`ajNormalizar`: localStorage, archivo de configuración o diálogo): ids con `^[\w.:-]{1,64}$`, `emp` por `normId` y
+`^[\w.-]{1,32}$` (solo ids, nunca nombres), fechas reales con `desde ≤ hasta` y rango ≤ `AJ_MAX_DIAS` (3660), motivo del enum (`hasOwnProperty`:
+`toString`/`__proto__` no pasan), nota obligatoria con `OTRO`, `creado`/`anulado.en` estrictos (sin zona), la clave `__proto__` rechazada y las
+desconocidas ignoradas (no se copian). Los textos libres **se escapan al pintarlos**: `ajA()` para atributos (`esc()` solo cubre `&<>`, no las
+comillas, y dentro de `data-tip="…"` hay que cerrarlas) y `esc()` para texto.
+
+**Correcciones de la revisión adversarial (nov-2026).**
+- **Atributos HTML.** `esc()` no escapa comillas: todo texto libre (nota, autor, turno, motivo de anulación) que llegue a un atributo (`data-tip`, `value`, `data-*`) pasa por
+  `ajA()`. El hallazgo real era `renderCal` (`data-tip="${esc(tip)}"` con la nota dentro): ahora usa `ajA`. La prueba ya no busca cadenas: **analiza las etiquetas** de cada pantalla
+  (Detalle, tarjetas, Calendario, historial, excepciones, vista previa) y falla si aparece un atributo `on*`, una etiqueta viva (`img`, `script`…) o comillas sin cerrar, con cargas `" onmouseover="…`, `'` y `<img>`.
+- **A-09** ya no se emite para quien no tiene programación de BioTime pero sí un ajuste **aplicable que le pone turno dentro del ciclo** (`ajDaProgramacion`: algún día de `cfg.ini..cfg.fin`
+  con `shiftFor().source==='AJUSTE'` y turno; uno anulado, de turno inexistente, sobrepuesto, fuera del ciclo, fuera de vigencia o de solo «sin turno» no lo quita).
+- **Nada se pierde en silencio.** `ajCargarInicial` guarda en `AJ_SIN_LEER` las entradas guardadas que no pasan `ajNormalizar` (o repiten un id) y `ajPersistir` las **reescribe tal cual**;
+  un almacenamiento que ni es una lista se copia a `mb_ajustes_horario_ilegible` (si ya hay una copia, a `_2`, `_3`… hasta 50; la misma copia no se repite). Lo guardado con `creado`/`anulado.en` **más de 1 día en el futuro** (reloj del PC mal) **no se descarta**: se aplica y el historial avisa del reloj (`AJ_CARGA.relojFuturo`); la regla del futuro sigue siendo un error para el archivo de configuración y el diálogo (`ajNormalizar(x,{futuro:true})` solo al leer). El historial (`#ajAviso`) avisa cuántas hay (`ajAvisosTxt`).
+- **Estado «sobrepuesto».** Un ajuste válido que otro **más nuevo de turno inexistente** deja sin efecto en parte o todos sus días no se llama «Vigente»: `ajEstado` devuelve `SOBREPUESTO` (`AJ_ESTADOS`), el AJ-H INFO dice «Ajuste de turno SOBREPUESTO…» (no «Turno ajustado…»; el ADV del bloqueo se mantiene) y el historial y la hoja «Ajustes de horario» usan el mismo texto.
+- **Orden total.** Gana el de `creado` mayor y, si empatan, el de **id** mayor (`ajMasNuevo`), sin depender del orden de la lista.
+- **Turno inexistente bloquea al anterior.** Un ajuste más reciente cuyo turno no está en el archivo de Turno **no se aplica y tampoco deja que uno anterior ocupe su lugar**: ese día
+  manda BioTime (`M.ajustesBloqueo`, consultado en `ajDe`); el ADV sigue. Si el de turno inexistente es más antiguo, el válido manda.
+- **Fusión estricta.** `ajFusionar`: un id que ya existe solo cuenta como «ya existe» si es **idéntico** en persona, fechas, turno, motivo, nota, autor y `creado`; solo entonces se adopta una
+  anulación nueva. Si difiere en algo es un **conflicto**: se ignora y la vista previa lo lista («Ajustes que chocan con uno existente»). `creado` o `anulado.en` **posteriores a ahora + 1 día**
+  son errores (`ajLimite`: se tolera 1 día por relojes/husos distintos; vale también al leer de localStorage).
+- **Migración de `mb_overrides`.** Las claves que no se pueden migrar se conservan en `mb_overrides_sin_migrar` (con su valor; se suman a las previas) y `mb_overrides` solo se borra después; si
+  ni es JSON se deja intacto. El historial avisa de ambos casos.
+- **Perfil.** El perfil (ROTATIVO/ADMINISTRATIVO) se infiere de los turnos **de BioTime** (`r.turnoOriginal` cuando la fila viene de un ajuste); solo si la persona **no tiene ninguno** en el ciclo
+  se infiere de los ajustados. Caso real que lo motivó: un ajuste de un día de T_ADM1 a T_NORMAL1 volvía ROTATIVO a un administrativo todo el ciclo (umbral semanal sobre 22 días). El override manual
+  (`PERFILES`) sigue ganando. Sin ajustes nada cambia.
+- **Aviso del diálogo** (no bloquea): si el turno elegido no tiene jornada el día de inicio (por día de la semana) dice «Ese turno no tiene jornada el día Sáb 2026-09-19: el día quedará sin turno» y
+  cuenta los días del rango sin jornada (`ajAvisoSegmento`, se refresca al cambiar «Aplicar hasta»).
+
+**Migración.** Al arrancar, cada `mb_overrides` (`"id|fecha" → código|""`) legible se convierte en un ajuste de un día (`motivo:'OTRO'`,
+`nota:'Migrado de un cambio puntual anterior'`, `autor:'(migrado)'`, id determinista `aj-migrado-<id>-<fecha>` para no duplicar), se guarda y se
+borra `mb_overrides`. Sin nada guardado **no se escribe ninguna llave** al abrir.
+
+**Motor.**
+- `buildModel()` agrega `M.ajustes` (Map `emp → [ajustes vigentes]`, del más antiguo al más reciente), `M.ajustesInvalidos` y `M.ajustesPorId`
+  (`ajIndexar`). El motor lee **`M.ajustes`, nunca el global**: así la línea base se calcula con un modelo sin ajustes y `compute()` sigue siendo pura.
+- `shiftFor(M,id,iso)`: si un ajuste cubre el día **gana el de `creado` más reciente** (empate: el de id mayor) y devuelve
+  `{code, source:'AJUSTE', ajuste, original}` donde `original` es lo que daría BioTime (`shiftBase`, que es la lógica de siempre PLAN/MULTI/NONE).
+  Un ajuste **no revive días fuera de la vigencia real** de la persona (antes del ingreso real —no el masivo— o después de `vigFin`): `ajFueraVigencia`.
+  Un ajuste con un **código de turno que no existe** en el archivo de Turno cargado **no se aplica** (manda BioTime; nunca se inventa un turno) y emite ADV.
+  Un ajuste **redundante** (todos sus días vigentes ya tienen ese turno en BioTime) se aplica y se marca «ya coincide con BioTime: se puede anular».
+  Como el ajuste resuelve el día, también resuelve un B-03 (dos turnos a la vez) de ese día.
+- Cada fila lleva `r.ajuste` (id), `r.turnoOriginal` (código, `''` si BioTime no tenía) y la novedad `AJ-H` en `r.flags`. Un día sin turno **con
+  marcaciones sueltas** también la lleva (su fila sale de `looseByDay` y no tiene ventana).
+- **Línea base:** `compute()` devuelve `RESULT.base` (`null` si no hay ajustes aplicables) = `computeBase(M,cfg)`: el **mismo `compute()`** sobre un modelo
+  **sin ajustes y solo con las personas que los tienen** (la bolsa semanal es por persona, así que recortar el universo no altera a nadie; una prueba
+  comprueba fila a fila que es idéntico a `compute()` sin ajustes). Medido con 1.000 personas ficticias × 22 días: `compute` sin ajustes ≈ 460 ms;
+  con ajustes en 100 personas el `computeBase` solo cuesta ≈ 25 ms; con ajustes en las 1.000 (peor caso) ≈ 250 ms.
+- **Excepción `AJ-H`:** **una por ajuste** (no por día; misma lección que A-16/A-18) y solo si el rango cruza el ciclo: INFO «Turno ajustado del A al B: X
+  (antes: Y). Motivo… Autor…» (con el estado si no es «vigente») y ADV «Ajuste de turno NO aplicado» para el código inexistente. Entra en `NOV`
+  (el chip dice qué es). **Nada es BLOQ.** Se añadió a `CATALOGO-CONDICIONES.md`.
+- **Quién usa el turno ajustado:** nómina (Consolidado, Detalle, Sinergy, Resumen del ciclo), **Asistencia** (`computeAsistencia` llama `shiftFor`) y
+  **Calidad de marcación** (sale de las filas de `RESULT`). **Pendiente de la Fase C:** *Adopción* debe seguir midiendo el turno **original de BioTime**,
+  pero `estadoCob()` todavía llama `shiftFor`, así que **hoy los ajustes se filtran a Adopción**; la Fase C le pasa el modelo sin ajustes y las filas base.
+
+**Detalle (los dos archivos).** La celda del turno es un `<select class="ajsel">` con los turnos del archivo de Turno y «Sin turno (descanso)» (valor mostrado =
+el aplicado). Cambiarlo **no aplica directo**: abre `#dlgAjuste` (motivo obligatorio, nota obligatoria con «Otro», «Aplicar hasta» —por defecto el mismo
+día—, autor recordado). **Cancelar o Esc devuelven la lista a su valor** (`ajRevertir`, también cableado al evento `close`). **Guardar** agrega el ajuste,
+persiste, `runCalc()` y vuelve a la **misma persona y al mismo día** (`irADetalle`). El día ajustado lleva `<tr class="aj">`, el turno original tachado
+(`<s class="aj-orig">`), el botón «Quitar ajuste» (abre el mismo diálogo en modo anular, motivo obligatorio; anula el ajuste **completo**, no solo ese día) y
+el chip `AJ-H` con el tooltip: motivo, nota, autor, fecha e **impacto de ese día** (ordinarias, extras, recargos, pendientes: antes → ahora, desde `RESULT.base`) y el
+aviso de que con la bolsa semanal el efecto puede caer en otro día de la semana. En el encabezado, la tarjeta «Ajustes de horario» (días del ciclo e impacto
+total, p. ej. «extras −12 h, recargos +12 h, pendientes −12 h»). **Fuera de la vigencia de la persona la lista no se ofrece.**
+**Color propio `--adj`/`--adj-soft` (violeta), definido en el `:root` de los dos archivos** (un `var()` sin definir pinta negro; **no se usa `--warn`**: un ajuste es
+una decisión, no una alerta). Ojo: el proyecto **no tiene tema oscuro** (un solo `:root`), así que el token se define una vez; si algún día se agrega un tema
+oscuro hay que redefinir `--adj` allí. `var(--fg)` del `dialog` ya estaba sin definir antes de los ajustes (hereda el color; no se tocó).
+
+**Calendario e historial.** El Calendario pinta los días ajustados con `.cal .d.aj` (borde `--adj`) y tooltip; es solo lectura. `#btnClrOvr` desapareció:
+`#btnAjustes` («Ajustes de horario») abre `#dlgAjustes`: todos los ajustes (vigentes, anulados, redundantes, turno inexistente, fuera de vigencia, persona no
+cargada) con filtro por persona (`coincideEmp`), «Ver día» (abre el Detalle en `desde`) y «Anular» con motivo. **No hay borrado masivo.**
+**Días sin fila:** el Detalle solo tiene filas para los días con turno o con marcaciones, así que un día sin turno **y** sin marcaciones **no tiene fila ni lista**:
+se cubre con el campo «Aplicar hasta» del diálogo (rango) o creando el ajuste desde un día vecino. Tampoco se inventan filas: un día con turno de BioTime, sin
+marcaciones, que se ajusta a «sin turno» **desaparece** del Detalle (antes era una fila A-18); el ajuste se ve y se anula desde el historial.
+
+**Exportaciones.** **Sin ajustes, todas son idénticas byte a byte a las de antes** (la prueba las compara contra la versión previa del archivo que sale de git:
+`RESULT.days`/`exc`, `aoaCons`, `aoaDet`, `aoaExc`, `aoaCal`, Asistencia, Calidad, Adopción, Sinergy y el Excel combinado). Con al menos un ajuste aplicable, el Excel del Detalle
+suma **al final** `TURNO ORIGINAL`, `AJUSTE MOTIVO`, `AJUSTE AUTOR` (después de `ETAPA LACTANCIA` si hay archivo de lactancia; todas las filas del mismo ancho), y
+«Exportar detalle completo» suma la hoja **«Ajustes de horario»** con **todos** los ajustes (también los anulados, con su estado), **solo ids**, y respeta los
+filtros del Consolidado como la hoja de Excepciones (`consFiltrado()`). El TXT de Sinergy no cambia de formato.
+
+**Archivo de configuración.** `ajustesHorario` se exporta completo y se valida **entrada por entrada** con `ajNormalizar` (más id repetido ⇒ error); cualquier error
+⇒ no se aplica nada. **Decisión que se aparta del «Reemplazar» del plan:** los ajustes **se fusionan por id y nunca se borran** (`ajFusionar`): lo que ya existe se
+conserva, lo nuevo se agrega y una anulación del archivo se adopta solo si el resto del ajuste es idéntico (si no, es un conflicto y se ignora). Motivo: «reemplazar» permitiría borrar masivamente (un archivo de la Fase A trae `[]`) y
+rompería la auditoría. La vista previa lo dice («N nuevos, M ya existen, K se marcan como anulados; nunca se borra ninguno»).
+
+**Pruebas.** `scripts/pruebas_motor/prueba_ajustes.js` (≈300 comprobaciones, ver su fila en el README), `prueba_config.js` y `prueba_identidad.js` actualizadas; `lib.js` suma
+`removeItem` al `localStorage` simulado. Se hicieron **mutaciones** (romper a propósito un arreglo y ver que la prueba falla): vigencia, el más reciente gana, anulado
+aplicado, código inexistente aplicado, motivo/nota sin exigir (en el diálogo **y** en el validador: son dos capas), Cancelar sin revertir, sin volver al mismo día, columnas
+siempre presentes, base con ajustes, `ajA` sin comillas, migración sin borrar `mb_overrides`, anular borrando, validador sin motivo, importar que borra, `shiftFor` sin ajustes: todos
+mueren. **Sin verificar:** datos reales (huella con ~1.000 empleados), el aspecto visual (color `--adj`, el diálogo, el tachado) y el comportamiento en un navegador real.
 
 ---
 

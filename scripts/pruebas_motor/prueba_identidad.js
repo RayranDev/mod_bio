@@ -31,7 +31,7 @@ const PREEXISTENTES = ['rolEfectivo', 'runCalc'];
 const difieren = [...fa.out.keys()].filter(k => fb.out.has(k) && !PREEXISTENTES.includes(k) && fa.out.get(k) !== fb.out.get(k));
 ok(`funciones compartidas byte a byte (${[...fa.out.keys()].filter(k => fb.out.has(k)).length})`, difieren.length === 0, difieren.join(','));
 // constantes y estado del motor
-const consts = ['CONCEPTS', 'CKEYS', 'DOW_ES', 'NOV', 'CONC_DESC', 'MATRIZ', 'LACT_ETAPAS', 'LACT_PATS', 'DATA', 'AS_LABEL', 'COLS_FIJAS', 'COLS_ASIS', 'ROLES', 'DOW_CAL', 'IND_UMBRAL', 'IND_RAMPA', 'IND_DIAS', 'IND_DIA_NOM', 'IND_METS', 'ALC_TABS', 'SIN_DEP', 'SIN_CARGO', 'COLS_CONS_DATOS', 'COLS_CONS_HORAS', 'COLS_CONS_OTROS', 'ROT_MESES', 'ROT_TIPOS', 'ROT_UMBRAL', 'ROT_COL', 'ROT_HEAD', 'PARAM_IDS', 'PARAM_CICLO', 'PARAM_GUARDAR', 'PARAM_DEFAULTS', 'CFG_FORMATO', 'CFG_VERSION', 'CFG_CLAVES', 'CFG_PERFILES', 'COLS_CLAVE'];
+const consts = ['CONCEPTS', 'CKEYS', 'DOW_ES', 'NOV', 'CONC_DESC', 'MATRIZ', 'LACT_ETAPAS', 'LACT_PATS', 'DATA', 'AS_LABEL', 'COLS_FIJAS', 'COLS_ASIS', 'ROLES', 'DOW_CAL', 'IND_UMBRAL', 'IND_RAMPA', 'IND_DIAS', 'IND_DIA_NOM', 'IND_METS', 'ALC_TABS', 'SIN_DEP', 'SIN_CARGO', 'COLS_CONS_DATOS', 'COLS_CONS_HORAS', 'COLS_CONS_OTROS', 'ROT_MESES', 'ROT_TIPOS', 'ROT_UMBRAL', 'ROT_COL', 'ROT_HEAD', 'PARAM_IDS', 'PARAM_CICLO', 'PARAM_GUARDAR', 'PARAM_DEFAULTS', 'CFG_FORMATO', 'CFG_VERSION', 'CFG_CLAVES', 'CFG_PERFILES', 'COLS_CLAVE', 'AJ_MOTIVOS', 'AJ_ESTADOS', 'AJ_MAX_DIAS', 'AJ_REC', 'AJ_HORARIO', 'AJ_SIN_LEER', 'AJ_CARGA', 'ajH', 'ajDelta'];
 function bloque(src, n) {
   const m = new RegExp('^(?:const|let) ' + n + '\\b', 'm').exec(src); if (!m) return null;
   const rest = src.slice(m.index);
@@ -59,6 +59,9 @@ const nuevas = ['fechaLact', 'idsConocidos', 'leerLactancia', 'faseLactancia', '
   'cargoDe', 'fillCargos', 'aplicarColsCons', 'renderColsCons',
   'colsLeer', 'escalera', 'leerParametrosForm', 'paramDefaultDe', 'paramDefaults', 'paramValido', 'paramEtiqueta', 'paramTexto', 'aplicarParametrosGuardados', 'guardarParametros', 'restaurarParametros',
   'configNombre', 'configArmar', 'exportarConfig', 'configValidar', 'configCambios', 'configVistaPrevia', 'abrirImportCfg', 'configAplicar', 'confirmarImportCfg', 'hookConfig',
+  'ajA', 'ajAhora', 'ajNuevoId', 'ajFechaOk', 'ajMomentoOk', 'ajNormalizar', 'ajFusionar', 'ajCargarInicial', 'ajPersistir', 'ajAutorRecordado', 'ajLimite', 'ajMismoCuerpo', 'ajMasNuevo', 'ajAvisosTxt', 'ajAvisoSegmento', 'ajActualizarAviso', 'ajIndexar', 'ajFueraVigencia', 'ajDe',
+  'shiftBase', 'shiftFor', 'computeBase', 'ajDaProgramacion', 'ajSobrepuesto', 'ajRedundante', 'ajEstado', 'ajAntes', 'ajExcepciones', 'ajMedidas', 'ajImpactoDia', 'ajImpactoEmp', 'ajDeltaTxt', 'ajPares', 'ajTextoAj', 'ajTextoDia', 'ajChip',
+  'ajDiasCiclo', 'cardAjDet', 'ajCeldaTurno', 'ajFilaDet', 'aoaAjustes', 'ajAbrirDialogo', 'ajRevertir', 'ajCancelarDialogo', 'ajCambioSelect', 'ajClickDet', 'ajAbrirAnular', 'ajGuardarDialogo', 'renderAjustes', 'abrirAjustes', 'ajClickHist', 'hookAjustes',
   'calidadFiltrada', 'renderCalidad', 'aoaCalidad', 'aoaCalidadEmp', 'hookCalidad', 'estadoCob', 'cobFiltrado', 'cobCalc', 'renderCob', 'aoaCobertura', 'aoaCoberturaDep', 'hookCob'];
 // retiradas con la pestaña KPI Cumplimiento: no deben quedar ni sus funciones ni sus elementos
 for (const n of ['kpiCalcular', 'kpiPorDepto', 'kpiFiltrarEmpleados', 'svgKpiChart', 'renderKpi', 'renderCobertura', 'aoaKpiDep', 'aoaKpiEmp', 'KPI_EXCLUIDOS_ULTIMO', 'indFiltro', 'svgIndDispersion', 'renderCalidadEmp'])
@@ -73,6 +76,9 @@ ok('CFG_PEND declarado igual en ambos', /^let CFG_PEND = null;.*$/m.exec(A)[0] =
 ok('aplicarParametrosGuardados() se invoca al cargar, una vez, en ambos', (A.match(/^aplicarParametrosGuardados\(\);/gm) || []).length === 1 && (B.match(/^aplicarParametrosGuardados\(\);/gm) || []).length === 1);
 const guardaAlCalcular = /readConfig\(\);\n    guardarParametros\(\);/;
 ok('runCalc guarda los parametros con los que calcula, en ambos', guardaAlCalcular.test(A) && guardaAlCalcular.test(B));
+ok('hookAjustes() se cablea en ambos', /hookConfig\(\); hookAjustes\(\);/.test(A) && /hookConfig\(\); hookAjustes\(\);/.test(B));
+ok('OVERRIDES / mb_overrides / btnClrOvr ya no existen como estado ni boton (solo la migracion lee mb_overrides)', !/OVERRIDES/.test(A + B) && !/btnClrOvr/.test(lee('reporte-horas.html') + lee('reporte-horas-rrhh.html')) && (A.match(/mb_overrides/g) || []).length === (B.match(/mb_overrides/g) || []).length);
+ok('const AJ_HORARIO se declara una vez, igual en ambos', (A.match(/^const AJ_HORARIO/gm) || []).length === 1 && (B.match(/^const AJ_HORARIO/gm) || []).length === 1);
 ok('hookConfig() se cablea en ambos', /hookRot\(\); hookConfig\(\);/.test(A) && /hookRot\(\); hookConfig\(\);/.test(B));
 // sintaxis
 for (const [n, s] of [['completo', A], ['rrhh', B]]) { try { new Function(s); ok(`sintaxis JS ${n}`, true); } catch (e) { ok(`sintaxis JS ${n}`, false, e.message); } }
@@ -81,7 +87,7 @@ for (const f of ['reporte-horas.html', 'reporte-horas-rrhh.html']) {
   const ids = [...lee(f).matchAll(/\bid="([\w-]+)"/g)].map(m => m[1]); const vistos = new Set(), dup = [];
   ids.forEach(i => { if (vistos.has(i)) dup.push(i); vistos.add(i); });
   ok(`ids HTML unicos en ${f}`, dup.length === 0, dup.join(','));
-  for (const i of ['fLac', 'btnLactPlantilla', 'btnLactVal', 'dlgLact', 'tLact', 'lactValResumen', 'btnLactValClose', 'fLact', 'cLactMin6', 'cLactMin24', 'fCargo', 'btnColsCons', 'dlgColsCons', 'colsConsBox', 'btnColsConsAll', 'btnColsConsClose', 'colConsStyle', 'btnExportCfg', 'btnImportCfg', 'fImportCfg', 'dlgImportCfg', 'cfgImpBody', 'btnCfgImpOk', 'btnCfgImpCancel', 'btnParamsReset'])
+  for (const i of ['fLac', 'btnLactPlantilla', 'btnLactVal', 'dlgLact', 'tLact', 'lactValResumen', 'btnLactValClose', 'fLact', 'cLactMin6', 'cLactMin24', 'fCargo', 'btnColsCons', 'dlgColsCons', 'colsConsBox', 'btnColsConsAll', 'btnColsConsClose', 'colConsStyle', 'btnExportCfg', 'btnImportCfg', 'fImportCfg', 'dlgImportCfg', 'cfgImpBody', 'btnCfgImpOk', 'btnCfgImpCancel', 'btnParamsReset', 'btnAjustes', 'dlgAjuste', 'dlgAjustes', 'ajTitulo', 'ajResumen', 'ajCamposCrear', 'ajMotivo', 'ajHasta', 'ajNotaEtq', 'ajNota', 'ajAutor', 'ajError', 'btnAjOk', 'btnAjCancel', 'fAjEmp', 'ajConteo', 'tAjustes', 'btnAjustesClose', 'ajAvisoSeg', 'ajAviso'])
     ok(`  ${i} declarado una vez en ${f}`, ids.filter(x => x === i).length === 1);
 }
 console.log(fallos ? 'FALLOS: ' + fallos : 'IDENTIDAD OK');
