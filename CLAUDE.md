@@ -58,7 +58,7 @@ buildModel                                              (construye el modelo des
 marcarIngresosMasivos                                   (detección de fecha de ingreso masiva)
 shiftBase, shiftFor, segmentFor                         (turno de BioTime / turno vigente por fecha, con ajustes)
 AJ_MOTIVOS, AJ_ESTADOS, AJ_MAX_DIAS, AJ_REC, AJ_HORARIO, AJ_SIN_LEER, AJ_CARGA, AJ_DLG, ajH, ajDelta   (Ajustes de horario: constantes y estado)
-ajA, ajAhora, ajLimite, ajNuevoId, ajFechaOk, ajMomentoOk, ajNormalizar, ajMismoCuerpo, ajFusionar, ajCargarInicial, ajPersistir, ajAutorRecordado, ajAvisosTxt   (validación y persistencia)
+ajA, ajAhora, ajLimite, ajNuevoId, ajFechaOk, ajMomentoOk, ajNormalizar, ajMismoCuerpo, ajDifiere, ajFusionar, ajCargarInicial, ajPersistir, ajAutorRecordado, ajAvisosTxt   (validación y persistencia)
 ajMasNuevo, ajIndexar, ajFueraVigencia, ajDe, computeBase, ajDaProgramacion, ajSobrepuesto, ajRedundante, ajEstado, ajAntes, ajExcepciones   (motor: modelo, vigencia, línea base, AJ-H)
 ajMedidas, ajImpactoDia, ajImpactoEmp, ajDeltaTxt, ajPares, ajTextoAj, ajTextoDia, ajChip, ajDiasCiclo, cardAjDet, ajCeldaTurno, ajFilaDet, aoaAjustes   (impacto, pantalla y Excel)
 ajHayCambio, AJ_CAMBIO, AJ_DIAS_TXT, ajNotaAlcance, ajCambiaDia, ajDiasCambiados, resultadoOriginal   (indicadores: días con el turno cambiado y el resultado con la plantilla original)
@@ -1175,8 +1175,10 @@ todos los ajustes (también los anulados) y se importa **agregando, nunca reempl
   página en blanco. Cualquier error ⇒ no se aplica **nada**, ni parcialmente, y el diálogo los lista todos.
   Claves o parámetros desconocidos ⇒ aviso, se ignoran (también `cIni`/`cFin` si vinieran en el archivo).
 - **Una sección ausente no se toca** (el archivo puede ser parcial); solo se reemplaza lo que trae. Único modo: «Reemplazar», con una excepción deliberada:
-  **`ajustesHorario` se fusiona por id y nunca borra** (un archivo no puede borrar la auditoría; ver «Ajustes de horario»). La fusión del resto
-  queda para después. La vista previa cuenta cada sección («ahora: N») y lista los parámetros que cambian «ahora → nuevo» (el select con su texto).
+  **`ajustesHorario` se fusiona por id y nunca borra** (un archivo no puede borrar la auditoría; ver «Ajustes de horario»). Si algún ajuste del
+  archivo choca con uno existente (mismo id, otro contenido), la vista previa ofrece **una sola elección para todos los choques**: *Ignorar los del archivo*
+  (por omisión, se conservan los actuales) o *Sobrescribir los actuales con los del archivo* (radio `cfgConflicto`, ids `#cfgConfIgn`/`#cfgConfSob`, que solo
+  existe si hay choques). La fusión del resto queda para después. La vista previa cuenta cada sección («ahora: N») y lista los parámetros que cambian «ahora → nuevo» (el select con su texto).
 - `configAplicar` **muta en sitio** `PERFILES`, `AUTOR`, `DISPOSITIVOS` y `ROT.noConf` (objetos compartidos) y reasigna lo que es `let`
   (`CONFIANZA`, `KPI_EXCL`, las tres listas de columnas); escribe cada llave en `localStorage`, repone el formulario, re-aplica las columnas,
   y si hay `RESULT` llama `runCalc()` **conservando la pantalla en la que estaba la persona**. **Nunca recarga la página** (se perderían los
@@ -1219,7 +1221,7 @@ comillas, y dentro de `data-tip="…"` hay que cerrarlas) y `esc()` para texto.
 - **Turno inexistente bloquea al anterior.** Un ajuste más reciente cuyo turno no está en el archivo de Turno **no se aplica y tampoco deja que uno anterior ocupe su lugar**: ese día
   manda BioTime (`M.ajustesBloqueo`, consultado en `ajDe`); el ADV sigue. Si el de turno inexistente es más antiguo, el válido manda.
 - **Fusión estricta.** `ajFusionar`: un id que ya existe solo cuenta como «ya existe» si es **idéntico** en persona, fechas, turno, motivo, nota, autor y `creado`; solo entonces se adopta una
-  anulación nueva. Si difiere en algo es un **conflicto**: se ignora y la vista previa lo lista («Ajustes que chocan con uno existente»). `creado` o `anulado.en` **posteriores a ahora + 1 día**
+  anulación nueva. Si difiere en algo es un **conflicto**: la vista previa lo lista («Ajustes que chocan con uno existente», con los campos en que difiere, `ajDifiere`) y quien importa elige una vez, para todos, entre **ignorar** (por omisión: se conserva el actual) y **sobrescribir** (`ajFusionar(actual, nuevos, modo)`: el del archivo, ya validado, reemplaza al actual **en la misma posición**; `sobrescritos` lista los ids y el aviso tras importar dice cuántos). `creado` o `anulado.en` **posteriores a ahora + 1 día**
   son errores (`ajLimite`: se tolera 1 día por relojes/husos distintos; vale también al leer de localStorage).
 - **Migración de `mb_overrides`.** Las claves que no se pueden migrar se conservan en `mb_overrides_sin_migrar` (con su valor; se suman a las previas) y `mb_overrides` solo se borra después; si
   ni es JSON se deja intacto. El historial avisa de ambos casos.
@@ -1281,8 +1283,10 @@ filtros del Consolidado como la hoja de Excepciones (`consFiltrado()`). El TXT d
 
 **Archivo de configuración.** `ajustesHorario` se exporta completo y se valida **entrada por entrada** con `ajNormalizar` (más id repetido ⇒ error); cualquier error
 ⇒ no se aplica nada. **Decisión que se aparta del «Reemplazar» del plan:** los ajustes **se fusionan por id y nunca se borran** (`ajFusionar`): lo que ya existe se
-conserva, lo nuevo se agrega y una anulación del archivo se adopta solo si el resto del ajuste es idéntico (si no, es un conflicto y se ignora). Motivo: «reemplazar» permitiría borrar masivamente (un archivo de la Fase A trae `[]`) y
+conserva, lo nuevo se agrega y una anulación del archivo se adopta solo si el resto del ajuste es idéntico (si no, es un conflicto: por omisión se ignora, y quien importa puede elegir sobrescribirlo). Motivo: «reemplazar» permitiría borrar masivamente (un archivo de la Fase A trae `[]`) y
 rompería la auditoría. La vista previa lo dice («N nuevos, M ya existen, K se marcan como anulados; nunca se borra ninguno»).
+  **Compromiso de auditoría de «sobrescribir»:** es una decisión explícita de la persona que importa, pero SÍ reemplaza la versión anterior de ese ajuste y su contenido previo se pierde
+  (no queda copia en el historial). Por eso **ignorar es la opción por omisión** y el diálogo lo advierte. Sobrescribir nunca borra un ajuste que el archivo no trae ni cambia el orden de la lista.
 
 **Pruebas.** `scripts/pruebas_motor/prueba_ajustes.js` (≈300 comprobaciones, ver su fila en el README), `prueba_config.js` y `prueba_identidad.js` actualizadas; `lib.js` suma
 `removeItem` al `localStorage` simulado. Se hicieron **mutaciones** (romper a propósito un arreglo y ver que la prueba falla): vigencia, el más reciente gana, anulado

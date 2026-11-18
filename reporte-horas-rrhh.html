@@ -1783,21 +1783,36 @@ function ajNormalizar(x, opc){
 /** Une dos listas por id, SIN borrar nada y SIN reescribir nada: lo que ya existe se conserva. Un ajuste del archivo con un id
  *  que ya existe solo cuenta como «ya existe» si es IDÉNTICO en persona, fechas, turno, motivo, nota, autor y creación; en ese caso (y
  *  solo en ese) se adopta una anulación nueva. Si difiere en cualquier otro campo es un CONFLICTO: se ignora y se avisa (un archivo
- *  no puede cambiar ni anular a escondidas un ajuste ya auditado). Es lo que usa la importación. */
+ *  no puede cambiar ni anular a escondidas un ajuste ya auditado). Es lo que usa la importación.
+ *  `modo` decide qué hacer con un conflicto: 'ignorar' (por omisión) lo deja como está; 'sobrescribir' reemplaza el ajuste actual,
+ *  EN LA MISMA POSICIÓN, por el del archivo (que ya viene validado). Es una decisión explícita de quien importa y pierde la versión
+ *  anterior de ese ajuste. En los dos modos `conflictos` lista los ids que chocan; `sobrescritos` los que se reemplazaron. Nunca borra. */
 function ajMismoCuerpo(a, b){
   return ['id','emp','desde','hasta','turno','motivo','nota','autor','creado'].every(k=>a[k]===b[k]);
 }
-function ajFusionar(actual, nuevos){
-  const lista = actual.slice(), idx = new Map(lista.map((a,i)=>[a.id,i])), conflictos = [];
+/** Etiquetas (en español) de los campos en que dos ajustes difieren; la vista previa de la importación las muestra por conflicto. */
+function ajDifiere(a, b){
+  const r = [['id','id'],['emp','persona'],['desde','desde'],['hasta','hasta'],['turno','turno'],['motivo','motivo'],['nota','nota'],['autor','autor'],['creado','creación']]
+    .filter(([k])=>a[k]!==b[k]).map(([,e])=>e);
+  const x = a.anulado, y = b.anulado;
+  if(!x !== !y || (x && y && (x.autor!==y.autor || x.en!==y.en || x.motivo!==y.motivo))) r.push('anulación');
+  return r;
+}
+function ajFusionar(actual, nuevos, modo){
+  const lista = actual.slice(), idx = new Map(lista.map((a,i)=>[a.id,i])), conflictos = [], sobrescritos = [];
   let agregados = 0, existentes = 0, anulados = 0;
   nuevos.forEach(n=>{
     if(!idx.has(n.id)){ idx.set(n.id, lista.length); lista.push(n); agregados++; return; }
     const i = idx.get(n.id), a = lista[i];
-    if(!ajMismoCuerpo(a, n)){ conflictos.push(n.id); return; }
+    if(!ajMismoCuerpo(a, n)){
+      conflictos.push(n.id);
+      if(modo==='sobrescribir'){ lista[i] = n; sobrescritos.push(n.id); }
+      return;
+    }
     existentes++;
     if(!a.anulado && n.anulado){ lista[i] = { ...a, anulado:{ ...n.anulado } }; anulados++; }
   });
-  return { lista, agregados, existentes, anulados, conflictos };
+  return { lista, agregados, existentes, anulados, conflictos, sobrescritos };
 }
 
 /** Lo que no se pudo leer NO se pierde: las entradas guardadas que no pasan ajNormalizar (o repiten un id) quedan en AJ_SIN_LEER y
@@ -3010,7 +3025,7 @@ function configVistaPrevia(r, nombre){
     /* los ajustes NO se reemplazan: se agregan los que no existen. Un archivo no puede borrar la auditoría. */
     if(D.ajustesHorario){
       const F = ajFusionar(AJ_HORARIO, D.ajustesHorario);
-      filas.push(`<li>Ajustes de horario: <b>${D.ajustesHorario.length}</b> en el archivo → <b>${F.agregados}</b> nuevo(s), ${F.existentes} ya existen${F.anulados?`, ${F.anulados} se marcan como anulados`:''}${F.conflictos.length?`, <b>${F.conflictos.length}</b> chocan y se ignoran`:''} <span class="muted">(ahora: ${AJ_HORARIO.length}; nunca se borra ninguno)</span></li>`);
+      filas.push(`<li>Ajustes de horario: <b>${D.ajustesHorario.length}</b> en el archivo → <b>${F.agregados}</b> nuevo(s), ${F.existentes} ya existen${F.anulados?`, ${F.anulados} se marcan como anulados`:''}${F.conflictos.length?`, <b>${F.conflictos.length}</b> chocan: elija abajo qué hacer`:''} <span class="muted">(ahora: ${AJ_HORARIO.length}; nunca se borra ninguno)</span></li>`);
     }else ausentes.push('ajustes de horario');
     tiene('deptosExcluidos', 'Departamentos excluidos del alcance', q=>fila(q, D.deptosExcluidos.length, KPI_EXCL.size));
     tiene('mesesNoConfiables', 'Meses de rotación no confiables', q=>fila(q, D.mesesNoConfiables.length, ROT.noConf.size));
@@ -3019,13 +3034,21 @@ function configVistaPrevia(r, nombre){
         .filter(([k])=>D.columnas[k]).map(([k,n,s])=>`${n} <b>${D.columnas[k].length}</b> <span class="muted">(ahora: ${s.size})</span>`).join(' · ') + `</li>`);
     else ausentes.push('columnas ocultas');
     h += `<p style="margin:8px 0 2px"><b>Qué trae el archivo</b></p><ul>${filas.join('')}</ul>`;
-    if(choques.length) h += `<p class="muted" style="margin:0 0 2px"><b>Ajustes que chocan con uno existente</b></p><ul>${choques.map(id=>`<li>El ajuste «${esc(id)}» ya existe con otro contenido (persona, fechas, turno, motivo, nota, autor o creación): se ignora; un archivo no puede cambiar ni anular un ajuste ya auditado.</li>`).join('')}</ul>`;
+    if(choques.length){
+      /* un choque = mismo id con otro contenido: se elige UNA vez para todos qué hacer (por omisión se conservan los actuales) */
+      const porId = (l, id)=>l.find(a=>a.id===id) || {};
+      h += `<p style="margin:8px 0 2px"><b>Ajustes que chocan con uno existente</b></p>`+
+           `<div style="margin:0 0 4px"><label style="display:block"><input type="radio" name="cfgConflicto" id="cfgConfIgn" value="ignorar" checked> Ignorar los del archivo (se conservan los actuales)</label>`+
+           `<label style="display:block"><input type="radio" name="cfgConflicto" id="cfgConfSob" value="sobrescribir"> Sobrescribir los actuales con los del archivo</label></div>`+
+           `<ul>${choques.map(id=>{ const dif = ajDifiere(porId(AJ_HORARIO, id), porId(D.ajustesHorario, id)); return `<li>El ajuste «${esc(id)}» ya existe con otro contenido${dif.length?`; difiere en: ${esc(dif.join(', '))}`:''}.</li>`; }).join('')}</ul>`+
+           `<p class="muted" style="margin:0 0 8px">Sobrescribir reemplaza la versión actual de esos ajustes por la del archivo y su contenido anterior se pierde; no se borra ningún otro ajuste. Ignorar los deja como están.</p>`;
+    }
     if(ausentes.length) h += `<p class="muted" style="margin:0 0 8px">No incluido en el archivo (se conserva lo actual): ${esc(ausentes.join(', '))}.</p>`;
     h += cambios.length
       ? `<p style="margin:8px 0 4px"><b>Parámetros que cambian</b></p><div class="scroll" style="max-height:34vh"><table><thead><tr><th>Parámetro</th><th>Ahora</th><th>Nuevo</th></tr></thead><tbody>`+
         cambios.map(c=>`<tr><td>${esc(c.etiqueta)} <span class="muted mono">${esc(c.id)}</span></td><td>${esc(c.actual)}</td><td><b>${esc(c.nuevo)}</b></td></tr>`).join('')+`</tbody></table></div>`
       : (D.parametros ? `<p class="muted" style="margin:8px 0 4px">Ningún parámetro cambia.</p>` : '');
-    h += `<p class="muted" style="margin:10px 0 0">«Reemplazar» sustituye esas secciones por lo del archivo. No se recarga la página ni se tocan los Excel cargados.</p>`;
+    h += `<p class="muted" style="margin:10px 0 0">«Reemplazar» sustituye esas secciones por lo del archivo; los ajustes de horario se fusionan por id: no se borra ninguno y un ajuste con el mismo id y otro contenido se ignora o se sobrescribe según lo que se elija. No se recarga la página ni se tocan los Excel cargados.</p>`;
   }
   return h;
 }
@@ -3040,7 +3063,8 @@ function abrirImportCfg(texto, nombre){
 }
 /** Aplica una configuración YA validada. Los globales se mutan en sitio (PERFILES, AUTOR y
  *  DISPOSITIVOS son objetos compartidos); lo que es `let` se reasigna. No recarga la página. */
-function configAplicar(d){
+function configAplicar(d, opc){
+  let sobrescritos = 0;
   const guardar = (k, v)=>{ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} };
   const reemplazar = (obj, nuevo)=>{ Object.keys(obj).forEach(k=>delete obj[k]); Object.assign(obj, nuevo); };
   if(d.parametros){
@@ -3051,7 +3075,10 @@ function configAplicar(d){
   if(d.confianza){ CONFIANZA = new Set(d.confianza); guardar('mb_confianza', [...CONFIANZA]); }
   if(d.autorizaciones){ reemplazar(AUTOR, d.autorizaciones); guardar('mb_autor', AUTOR); }
   if(d.dispositivos){ reemplazar(DISPOSITIVOS, d.dispositivos); guardar('mb_dispositivos', DISPOSITIVOS); }
-  if(d.ajustesHorario){ const F = ajFusionar(AJ_HORARIO, d.ajustesHorario); AJ_HORARIO.splice(0, AJ_HORARIO.length, ...F.lista); ajPersistir(); }   // se agregan, nunca se borran
+  if(d.ajustesHorario){   // se agregan, nunca se borran; los que chocan se ignoran o se sobrescriben según lo elegido al importar (por omisión, ignorar)
+    const F = ajFusionar(AJ_HORARIO, d.ajustesHorario, opc && opc.conflictos==='sobrescribir' ? 'sobrescribir' : 'ignorar');
+    AJ_HORARIO.splice(0, AJ_HORARIO.length, ...F.lista); ajPersistir(); sobrescritos = F.sobrescritos.length;
+  }
   if(d.deptosExcluidos){
     KPI_EXCL = new Set(d.deptosExcluidos); guardar('mb_kpi_excl', [...KPI_EXCL]);
     if(KPI_EXCL.size) ALC.modoDep = 'excluir';          // igual que al arrancar con exclusiones guardadas
@@ -3072,12 +3099,14 @@ function configAplicar(d){
     runCalc(); if(m) modo(m);
     alcPanel();
   }
+  return { sobrescritos };
 }
 function confirmarImportCfg(){
   if(!CFG_PEND) return;
-  configAplicar(CFG_PEND); CFG_PEND = null;
+  const sob = $('#cfgConfSob');                         // solo existe si la vista previa encontró choques; sin él, se ignoran
+  const R = configAplicar(CFG_PEND, { conflictos: sob && sob.checked ? 'sobrescribir' : 'ignorar' }); CFG_PEND = null;
   $('#dlgImportCfg').close();
-  toast('Configuración importada.');
+  toast('Configuración importada.' + (R.sobrescritos ? ` Se sobrescribieron ${R.sobrescritos} ajuste(s) de horario.` : ''));
 }
 function hookConfig(){
   const on = (sel, prop, fn)=>{ const x = $(sel); if(x) x[prop] = fn; };

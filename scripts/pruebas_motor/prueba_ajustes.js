@@ -591,6 +591,91 @@ async function main() {
       api.confirmarImportCfg();
       const despues = api.__ev('AJ_HORARIO');
       ok('importar: el ajuste existente queda EXACTAMENTE igual (sin anular, mismo turno) y solo se agrega el nuevo', despues.length === 2 && J(despues[0]) === J(JSON.parse(antesLista)[0]) && despues[0].anulado === null && despues[0].turno === 'T_MEDIO');
+      // importar con conflictos: se elige UNA vez entre ignorar (por omision) y sobrescribir
+      {
+        const snap = api.__ev('AJ_HORARIO').slice();
+        const restaurar = () => { const L = api.__ev('AJ_HORARIO'); L.splice(0, L.length, ...snap); api.__ev('ajPersistir()'); };
+        const Y = A('9702', '2026-09-15', '2026-09-15', 'T_DIA', '2026-11-10T09:00:00', { nota: 'y' });
+        const Z = A('9703', '2026-09-16', '2026-09-16', 'T_DIA', '2026-11-10T09:00:00', { nota: 'z' });
+        const N1 = A('9704', '2026-09-17', '2026-09-17', 'T_DIA');
+        const base = [X, Y, Z];
+        const Xn = { ...X, turno: 'T_TARDE', nota: 'nueva', autor: 'Pedro' };
+        const Fi = api.ajFusionar(base, [Xn, N1]), Fi2 = api.ajFusionar(base, [Xn, N1], 'ignorar');
+        ok('fusion: «ignorar» (por omision y explicito) deja el actual, cuenta el choque y no sobrescribe nada', J(Fi) === J(Fi2) && Fi.lista.length === 4 && Fi.lista[0] === X && Fi.conflictos.length === 1 && Fi.sobrescritos.length === 0 && Fi.agregados === 1);
+        const Fs = api.ajFusionar(base, [Xn, N1], 'sobrescribir');
+        ok('fusion: «sobrescribir» reemplaza el actual EN LA MISMA POSICION, conserva el orden y la cantidad, no toca los demas y no muta la lista de entrada',
+          Fs.lista.length === 4 && Fs.lista[0] === Xn && Fs.lista[1] === Y && Fs.lista[2] === Z && Fs.lista[3] === N1 && J(Fs.conflictos) === J([X.id]) && J(Fs.sobrescritos) === J([X.id]) && Fs.agregados === 1
+          && base.length === 3 && base[0] === X && X.turno === 'T_MEDIO');
+        ok('fusion: sin conflictos «sobrescribir» es identico a «ignorar»', J(api.ajFusionar(base, [N1], 'sobrescribir')) === J(api.ajFusionar(base, [N1])) && api.ajFusionar(base, [N1], 'sobrescribir').sobrescritos.length === 0);
+        const anulB = { autor: 'Z', en: '2026-11-15T08:00:00', motivo: 'm' };
+        const Fm = api.ajFusionar(base, [{ ...X, anulado: anulB }, { ...Y, turno: 'T_TARDE' }], 'sobrescribir');
+        ok('fusion: un id IDENTICO conserva su comportamiento en los dos modos (ya existe / adopta la anulacion) y solo el que difiere se sobrescribe',
+          Fm.existentes === 1 && Fm.anulados === 1 && Fm.lista[0].anulado.autor === 'Z' && Fm.lista[0].turno === 'T_MEDIO' && J(Fm.sobrescritos) === J([Y.id]) && Fm.lista[1].turno === 'T_TARDE' && Fm.lista[2] === Z
+          && api.ajFusionar(base, [{ ...X }], 'sobrescribir').existentes === 1 && api.ajFusionar(base, [{ ...X }], 'sobrescribir').sobrescritos.length === 0);
+        ok('fusion: sobrescribir nunca borra nada que no este en el archivo', api.ajFusionar(base, [Xn], 'sobrescribir').lista.length === 3 && api.ajFusionar(base, [Xn], 'sobrescribir').lista.includes(Y) && api.ajFusionar(base, [Xn], 'sobrescribir').lista.includes(Z));
+        ok('ajDifiere lista en español los campos que cambian (incluida la anulacion) y es vacia si son iguales',
+          J(api.ajDifiere(X, Xn)) === J(['turno', 'nota', 'autor']) && api.ajDifiere(X, { ...X }).length === 0 && J(api.ajDifiere(X, { ...X, anulado: anulB, emp: '9702', creado: '2026-11-11T09:00:00' })) === J(['persona', 'creación', 'anulación'])
+          && api.ajDifiere({ ...X, anulado: anulB }, { ...X, anulado: { ...anulB } }).length === 0 && J(api.ajDifiere({ ...X, anulado: anulB }, { ...X, anulado: { ...anulB, motivo: 'otro' } })) === J(['anulación']));
+
+        // vista previa
+        const Xh = { ...X, turno: NASTY, nota: PAYLOAD, autor: PAYLOAD };
+        const peligrosos = h => {
+          const malos = [], re = /<([a-zA-Z][\w-]*)((?:[^>"']|"[^"]*"|'[^']*')*)>/g; let m;
+          while ((m = re.exec(h))) {
+            const sin = m[2].replace(/"[^"]*"/g, '""').replace(/'[^']*'/g, "''");
+            if (/^(img|script|iframe|svg|object|embed|style|link)$/i.test(m[1])) malos.push(m[1]);
+            if (/["']/.test(sin.replace(/=""|=''/g, ''))) malos.push('comillas ' + m[1]);
+            for (const a of sin.matchAll(/(?:^|\s)([^\s=\/>]+)(?==|\s|$)/g)) if (/^on/i.test(a[1])) malos.push(a[1]);
+          }
+          return malos;
+        };
+        api.abrirImportCfg(J({ formato: 'mod_bio-config', version: 1, ajustesHorario: [Xh, N1] }), 'c.json');
+        const vp = api.__mk('#cfgImpBody').innerHTML;
+        const radios = [...vp.matchAll(/<input type="radio"[^>]*>/g)].map(m => m[0]);
+        ok('importar: con conflictos aparecen dos opciones (ignorar marcada por omision, sobrescribir) con su texto', radios.length === 2 && /name="cfgConflicto"/.test(radios[0]) && /id="cfgConfIgn"/.test(radios[0]) && /\bchecked\b/.test(radios[0]) && /id="cfgConfSob"/.test(radios[1]) && !/\bchecked\b/.test(radios[1])
+          && /Ignorar los del archivo \(se conservan los actuales\)/.test(vp) && /Sobrescribir los actuales con los del archivo/.test(vp));
+        ok('importar: el resumen ya no dice que se ignoran sin mas ("chocan: elija abajo qué hacer") y cada choque dice en que campos difiere',
+          /<b>1<\/b> chocan: elija abajo qué hacer/.test(vp) && !/chocan y se ignoran/.test(vp) && new RegExp('«' + X.id + '» ya existe con otro contenido; difiere en: turno, nota, autor').test(vp));
+        ok('importar: avisa que sobrescribir pierde el contenido anterior y que no se borra ningun otro ajuste', /contenido anterior se pierde/.test(vp) && /no se borra ningún otro ajuste/.test(vp) && !/solo se agregan/i.test(vp));
+        ok('importar: con turno/nota/autor hostiles la vista previa no tiene atributos on*, etiquetas vivas ni comillas sin cerrar (solo los dos radios son <input>)',
+          peligrosos(vp).length === 0 && (vp.match(/<input\b/g) || []).length === 2 && !vp.includes(PAYLOAD) && !vp.includes(NASTY));
+        api.abrirImportCfg(J({ formato: 'mod_bio-config', version: 1, ajustesHorario: [N1] }), 'sin.json');
+        const vp0 = api.__mk('#cfgImpBody').innerHTML;
+        ok('importar: sin conflictos NO hay opciones ni radios', !/cfgConflicto|cfgConfSob|cfgConfIgn|<input/.test(vp0) && !/Ajustes que chocan con uno existente/.test(vp0));
+        api.abrirImportCfg(J({ formato: 'mod_bio-config', version: 1, ajustesHorario: [N1] }), 'sin.json');
+        api.__mk('#cfgConfSob').checked = true;          // un radio viejo marcado no puede arrastrarse si esta vista previa no tiene choques
+        api.confirmarImportCfg(); api.__mk('#cfgConfSob').checked = false;
+        ok('importar: sin choques solo agrega (el radio ausente equivale a ignorar)', api.__ev('AJ_HORARIO').length === snap.length + 1 && api.__ev('AJ_HORARIO')[0].turno === 'T_MEDIO');
+        restaurar();
+
+        // de punta a punta: por omision (sin tocar nada) se ignora
+        const turnoDe = () => { const r = fila(api.__ev('RESULT'), '9701', '2026-09-14'); return r ? r.turno : null; };
+        const archivo = J({ formato: 'mod_bio-config', version: 1, ajustesHorario: [Xn, N1] });
+        const Rant = api.__ev('RESULT');
+        api.abrirImportCfg(archivo, 'c.json');
+        api.confirmarImportCfg();
+        const L1 = api.__ev('AJ_HORARIO'), ls1 = JSON.parse(global.localStorage.getItem('mb_ajustes_horario'));
+        ok('importar de punta a punta, opcion por omision: se conserva el actual (T_MEDIO), solo se agrega el nuevo y el toast no habla de sobrescritos',
+          L1.length === snap.length + 1 && L1[0].turno === 'T_MEDIO' && L1[0].nota === 'orig' && L1.some(a => a.id === N1.id) && ls1.length === L1.length && ls1[0].turno === 'T_MEDIO' && api.__mk('#toast').textContent === 'Configuración importada.');
+        restaurar();
+        api.__mk('#cfgConfIgn').checked = true; api.__mk('#cfgConfSob').checked = false;
+        api.abrirImportCfg(archivo, 'c.json'); api.confirmarImportCfg();
+        ok('importar con «ignorar» elegido: igual que la omision', api.__ev('AJ_HORARIO')[0].turno === 'T_MEDIO' && api.__ev('AJ_HORARIO').length === snap.length + 1);
+        restaurar();
+        // sobrescribir
+        api.runCalc();
+        const antesT = turnoDe(), Rantes2 = api.__ev('RESULT');
+        api.abrirImportCfg(archivo, 'c.json');
+        api.__mk('#cfgConfSob').checked = true; api.__mk('#cfgConfIgn').checked = false;
+        api.confirmarImportCfg();
+        const L2 = api.__ev('AJ_HORARIO'), ls2 = JSON.parse(global.localStorage.getItem('mb_ajustes_horario'));
+        ok('importar con «sobrescribir»: el actual se reemplaza en su posicion por el del archivo, el nuevo se agrega al final y nada se pierde ni se duplica',
+          L2.length === snap.length + 1 && L2[0].id === X.id && L2[0].turno === 'T_TARDE' && L2[0].nota === 'nueva' && L2[0].autor === 'Pedro' && L2[L2.length - 1].id === N1.id && L2.slice(1, -1).every((a, i) => a === snap[i + 1]) && new Set(L2.map(a => a.id)).size === L2.length);
+        ok('importar con «sobrescribir»: queda guardado en localStorage (ajPersistir) y el toast dice cuantos se sobrescribieron', J(ls2) === J(L2) && /Se sobrescribieron 1 ajuste\(s\) de horario/.test(api.__mk('#toast').textContent));
+        ok('importar con «sobrescribir»: se recalcula con el ajuste del archivo (RESULT nuevo y el dia 14 pasa a T_TARDE)', api.__ev('RESULT') !== Rantes2 && antesT === 'T_MEDIO' && turnoDe() === 'T_TARDE', antesT + ' -> ' + turnoDe());
+        api.__mk('#cfgConfSob').checked = false; api.__mk('#cfgConfIgn').checked = true;
+        restaurar(); api.runCalc();
+      }
       // fechas en el futuro
       const ahoraIso = d => api.ajAhora(new Date(Date.now() + d));
       const cfgConAj = a => api.configValidar(J({ formato: 'mod_bio-config', version: 1, ajustesHorario: [a] }));

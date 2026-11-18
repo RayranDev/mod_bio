@@ -59,7 +59,7 @@ const nuevas = ['fechaLact', 'idsConocidos', 'leerLactancia', 'faseLactancia', '
   'cargoDe', 'fillCargos', 'aplicarColsCons', 'renderColsCons',
   'colsLeer', 'escalera', 'leerParametrosForm', 'paramDefaultDe', 'paramDefaults', 'paramValido', 'paramEtiqueta', 'paramTexto', 'aplicarParametrosGuardados', 'guardarParametros', 'restaurarParametros',
   'configNombre', 'configArmar', 'exportarConfig', 'configValidar', 'configCambios', 'configVistaPrevia', 'abrirImportCfg', 'configAplicar', 'confirmarImportCfg', 'hookConfig',
-  'ajA', 'ajAhora', 'ajNuevoId', 'ajFechaOk', 'ajMomentoOk', 'ajNormalizar', 'ajFusionar', 'ajCargarInicial', 'ajPersistir', 'ajAutorRecordado', 'ajLimite', 'ajMismoCuerpo', 'ajMasNuevo', 'ajAvisosTxt', 'ajAvisoSegmento', 'ajActualizarAviso', 'ajIndexar', 'ajFueraVigencia', 'ajDe',
+  'ajA', 'ajAhora', 'ajNuevoId', 'ajFechaOk', 'ajMomentoOk', 'ajNormalizar', 'ajFusionar', 'ajDifiere', 'ajCargarInicial', 'ajPersistir', 'ajAutorRecordado', 'ajLimite', 'ajMismoCuerpo', 'ajMasNuevo', 'ajAvisosTxt', 'ajAvisoSegmento', 'ajActualizarAviso', 'ajIndexar', 'ajFueraVigencia', 'ajDe',
   'shiftBase', 'shiftFor', 'computeBase', 'ajDaProgramacion', 'ajSobrepuesto', 'ajRedundante', 'ajEstado', 'ajAntes', 'ajExcepciones', 'ajMedidas', 'ajImpactoDia', 'ajImpactoEmp', 'ajDeltaTxt', 'ajPares', 'ajTextoAj', 'ajTextoDia', 'ajChip',
   'ajDiasCiclo', 'cardAjDet', 'ajCeldaTurno', 'ajFilaDet', 'aoaAjustes', 'ajAbrirDialogo', 'ajRevertir', 'ajCancelarDialogo', 'ajCambioSelect', 'ajClickDet', 'ajAbrirAnular', 'ajGuardarDialogo', 'renderAjustes', 'abrirAjustes', 'ajClickHist', 'hookAjustes',
   'ajHayCambio', 'ajNotaAlcance', 'ajCambiaDia', 'ajDiasCambiados', 'resultadoOriginal', 'calidadComparar',
