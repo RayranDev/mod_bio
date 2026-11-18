@@ -721,7 +721,7 @@ de pruebas.
 **Perfil laboral (ROTATIVO vs ADMINISTRATIVO, B-06).** Se infiere por el prefijo del código de turno
 (`cfg.adminPref`, default `T_ADM`): si todos los turnos de un empleado en el ciclo empiezan con ese
 prefijo, es ADMINISTRATIVO (D-23, cálculo diario contra jornada programada); si no, es ROTATIVO
-(D-17/D-18, umbral semanal). Es una heurística, no un dato del maestro — por eso existe el override
+(D-17/D-18, umbral semanal). «Sus turnos» son los **efectivos**, ajustes de horario incluidos (ver «Ajustes de horario»). Es una heurística, no un dato del maestro — por eso existe el override
 manual por empleado (`localStorage.mb_perfiles`, en la pestaña Detalle), que levanta la advertencia
 B-06 cuando se usa. **Decisión del usuario (sept-2026): se queda con el prefijo.**
 
@@ -1225,9 +1225,13 @@ comillas, y dentro de `data-tip="…"` hay que cerrarlas) y `esc()` para texto.
   son errores (`ajLimite`: se tolera 1 día por relojes/husos distintos; vale también al leer de localStorage).
 - **Migración de `mb_overrides`.** Las claves que no se pueden migrar se conservan en `mb_overrides_sin_migrar` (con su valor; se suman a las previas) y `mb_overrides` solo se borra después; si
   ni es JSON se deja intacto. El historial avisa de ambos casos.
-- **Perfil.** El perfil (ROTATIVO/ADMINISTRATIVO) se infiere de los turnos **de BioTime** (`r.turnoOriginal` cuando la fila viene de un ajuste); solo si la persona **no tiene ninguno** en el ciclo
-  se infiere de los ajustados. Caso real que lo motivó: un ajuste de un día de T_ADM1 a T_NORMAL1 volvía ROTATIVO a un administrativo todo el ciclo (umbral semanal sobre 22 días). El override manual
-  (`PERFILES`) sigue ganando. Sin ajustes nada cambia.
+- **Perfil (regla vigente desde nov-2026).** El perfil (ROTATIVO/ADMINISTRATIVO) se infiere de los turnos **efectivos** del ciclo: los que realmente se aplican, vengan de BioTime o de un ajuste aplicado
+  (`r.turno` ya trae el código ajustado). Sigue valiendo la regla de siempre: es ADMINISTRATIVO solo si **todos** sus turnos empiezan con `cfg.adminPref`; **un solo día** en un turno rotativo
+  (de BioTime o de un ajuste) lo vuelve ROTATIVO **todo el ciclo** («quien rota es rotativo, así que su rol cambia»). Los días ajustados a «sin turno» no cuentan como turno. Un ajuste anulado, de turno
+  inexistente, sobrepuesto o fuera de vigencia no se aplica y por tanto no toca el perfil. El override manual (`PERFILES`) sigue ganando y B-06 no cambia. Sin ajustes nada cambia.
+  **La línea base (`computeBase`, `RESULT.base`) corre sin ajustes y conserva el perfil original**, así que el cambio de perfil es parte del impacto visible del ajuste (`ajImpactoDia/Emp`, Calidad,
+  `resultadoOriginal`): p. ej. un administrativo con un día ajustado de T_ADM1 a T_NORMAL1 pasa a umbral semanal todo el ciclo. *Historia:* en la primera versión de la Fase B el perfil se tomaba de los
+  turnos de BioTime (`r.turnoOriginal`) para que un ajuste de un día no volviera ROTATIVO a un administrativo; el usuario revirtió esa decisión.
 - **Aviso del diálogo** (no bloquea): si el turno elegido no tiene jornada el día de inicio (por día de la semana) dice «Ese turno no tiene jornada el día Sáb 2026-09-19: el día quedará sin turno» y
   cuenta los días del rango sin jornada (`ajAvisoSegmento`, se refresca al cambiar «Aplicar hasta»).
 

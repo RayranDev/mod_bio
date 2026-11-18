@@ -547,16 +547,52 @@ async function main() {
       const Mw = con([{ ...v2, creado: '2026-11-10T08:00:00' }, v1]);
       ok('si el de turno inexistente es MAS ANTIGUO, el valido si manda', api.shiftFor(Mw, '9701', '2026-09-16').code === 'T_MEDIO');
       ok('un ajuste anulado de turno inexistente no bloquea a nadie', api.shiftFor(con([v1, { ...v2, anulado: { autor: 'a', en: '2026-11-11T09:00:00', motivo: 'm' } }]), '9701', '2026-09-16').code === 'T_MEDIO');
-      // perfil: se infiere de los turnos de BioTime, no de los ajustados
+      // perfil: se infiere de los turnos EFECTIVOS (los aplicados: BioTime o ajuste); un dia rotativo vuelve ROTATIVO a todo el ciclo
       const perfil = (lista, id) => calc(lista).byEmp.get(id).perfil;
-      ok('perfil: 9710 (T_ADM1 todo el mes) es ADMINISTRATIVO sin ajustes', R2.byEmp.get('9710').perfil === 'ADMINISTRATIVO');
-      ok('perfil: un ajuste de UN dia a un turno no administrativo NO lo vuelve ROTATIVO (el umbral semanal no se le aplica)', perfil([A('9710', '2026-09-15', '2026-09-15', 'T_DIA')], '9710') === 'ADMINISTRATIVO'
-        && calc([A('9710', '2026-09-15', '2026-09-15', 'T_DIA')]).byEmp.get('9710').rows.every(r => r.umbral == null));
-      ok('perfil: ni aunque el ajuste cubra TODO el mes', perfil([A('9710', '2026-09-01', '2026-09-30', 'T_DIA')], '9710') === 'ADMINISTRATIVO');
+      const anulP = { autor: 'a', en: '2026-11-11T09:00:00', motivo: 'm' };
+      const aj1 = A('9710', '2026-09-15', '2026-09-15', 'T_DIA');
+      ok('perfil: 9710 (T_ADM1 todo el mes) es ADMINISTRATIVO sin ajustes', R2.byEmp.get('9710').perfil === 'ADMINISTRATIVO'
+        && R2.byEmp.get('9710').rows.every(r => r.umbral == null));
+      // (a) un solo dia en turno rotativo => ROTATIVO todo el ciclo
+      const Ra = calc([aj1]), ea = Ra.byEmp.get('9710');
+      ok('perfil (a): un ajuste de UN dia a un turno no administrativo vuelve ROTATIVO a la persona todo el ciclo (aplica el umbral semanal)', ea.perfil === 'ROTATIVO'
+        && ea.rows.filter(r => r.inCiclo && r.turno !== '—').every(r => r.umbral != null)
+        && !Ra.exc.some(x => x.code === 'B-06' && x.id === '9710'));
+      ok('perfil (a): tambien si el ajuste cubre TODO el mes', perfil([A('9710', '2026-09-01', '2026-09-30', 'T_DIA')], '9710') === 'ROTATIVO');
+      ok('perfil (a): I-01/I-02/I-03 = 0 con el perfil cambiado', inv(Ra) === 0);
+      // la linea base (sin ajustes) conserva el perfil original y el impacto cuadra con compute sin ajustes
+      const Rb = api.compute({ ...con([aj1]) }, cfg2);
+      ok('perfil: RESULT.base conserva el perfil ORIGINAL (ADMINISTRATIVO) y el cambio de perfil es parte del impacto del ajuste', Rb.base && Rb.base.byEmp.get('9710').perfil === 'ADMINISTRATIVO'
+        && eq(Rb.base.byEmp.get('9710').rows, R2.byEmp.get('9710').rows) && inv(Rb.base) === 0);
+      const Ie = api.ajImpactoEmp(Rb, '9710'), O = R2.byEmp.get('9710');
+      ok('perfil: ajImpactoEmp(antes) == resultado sin ajustes y ajImpactoEmp(ahora) == resultado con el ajuste (extras, ordinarias, pendientes)', Math.abs(Ie.antes.extra - (O.extraH || 0)) < 1e-9 && Math.abs(Ie.antes.ord - (O.ordH || 0)) < 1e-9
+        && Math.abs(Ie.antes.pend - (O.pendH || 0)) < 1e-9 && Math.abs(Ie.ahora.extra - (ea.extraH || 0)) < 1e-9 && Math.abs(Ie.ahora.ord - (ea.ordH || 0)) < 1e-9);
+      ok('perfil: resultadoOriginal devuelve el perfil original de esa persona', api.resultadoOriginal(Rb).byEmp.get('9710').perfil === 'ADMINISTRATIVO');
+      // (b) ajuste anulado => no cuenta
+      ok('perfil (b): con el ajuste ANULADO sigue ADMINISTRATIVO', perfil([{ ...aj1, anulado: anulP }], '9710') === 'ADMINISTRATIVO');
+      // (c) ajuste a otro turno administrativo (prefijo T_ADM) => sigue ADMINISTRATIVO
+      ok('perfil (c): un ajuste a otro turno con prefijo administrativo no cambia el perfil', perfil([A('9710', '2026-09-15', '2026-09-16', 'T_ADM1')], '9710') === 'ADMINISTRATIVO');
+      // (d) turno rotativo de BioTime ajustado a «sin turno» algunos dias: sigue ROTATIVO si queda algun turno rotativo
+      ok('perfil (d): rotativo de BioTime con algunos dias ajustados a «sin turno» sigue ROTATIVO', R2.byEmp.get('9701').perfil === 'ROTATIVO'
+        && perfil([A('9701', '2026-09-14', '2026-09-18', '')], '9701') === 'ROTATIVO');
+      ok('perfil (d2): administrativo con dias ajustados a «sin turno» sigue ADMINISTRATIVO (los dias sin turno no cuentan)', perfil([A('9710', '2026-09-14', '2026-09-18', '')], '9710') === 'ADMINISTRATIVO');
+      // (e) ajuste con turno inexistente: no se aplica, no cambia el perfil
+      ok('perfil (e): un ajuste con codigo de turno inexistente (no aplicado) no cambia el perfil', perfil([A('9710', '2026-09-15', '2026-09-15', 'T_ZZZ')], '9710') === 'ADMINISTRATIVO');
+      ok('perfil: un ajuste a turno rotativo TAPADO por uno mas nuevo de turno inexistente no cuenta', perfil([A('9710', '2026-09-15', '2026-09-15', 'T_DIA', '2026-11-10T09:00:00'), A('9710', '2026-09-15', '2026-09-15', 'T_ZZZ', '2026-11-10T10:00:00')], '9710') === 'ADMINISTRATIVO');
+      ok('perfil: un ajuste a turno rotativo FUERA de la vigencia de la persona no cuenta', perfil([A('9708', '2026-09-20', '2026-09-20', 'T_NOCHE')], '9708') === R2.byEmp.get('9708').perfil);
+      // sin turno de BioTime en el ciclo: se infiere de los ajustados (como siempre)
       ok('perfil: sin ningun turno de BioTime en el ciclo se infiere de los ajustados (T_ADM1 -> ADMINISTRATIVO, T_DIA -> ROTATIVO)', R2.byEmp.get('9709').perfil === 'ROTATIVO'
         && perfil([A('9709', '2026-09-14', '2026-09-18', 'T_ADM1')], '9709') === 'ADMINISTRATIVO' && perfil([A('9709', '2026-09-14', '2026-09-18', 'T_DIA')], '9709') === 'ROTATIVO');
+      // (f) override manual
+      api.__ev("PERFILES['9710']='ADMINISTRATIVO'");
+      ok('perfil (f): el override manual (PERFILES) gana sobre el perfil efectivo (ADMINISTRATIVO forzado con ajuste rotativo) y emite B-06', perfil([aj1], '9710') === 'ADMINISTRATIVO'
+        && calc([aj1]).exc.some(x => x.code === 'B-06' && x.id === '9710'));
+      api.__ev("delete PERFILES['9710']");
+      api.__ev("PERFILES['9701']='ADMINISTRATIVO'");
+      ok('perfil (f): el override manual tambien gana en la otra direccion', perfil([A('9701', '2026-09-15', '2026-09-15', 'T_ADM1')], '9701') === 'ADMINISTRATIVO');
+      api.__ev("delete PERFILES['9701']");
       api.__ev("PERFILES['9710']='ROTATIVO'");
-      ok('perfil: el override manual (PERFILES) sigue ganando', perfil([A('9710', '2026-09-15', '2026-09-15', 'T_DIA')], '9710') === 'ROTATIVO');
+      ok('perfil (f): el override manual ROTATIVO sigue ganando', perfil([A('9710', '2026-09-15', '2026-09-15', 'T_ADM1')], '9710') === 'ROTATIVO');
       api.__ev("delete PERFILES['9710']");
       // aviso del dialogo: turno sin jornada ese dia de la semana
       api.__mk('#dlgAjuste').showModal = () => {};

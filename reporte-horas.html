@@ -3332,10 +3332,11 @@ function compute(M, cfg){
     });
 
     /* ── PERFIL: administrativo vs rotativo ── */
-    /* El perfil se infiere de los turnos de BIOTIME (el original), no de los ajustados: un ajuste de un dia no puede volver ROTATIVO a un
-       administrativo para todo el ciclo. Solo si la persona no tiene ninguno cargado en el ciclo se infiere de los ajustados. */
-    const codesBT = rows.map(r=>r.ajuste ? r.turnoOriginal : r.turno).filter(c=>c&&c!=='—');
-    const codes = codesBT.length ? codesBT : rows.map(r=>r.turno).filter(c=>c&&c!=='—');
+    /* El perfil se infiere de los turnos EFECTIVOS del ciclo: los que realmente se aplican, vengan de BioTime o de un ajuste de horario aplicado
+       (r.turno ya trae el codigo ajustado). Un solo dia en un turno no administrativo vuelve ROTATIVO a la persona todo el ciclo: quien rota es
+       rotativo. Un ajuste anulado, de turno inexistente, sobrepuesto o fuera de vigencia no se aplica y no cuenta. La linea base (computeBase)
+       corre sin ajustes y por eso conserva el perfil original: el cambio de perfil forma parte del impacto visible del ajuste. */
+    const codes = rows.map(r=>r.turno).filter(c=>c&&c!=='—');
     const esAdmin = codes.length>0 &&
       codes.every(c=>cfg.adminPref && c.toUpperCase().startsWith(cfg.adminPref.toUpperCase()));
     const perfilAuto = esAdmin ? 'ADMINISTRATIVO' : 'ROTATIVO';
