@@ -62,6 +62,10 @@ for (const [nombre, html] of Object.entries(FILES)) {
   const R = api.__ev('RESULT');
   console.log(`── ${nombre}`);
   ok('sin errores de consola al calcular', api.__errores.length === 0, api.__errores.slice(0, 2).join(' | '));
+  // regresion (visto en Chrome real): cada recalculo sumaba otro «retirados: N» al encabezado
+  api.runCalc(); api.runCalc();
+  const cuenta = (api.__ev("$('#hdrCarga').innerHTML").match(/retirados:/g) || []).length;
+  ok('el encabezado tiene UN solo «retirados» aunque se recalcule varias veces', cuenta === 1, 'veces=' + cuenta);
   const n = () => api.alcanceR(R).byEmp.size;
   const ids = () => [...api.alcanceR(R).byEmp.keys()].sort().join(',');
 

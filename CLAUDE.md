@@ -1162,7 +1162,7 @@ otro navegador o a otra persona de RRHH en un `.json`.
 `rotacion.mesesNoConfiables`, `columnas.{detalle,consolidado,asistencia}` (las listas de columnas **ocultas**, como en `localStorage`).
 Todo ordenado, así que dos exportaciones del mismo estado salen iguales. **Nunca** incluye los Excel ni el archivo de lactancia, y solo
 lleva ids (los textos libres son los motivos de las autorizaciones de extras y las notas y autores de los ajustes de horario). `ajustesHorario` lleva
-todos los ajustes (también los anulados) y se importa **agregando, nunca reemplazando** (ver «Ajustes de horario»).
+todos los ajustes (también los anulados) y se importa **agregando y sin borrar nunca**: un ajuste que choca con uno existente se ignora (por defecto) o se sobrescribe, según lo que elija quien importa (ver «Ajustes de horario»).
 
 **Importar (`#dlgImportCfg`).**
 - `configValidar(texto)` valida **todo antes de aplicar nada**: JSON legible, `formato`, `version` entera ≥ 1 y ≤ `CFG_VERSION`, y el tipo de

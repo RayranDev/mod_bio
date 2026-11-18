@@ -7245,8 +7245,10 @@ function runCalc(){
       let ret = 0, retCiclo = 0;
       MODEL.employees.forEach(e=>{ if((e.vinculo||'ACTIVO')==='RETIRADO'){
         ret++; if(ASISTENCIA && ASISTENCIA.has(e.id)) retCiclo++; } });
-      $('#hdrCarga').innerHTML += ` · <b data-tip="Personas marcadas como retiradas a partir del archivo de Renuncias. ${retCiclo} de ellas entran en el rango consultado.">`
-        + `retirados: ${fmtN(ret)}</b>`;
+      /* Un solo fragmento, reemplazable: cada recalculo (ajustes, importaciones) lo reescribe en vez de sumar otro. */
+      const sinRet = $('#hdrCarga').innerHTML.replace(/<span data-ret="1">[\s\S]*?<\/span>/, "");
+      $('#hdrCarga').innerHTML = sinRet + `<span data-ret="1"> · <b data-tip="Personas marcadas como retiradas a partir del archivo de Renuncias. ${retCiclo} de ellas entran en el rango consultado.">`
+        + `retirados: ${fmtN(ret)}</b></span>`;
     }
     modo('reportes');          // fuera carga y parametros: una sola barra de scroll
   }catch(err){ console.error(err); toast('Error de cálculo: '+err.message); }
